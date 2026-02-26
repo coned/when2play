@@ -6,7 +6,8 @@ This document defines the API contract that a Discord bot must follow to integra
 
 The Discord bot is responsible for:
 1. **Authentication** — Creating one-time auth links for users
-2. **Gather notifications** — Polling for and delivering gather bell pings
+2. **Admin access** — Creating one-time admin links for Discord server administrators
+3. **Gather notifications** — Polling for and delivering gather bell pings
 
 ## Authentication
 
@@ -90,7 +91,7 @@ The bot should DM the user with `data.url`. The token expires in 10 minutes, is 
 - `GET /api/users/me` returns `is_admin: true` while the session is active
 - `PATCH /api/settings` is allowed
 
-### 4. Poll for Gather Pings
+### 3. Poll for Gather Pings
 
 Periodically (every 10-30 seconds):
 
@@ -127,7 +128,7 @@ For each pending ping, the bot should:
 3. **Send a message** to the gaming channel
 4. **Mark as delivered** (see below)
 
-### 5. Mark Ping Delivered
+### 4. Mark Ping Delivered
 
 ```bash
 PATCH /api/gather/:id/delivered

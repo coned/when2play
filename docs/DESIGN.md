@@ -37,7 +37,7 @@
 when2play/
 ├── Makefile        # Project commands (make help)
 ├── docs/           # Documentation
-├── migrations/     # D1 SQL migrations (0000-0009)
+├── migrations/     # D1 SQL migrations (0000-0010)
 ├── shared/         # Shared TypeScript types (npm workspace)
 ├── src/            # Backend (Hono API)
 │   ├── middleware/  # error, cors, auth, bot-auth, security-headers, fk
@@ -57,9 +57,10 @@ when2play/
 ### Data Flow
 
 ```
-Discord Bot ──POST /api/auth/token──► Worker API ──D1──► SQLite
-  (X-Bot-Token header)                    ▲
-Browser SPA ──fetch /api/*───────────────┘
+Discord Bot ──POST /api/auth/token───────► Worker API ──D1──► SQLite
+Discord Bot ──POST /api/auth/admin-token─►     ▲
+  (X-Bot-Token header)                         │
+Browser SPA ──fetch /api/*───────────────────┘
   (session_id cookie)
 ```
 
@@ -91,6 +92,7 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | user_id | TEXT NOT NULL FK→users | |
 | expires_at | TEXT NOT NULL | 10-min expiry |
 | used | INTEGER DEFAULT 0 | Boolean |
+| is_admin | INTEGER DEFAULT 0 | Boolean — 1 when created via `/api/auth/admin-token` |
 | created_at | TEXT NOT NULL | |
 
 ### sessions
@@ -100,7 +102,8 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | id | TEXT PK | UUID |
 | session_id | TEXT UNIQUE NOT NULL | Cookie value |
 | user_id | TEXT NOT NULL FK→users | |
-| expires_at | TEXT NOT NULL | 7-day expiry |
+| expires_at | TEXT NOT NULL | 7-day expiry (regular) or 1-hour expiry (admin) |
+| is_admin | INTEGER DEFAULT 0 | Boolean — propagated from auth token |
 | created_at | TEXT NOT NULL | |
 
 ### games
@@ -171,7 +174,7 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | value | TEXT NOT NULL | JSON-encoded value |
 | updated_at | TEXT NOT NULL | |
 
-Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `gather_cooldown_minutes=30`.
+Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `gather_cooldown_seconds=10`, `gather_hourly_limit=30`.
 
 ---
 
@@ -181,8 +184,9 @@ Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `g
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /api/auth/token | Bot (`X-Bot-Token`) | Create one-time auth token. Zod-validated body: `{ discord_id: 1-30, discord_username: 1-50, avatar_url?: max 500 }` |
-| GET | /api/auth/callback/:token | None | Exchange token for session cookie (`SameSite=Strict`) |
+| POST | /api/auth/token | Bot (`X-Bot-Token`) | Create one-time auth token. Body: `{ discord_id: 1-30, discord_username: 1-50, avatar_url?: max 500 }` |
+| POST | /api/auth/admin-token | Bot (`X-Bot-Token`) | Create one-time admin auth token (same body). Resulting session has `is_admin=1`, 1h TTL, browser-session cookie. |
+| GET | /api/auth/callback/:token | None | Exchange token for session cookie. Admin tokens get no `Max-Age`. |
 | POST | /api/auth/logout | Session | Destroy session |
 
 ### Users
@@ -190,7 +194,7 @@ Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `g
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | /api/users | Session | List all users (id, discord_username, avatar_url) |
-| GET | /api/users/me | Session | Get current user |
+| GET | /api/users/me | Session | Get current user (includes `is_admin: boolean`) |
 | PATCH | /api/users/me | Session | Update timezone, display name, granularity |
 
 ### Games
@@ -232,7 +236,7 @@ Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `g
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /api/gather | Session | Ring the bell. Body: `{ message?, is_anonymous?, target_user_ids? }` |
+| POST | /api/gather | Session | Ring the bell. Body: `{ message?, is_anonymous?, target_user_ids? }`. Rate-limited: hourly limit (default 30/h) + per-ping cooldown (default 10s). |
 | GET | /api/gather/pending | Bot (`X-Bot-Token`) | Get undelivered pings (includes is_anonymous, target_user_ids) |
 | PATCH | /api/gather/:id/delivered | Bot (`X-Bot-Token`) | Mark ping as delivered |
 
@@ -248,7 +252,7 @@ Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `g
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | /api/settings | Session | Get all settings |
-| PATCH | /api/settings | Session (admin) | Update settings (first registered user only) |
+| PATCH | /api/settings | Session (admin) | Update settings (requires `is_admin` session flag from admin-token flow) |
 
 ### Health
 
@@ -396,7 +400,7 @@ All time displays show both UTC and local time:
 
 ### Access Control
 
-- Settings PATCH: admin only (first registered user by `created_at`)
+- Settings PATCH: admin only — session must carry `is_admin=1`, set by the admin-token flow (Discord ADMINISTRATOR permission gated at the bot)
 - Game votes: `user_id` stripped from public response
 - Availability: `user_id` param scoped to authenticated user without date filter
 
@@ -412,15 +416,18 @@ All require `X-Bot-Token` header (matching `BOT_API_KEY` Cloudflare secret):
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /api/auth/token` | Create auth link. Body: `{ discord_id, discord_username, avatar_url? }` |
-| `GET /api/gather/pending` | Poll for undelivered pings. Response includes `is_anonymous`, `target_user_ids` |
+| `POST /api/auth/token` | Create regular auth link. Body: `{ discord_id, discord_username, avatar_url? }` |
+| `POST /api/auth/admin-token` | Create admin auth link (same body). Bot must verify `ADMINISTRATOR` permission before calling. |
+| `GET /api/gather/pending` | Poll for undelivered pings |
 | `PATCH /api/gather/:id/delivered` | Mark ping as delivered |
 
 ### Gather Ping Fields
 
 When polling `GET /api/gather/pending`, each ping includes:
+- `sender_discord_id` (string) — numeric Discord ID of the sender, pre-resolved. Use `<@id>` directly.
+- `sender_username` (string) — display name of the sender
 - `is_anonymous` (boolean) — if true, hide the sender's identity
-- `target_user_ids` (string[] | null) — if non-null, only notify these specific users (internal UUIDs — bot must map to Discord IDs)
+- `target_discord_ids` (string[] | null) — if non-null, numeric Discord IDs to mention. Pre-resolved server-side — no bot-side mapping needed.
 
 ---
 
@@ -429,7 +436,7 @@ When polling `GET /api/gather/pending`, each ping includes:
 - **Time granularity**: 15-min default, admin-adjustable globally via settings, user-adjustable individually
 - **Game pool lifespan**: 7 days; expired games auto-archived but remain visible with `?include_archived=true`
 - **Session cleanup**: Lazy — expired tokens/sessions deleted on access. No cron trigger for MVP.
-- **Cookie config**: `session_id=...; HttpOnly; SameSite=Strict; Path=/`. `Secure` flag only in production.
+- **Cookie config**: `session_id=...; HttpOnly; SameSite=Strict; Path=/`. `Secure` flag only in production. Regular sessions include `Max-Age=604800` (7 days). Admin sessions omit `Max-Age` (browser-session) and DB row expires after 1 hour.
 - **CORS**: Production = same-origin. Dev = `localhost:5173` + `localhost:8787`.
 - **Bot auth**: `X-Bot-Token` header validated against `BOT_API_KEY` secret. Skipped when secret is unset (local dev).
 - **Error redaction**: Production returns generic error messages. Dev returns full error details.

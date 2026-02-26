@@ -446,7 +446,9 @@ client.on('interactionCreate', async (interaction) => {
 
 ### Cookie Security
 
-Session cookies: `HttpOnly`, `SameSite=Strict`, `Path=/`, `Secure` (production only). Sessions expire after 7 days.
+Regular sessions: `HttpOnly`, `SameSite=Strict`, `Path=/`, `Secure` (production only), `Max-Age=604800` (7 days).
+
+Admin sessions: same flags but **no `Max-Age`** (browser-session cookie). DB row expires after 1 hour regardless.
 
 ### Input Validation
 
