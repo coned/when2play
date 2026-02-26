@@ -74,6 +74,7 @@ gather.get('/pending', requireBotAuth, async (c) => {
 		delivered: Boolean(p.delivered),
 		is_anonymous: Boolean(p.is_anonymous),
 		target_user_ids: p.target_user_ids ? JSON.parse(p.target_user_ids) : null,
+		// target_discord_ids is already resolved in the query
 	}));
 	return c.json({ ok: true, data });
 });
