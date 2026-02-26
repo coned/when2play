@@ -18,8 +18,17 @@ availability.use('/*', requireAuth);
 
 // GET /api/availability?user_id=&date=
 availability.get('/', async (c) => {
-	const userId = c.req.query('user_id');
+	const user = c.get('user');
+	let userId = c.req.query('user_id');
 	const date = c.req.query('date');
+
+	// If user_id is specified but different from authenticated user,
+	// only allow it when also filtering by date (overlap queries).
+	// Personal data queries are always scoped to the authenticated user.
+	if (userId && userId !== user.id && !date) {
+		userId = user.id;
+	}
+
 	const slots = await getAvailability(c.env.DB, { user_id: userId, date });
 	return c.json({ ok: true, data: slots });
 });
