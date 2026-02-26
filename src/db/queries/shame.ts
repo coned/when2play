@@ -40,6 +40,23 @@ export async function createShameVote(db: D1Database, voterId: string, targetId:
 	return { id, voter_id: voterId, target_id: targetId, reason: reason ?? null, created_at: timestamp };
 }
 
+export async function deleteShameVote(db: D1Database, voterId: string, targetId: string): Promise<void> {
+	const today = now().split('T')[0];
+	await db
+		.prepare("DELETE FROM shame_votes WHERE voter_id = ? AND target_id = ? AND created_at LIKE ? || '%'")
+		.bind(voterId, targetId, today)
+		.run();
+}
+
+export async function getMyShameVotesToday(db: D1Database, voterId: string): Promise<string[]> {
+	const today = now().split('T')[0];
+	const result = await db
+		.prepare("SELECT target_id FROM shame_votes WHERE voter_id = ? AND created_at LIKE ? || '%'")
+		.bind(voterId, today)
+		.all<{ target_id: string }>();
+	return result.results.map((r) => r.target_id);
+}
+
 export async function getShameLeaderboard(db: D1Database): Promise<ShameLeaderboardRow[]> {
 	const result = await db
 		.prepare(

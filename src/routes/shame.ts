@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
-import { createShameVote, getShameLeaderboard } from '../db/queries/shame';
+import { createShameVote, deleteShameVote, getShameLeaderboard, getMyShameVotesToday } from '../db/queries/shame';
 import { getUserById, type UserRow } from '../db/queries/users';
 
 type ShameEnv = {
@@ -16,14 +16,23 @@ const shame = new Hono<ShameEnv>();
 
 shame.use('/*', requireAuth);
 
+// GET /api/shame/my-votes — returns target_ids the current user shamed today
+shame.get('/my-votes', async (c) => {
+	const user = c.get('user');
+	const targetIds = await getMyShameVotesToday(c.env.DB, user.id);
+	return c.json({ ok: true, data: targetIds });
+});
+
+// GET /api/shame/leaderboard
+shame.get('/leaderboard', async (c) => {
+	const leaderboard = await getShameLeaderboard(c.env.DB);
+	return c.json({ ok: true, data: leaderboard });
+});
+
 // POST /api/shame/:targetId
 shame.post('/:targetId', async (c) => {
 	const user = c.get('user');
 	const targetId = c.req.param('targetId');
-
-	if (targetId === user.id) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Cannot shame yourself' } }, 400);
-	}
 
 	const target = await getUserById(c.env.DB, targetId);
 	if (!target) {
@@ -47,10 +56,12 @@ shame.post('/:targetId', async (c) => {
 	}
 });
 
-// GET /api/shame/leaderboard
-shame.get('/leaderboard', async (c) => {
-	const leaderboard = await getShameLeaderboard(c.env.DB);
-	return c.json({ ok: true, data: leaderboard });
+// DELETE /api/shame/:targetId — withdraw today's shame vote
+shame.delete('/:targetId', async (c) => {
+	const user = c.get('user');
+	const targetId = c.req.param('targetId');
+	await deleteShameVote(c.env.DB, user.id, targetId);
+	return c.json({ ok: true, data: null });
 });
 
 export default shame;

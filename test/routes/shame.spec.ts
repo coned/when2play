@@ -32,18 +32,20 @@ describe('Shame routes', () => {
 		expect(body.data.target_id).toBe(userId2);
 	});
 
-	it('prevents self-shaming', async () => {
+	it('allows self-shaming', async () => {
 		const res = await app.request(
 			`/api/shame/${userId1}`,
 			{
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', Cookie: cookie1 },
-				body: JSON.stringify({}),
+				body: JSON.stringify({ reason: 'I deserved it' }),
 			},
 			{ DB: db },
 		);
 
-		expect(res.status).toBe(400);
+		expect(res.status).toBe(201);
+		const body = await res.json();
+		expect(body.data.target_id).toBe(userId1);
 	});
 
 	it('shows leaderboard', async () => {
