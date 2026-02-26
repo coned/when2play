@@ -2,17 +2,24 @@
 	--bg-primary: #0f0f0f;
 	--bg-secondary: #1a1a2e;
 	--bg-tertiary: #16213e;
+	--bg-card: #1e1e32;
 	--accent: #3b82f6;
 	--accent-hover: #2563eb;
+	--accent-dim: #1d4ed8;
 	--text-primary: #e0e0e0;
 	--text-secondary: #a0a0a0;
 	--text-muted: #666;
 	--border: #2a2a3e;
+	--border-hover: #3a3a4e;
 	--success: #22c55e;
 	--warning: #eab308;
 	--danger: #ef4444;
+	--shame: #f97316;
 	--radius: 8px;
 	--radius-lg: 12px;
+	--shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+	--sidebar-width: 220px;
+	--header-height: 60px;
 }
 
 *,
@@ -49,4 +56,125 @@ a:hover {
 button {
 	cursor: pointer;
 	font-family: inherit;
+	border: none;
+	outline: none;
+}
+
+input,
+select,
+textarea {
+	font-family: inherit;
+	background: var(--bg-tertiary);
+	color: var(--text-primary);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 8px 12px;
+	font-size: 14px;
+	outline: none;
+	transition: border-color 0.15s;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+	border-color: var(--accent);
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 16px;
+	border-radius: var(--radius);
+	font-size: 14px;
+	font-weight: 500;
+	transition: background 0.15s, opacity 0.15s;
+}
+
+.btn-primary {
+	background: var(--accent);
+	color: #fff;
+}
+
+.btn-primary:hover {
+	background: var(--accent-hover);
+}
+
+.btn-secondary {
+	background: var(--bg-tertiary);
+	color: var(--text-primary);
+	border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+	border-color: var(--border-hover);
+}
+
+.btn-danger {
+	background: var(--danger);
+	color: #fff;
+}
+
+.btn-danger:hover {
+	opacity: 0.9;
+}
+
+.btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.card {
+	background: var(--bg-card);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	padding: 16px;
+	box-shadow: var(--shadow);
+}
+
+.badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 8px;
+	border-radius: 9999px;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.badge-accent {
+	background: var(--accent-dim);
+	color: #dbeafe;
+}
+
+.badge-warning {
+	background: #854d0e;
+	color: #fef3c7;
+}
+
+.badge-danger {
+	background: #991b1b;
+	color: #fee2e2;
+}
+
+.spinner {
+	width: 24px;
+	height: 24px;
+	border: 3px solid var(--border);
+	border-top-color: var(--accent);
+	border-radius: 50%;
+	animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.text-muted {
+	color: var(--text-muted);
+}
+
+.text-secondary {
+	color: var(--text-secondary);
 }
