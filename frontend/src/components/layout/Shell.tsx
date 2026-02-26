@@ -20,7 +20,7 @@ export function Shell({ user, activeTab, onTabChange, onLogout, children }: Shel
 		<div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
 			<Header user={user} onLogout={onLogout} />
 			<div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-				{!isMobile && <Sidebar activeTab={activeTab} onTabChange={onTabChange} />}
+				{!isMobile && <Sidebar activeTab={activeTab} onTabChange={onTabChange} isAdmin={user.is_admin} />}
 				<main
 					style={{
 						flex: 1,
@@ -32,7 +32,7 @@ export function Shell({ user, activeTab, onTabChange, onLogout, children }: Shel
 					{children}
 				</main>
 			</div>
-			{isMobile && <BottomNav activeTab={activeTab} onTabChange={onTabChange} />}
+			{isMobile && <BottomNav activeTab={activeTab} onTabChange={onTabChange} isAdmin={user.is_admin} />}
 		</div>
 	);
 }

@@ -1,9 +1,10 @@
 interface BottomNavProps {
 	activeTab: string;
 	onTabChange: (tab: string) => void;
+	isAdmin: boolean;
 }
 
-const tabs = [
+const BASE_TABS = [
 	{ id: 'schedule', label: 'Schedule', icon: '\u{1F4C5}' },
 	{ id: 'games', label: 'Games', icon: '\u{1F3AE}' },
 	{ id: 'availability', label: 'Available', icon: '\u{1F552}' },
@@ -11,7 +12,11 @@ const tabs = [
 	{ id: 'shame', label: 'Shame', icon: '\u{1F525}' },
 ];
 
-export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+const ADMIN_TAB = { id: 'admin', label: 'Settings', icon: '\u2699\uFE0F' };
+
+export function BottomNav({ activeTab, onTabChange, isAdmin }: BottomNavProps) {
+	const tabs = isAdmin ? [...BASE_TABS, ADMIN_TAB] : BASE_TABS;
+
 	return (
 		<nav
 			style={{
