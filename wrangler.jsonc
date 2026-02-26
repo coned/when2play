@@ -13,13 +13,14 @@
 		{
 			"binding": "DB",
 			"database_name": "when2play-db",
-			"database_id": "local",
+			"database_id": "4586cbdb-2f57-474d-95a8-96d7c0ee655f",
 			"migrations_dir": "migrations"
 		}
 	],
 	"assets": {
 		"directory": "./frontend/dist/",
 		"binding": "ASSETS",
-		"not_found_handling": "single-page-application"
+		"not_found_handling": "single-page-application",
+		"run_worker_first": ["/api/*"]
 	}
 }
