@@ -49,10 +49,25 @@ Creates a one-time auth token for a Discord user. Called by the Discord bot.
 { "ok": true, "data": { "token": "abc123...", "url": "https://host/auth/abc123..." } }
 ```
 
+### `POST /api/auth/admin-token`
+Creates a one-time admin auth token. Called by the Discord bot after verifying the requesting member has `ADMINISTRATOR` permission. The resulting session grants admin privileges.
+
+**Auth:** `X-Bot-Token` header (required when `BOT_API_KEY` secret is set)
+
+**Body:** same schema as `/api/auth/token`
+
+**Response (201):**
+```json
+{ "ok": true, "data": { "token": "abc123...", "url": "https://host/auth/abc123..." } }
+```
+
 ### `GET /api/auth/callback/:token`
 Exchanges a one-time token for a session cookie. Redirects to `/`.
 
-**Response:** `302 Found` with `Set-Cookie: session_id=...; HttpOnly; SameSite=Strict; Path=/`
+- **Regular token:** `Set-Cookie: session_id=...; Max-Age=604800; HttpOnly; SameSite=Strict; Path=/` (7-day persistent)
+- **Admin token:** `Set-Cookie: session_id=...; HttpOnly; SameSite=Strict; Path=/` (no `Max-Age` — browser-session only; DB row expires after 1 hour)
+
+**Response:** `302 Found`
 
 ### `POST /api/auth/logout`
 Requires session cookie. Destroys the session.
@@ -82,7 +97,7 @@ Returns all registered users (for user pickers in gather/shame).
 ```
 
 ### `GET /api/users/me`
-Returns the current authenticated user.
+Returns the current authenticated user. Includes `is_admin: boolean` — `true` when the session was created via an admin token.
 
 ### `PATCH /api/users/me`
 Updates the current user's profile.
@@ -233,7 +248,12 @@ Clears all slots for the given date.
 ## Gather
 
 ### `POST /api/gather`
-Requires session cookie. Rings the gather bell. Rate-limited by `gather_cooldown_minutes` setting.
+Requires session cookie. Rings the gather bell. Two independent rate limits apply:
+
+- **Per-ping cooldown** (Check B): `gather_cooldown_seconds` setting (default 10s). Must wait this long between pings.
+- **Hourly limit** (Check A, checked first): `gather_hourly_limit` setting (default 30). If ≥ 30 pings in the last 60 minutes, locked out until the oldest ping ages out. Set to 0 to disable either limit.
+
+Both return `429` with `{ error: { code: "RATE_LIMITED", message: "... Try again in Xs" } }`.
 
 **Body (all fields optional):**
 ```json
@@ -257,15 +277,20 @@ Returns undelivered gather pings.
     {
       "id": "ping-uuid",
       "user_id": "user-uuid",
+      "sender_discord_id": "123456789012345678",
+      "sender_username": "GamerDave",
       "message": "CS2 anyone?",
       "delivered": false,
       "is_anonymous": false,
       "target_user_ids": null,
+      "target_discord_ids": null,
       "created_at": "2026-02-26T19:00:00.000Z"
     }
   ]
 }
 ```
+
+`sender_discord_id` and `target_discord_ids` are pre-resolved numeric Discord IDs — use `<@id>` syntax directly. No bot-side ID mapping needed.
 
 ### `PATCH /api/gather/:id/delivered`
 Marks a gather ping as delivered.
@@ -315,7 +340,7 @@ All endpoints require session cookie.
 Returns all settings as a key-value map.
 
 ### `PATCH /api/settings`
-Updates settings. **Admin only** — restricted to the first registered user.
+Updates settings. **Admin only** — session must have been created via `POST /api/auth/admin-token` (Discord-gated: requires `ADMINISTRATOR` guild permission).
 
 **Body:**
 ```json
