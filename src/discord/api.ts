@@ -67,6 +67,20 @@ export class DiscordAPI {
 		});
 		if (!res.ok) throw new Error(`createFollowup failed: ${res.status} ${await res.text()}`);
 	}
+
+	/**
+	 * Register slash commands with Discord.
+	 * Safe to run repeatedly — PUT does a full overwrite (idempotent).
+	 */
+	async registerCommands(commands: any[]): Promise<any[]> {
+		const res = await fetch(`${DISCORD_API}/applications/${this.appId}/commands`, {
+			method: 'PUT',
+			headers: this.headers(),
+			body: JSON.stringify(commands),
+		});
+		if (!res.ok) throw new Error(`registerCommands failed: ${res.status} ${await res.text()}`);
+		return res.json();
+	}
 }
 
 export interface DiscordMessage {
