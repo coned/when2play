@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
+import { requireBotAuth } from '../middleware/bot-auth';
 import { createGatherPing, getLastGatherPing, getPendingGatherPings, markGatherDelivered } from '../db/queries/gather';
 import { getSetting } from '../db/queries/settings';
 import type { UserRow } from '../db/queries/users';
@@ -36,19 +37,24 @@ gather.post('/', requireAuth, async (c) => {
 	}
 
 	const body = await c.req.json<{ message?: string }>().catch(() => ({}));
+
+	if (body.message && body.message.length > 500) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Message must be 500 characters or less' } }, 400);
+	}
+
 	const ping = await createGatherPing(c.env.DB, user.id, body.message);
 	return c.json({ ok: true, data: { ...ping, delivered: Boolean(ping.delivered) } }, 201);
 });
 
 // GET /api/gather/pending — bot polls for undelivered pings
-gather.get('/pending', async (c) => {
+gather.get('/pending', requireBotAuth, async (c) => {
 	const pings = await getPendingGatherPings(c.env.DB);
 	const data = pings.map((p) => ({ ...p, delivered: Boolean(p.delivered) }));
 	return c.json({ ok: true, data });
 });
 
 // PATCH /api/gather/:id/delivered — bot marks ping as delivered
-gather.patch('/:id/delivered', async (c) => {
+gather.patch('/:id/delivered', requireBotAuth, async (c) => {
 	const id = c.req.param('id');
 	await markGatherDelivered(c.env.DB, id);
 	return c.json({ ok: true, data: null });
