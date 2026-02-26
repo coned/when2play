@@ -6,30 +6,39 @@ export function getUserTimezone(): string {
 }
 
 /**
- * Convert a UTC HH:MM string to a local time string for a given date.
- * Returns formatted local time like "2:00 PM".
- *
- * @param utcHHMM - Time in "HH:MM" format (UTC)
- * @param dateStr - ISO date string "YYYY-MM-DD"
+ * Get a short timezone abbreviation, e.g. "EST", "EDT", "PST".
  */
-export function utcToLocal(utcHHMM: string, dateStr: string): string {
-	const [h, m] = utcHHMM.split(':').map(Number);
-	const utcDate = new Date(`${dateStr}T${utcHHMM}:00Z`);
-
-	// Handle cases where the UTC time is valid
-	if (isNaN(utcDate.getTime())) return utcHHMM;
-
-	return utcDate.toLocaleTimeString(undefined, {
-		hour: 'numeric',
-		minute: '2-digit',
-		hour12: true,
-	});
+export function getTimezoneAbbreviation(): string {
+	return (
+		new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
+			.formatToParts(new Date())
+			.find((p) => p.type === 'timeZoneName')?.value ?? getUserTimezone()
+	);
 }
 
 /**
- * Format a dual-timezone string: "19:00 UTC / 2:00 PM"
+ * Convert a UTC HH:MM string to a local time string with timezone abbreviation.
+ * Returns e.g. "2:00 PM ET".
+ */
+export function formatLocalTime(utcHHMM: string, dateStr: string): string {
+	const utcDate = new Date(`${dateStr}T${utcHHMM}:00Z`);
+	if (isNaN(utcDate.getTime())) return utcHHMM;
+	const local = utcDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+	return `${local} ${getTimezoneAbbreviation()}`;
+}
+
+/**
+ * Convert a UTC HH:MM string to local time only (no TZ code), e.g. "2:00 PM".
+ */
+export function utcToLocal(utcHHMM: string, dateStr: string): string {
+	const utcDate = new Date(`${dateStr}T${utcHHMM}:00Z`);
+	if (isNaN(utcDate.getTime())) return utcHHMM;
+	return utcDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+/**
+ * @deprecated Use formatLocalTime instead.
  */
 export function formatDualTime(utcHHMM: string, dateStr: string): string {
-	const local = utcToLocal(utcHHMM, dateStr);
-	return `${utcHHMM} UTC / ${local}`;
+	return formatLocalTime(utcHHMM, dateStr);
 }
