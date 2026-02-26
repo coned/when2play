@@ -63,6 +63,20 @@ export function Header({ user, onLogout }: HeaderProps) {
 								{user.discord_username}
 							</span>
 						)}
+						{user.is_admin && (
+							<span
+								style={{
+									padding: '2px 8px',
+									borderRadius: '9999px',
+									fontSize: '11px',
+									fontWeight: 600,
+									background: 'var(--accent-dim)',
+									color: '#dbeafe',
+								}}
+							>
+								Admin
+							</span>
+						)}
 						<button class="btn btn-secondary" style={{ padding: '4px 12px', fontSize: '12px' }} onClick={onLogout}>
 							Logout
 						</button>
