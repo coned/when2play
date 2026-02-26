@@ -62,14 +62,20 @@ export default {
 			commandsRegistered = true; // Set immediately to prevent concurrent requests from triggering it multiple times
 			ctx.waitUntil(
 				(async () => {
+					// Register global commands (these usually work as long as the bot token is valid)
 					try {
 						await registerGlobalCommands(env);
-						if (env.DISCORD_GUILD_ID) {
-							await registerGuildCommands(env);
-						}
 					} catch (e) {
-						commandsRegistered = false; // Retry next time if it fails
-						console.error('Failed to register commands', e);
+						console.error('Failed to register global commands', e);
+					}
+
+					// Register guild commands (these fail if the bot lacks the 'applications.commands' scope)
+					if (env.DISCORD_GUILD_ID) {
+						try {
+							await registerGuildCommands(env);
+						} catch (e) {
+							console.error('Failed to register guild commands. Ensure the bot was invited with the "applications.commands" scope.', e);
+						}
 					}
 				})()
 			);
