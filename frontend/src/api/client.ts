@@ -50,8 +50,12 @@ export const api = {
 		request<any[]>('/availability', { method: 'PUT', body: JSON.stringify(data) }),
 	clearAvailability: (date: string) => request<null>(`/availability?date=${date}`, { method: 'DELETE' }),
 
+	// Users (all)
+	getUsers: () => request<Array<{ id: string; discord_username: string; avatar_url: string | null }>>('/users'),
+
 	// Gather
-	ringGather: (message?: string) => request<any>('/gather', { method: 'POST', body: JSON.stringify({ message }) }),
+	ringGather: (options?: { message?: string; is_anonymous?: boolean; target_user_ids?: string[] }) =>
+		request<any>('/gather', { method: 'POST', body: JSON.stringify(options ?? {}) }),
 	getPendingGather: () => request<any[]>('/gather/pending'),
 
 	// Shame

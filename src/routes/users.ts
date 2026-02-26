@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
-import { updateUser, type UserRow } from '../db/queries/users';
+import { updateUser, getAllUsers, type UserRow } from '../db/queries/users';
 
 type UsersEnv = {
 	Bindings: Bindings;
@@ -14,6 +14,12 @@ type UsersEnv = {
 const users = new Hono<UsersEnv>();
 
 users.use('/*', requireAuth);
+
+// GET /api/users — list all users (id, username, avatar)
+users.get('/', async (c) => {
+	const allUsers = await getAllUsers(c.env.DB);
+	return c.json({ ok: true, data: allUsers });
+});
 
 // GET /api/users/me
 users.get('/me', (c) => {
