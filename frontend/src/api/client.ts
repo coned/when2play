@@ -61,7 +61,9 @@ export const api = {
 	// Shame
 	shameUser: (targetId: string, reason?: string) =>
 		request<any>(`/shame/${targetId}`, { method: 'POST', body: JSON.stringify({ reason }) }),
+	withdrawShame: (targetId: string) => request<null>(`/shame/${targetId}`, { method: 'DELETE' }),
 	getShameLeaderboard: () => request<any[]>('/shame/leaderboard'),
+	getMyShameVotes: () => request<string[]>('/shame/my-votes'),
 
 	// Settings
 	getSettings: () => request<Record<string, unknown>>('/settings'),
