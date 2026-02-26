@@ -56,6 +56,38 @@ export async function getUserVotes(db: D1Database, userId: string): Promise<Vote
 	return result.results;
 }
 
+export interface VoteWithGame extends VoteRow {
+	name: string;
+	image_url: string | null;
+}
+
+export async function getUserVotesWithGames(db: D1Database, userId: string): Promise<VoteWithGame[]> {
+	const result = await db
+		.prepare(
+			`SELECT gv.*, g.name, g.image_url
+			FROM game_votes gv
+			JOIN games g ON g.id = gv.game_id
+			WHERE gv.user_id = ? AND g.is_archived = 0
+			ORDER BY gv.rank ASC`,
+		)
+		.bind(userId)
+		.all<VoteWithGame>();
+	return result.results;
+}
+
+export async function bulkUpdateVoteRanks(
+	db: D1Database,
+	userId: string,
+	rankings: Array<{ game_id: string; rank: number }>,
+): Promise<void> {
+	for (const { game_id, rank } of rankings) {
+		await db
+			.prepare('UPDATE game_votes SET rank = ? WHERE game_id = ? AND user_id = ?')
+			.bind(rank, game_id, userId)
+			.run();
+	}
+}
+
 /**
  * Borda count ranking: for each user's ranked list of N games,
  * rank 1 gets N points, rank 2 gets N-1, etc.
