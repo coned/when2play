@@ -180,3 +180,20 @@ textarea:focus {
 .text-secondary {
 	color: var(--text-secondary);
 }
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+	.btn {
+		min-height: 44px;
+	}
+
+	input,
+	select,
+	textarea {
+		font-size: 16px;
+	}
+
+	.card {
+		padding: 12px;
+	}
+}
