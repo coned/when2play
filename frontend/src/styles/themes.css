@@ -1,5 +1,5 @@
 /* Cyberpunk — neon pink on deep purple */
-[data-theme="cyberpunk"] {
+:root[data-theme="cyberpunk"] {
 	--bg-primary: #0d0221;
 	--bg-secondary: #1a0a3e;
 	--bg-tertiary: #240e52;
@@ -12,7 +12,7 @@
 }
 
 /* Forest — earthy greens */
-[data-theme="forest"] {
+:root[data-theme="forest"] {
 	--bg-primary: #0b1a0b;
 	--bg-secondary: #132a13;
 	--bg-tertiary: #1a3a1a;
@@ -25,7 +25,7 @@
 }
 
 /* Sakura — lavender and soft pink */
-[data-theme="sakura"] {
+:root[data-theme="sakura"] {
 	--bg-primary: #0f0f1a;
 	--bg-secondary: #1a1a2e;
 	--bg-tertiary: #242440;
@@ -38,7 +38,7 @@
 }
 
 /* Amber — warm gold on charcoal */
-[data-theme="amber"] {
+:root[data-theme="amber"] {
 	--bg-primary: #121212;
 	--bg-secondary: #1e1e1e;
 	--bg-tertiary: #2a2a2a;
