@@ -14,6 +14,7 @@ export interface ShameLeaderboardRow {
 	discord_username: string;
 	avatar_url: string | null;
 	shame_count: number;
+	recent_reasons: string[];
 }
 
 export async function createShameVote(db: D1Database, voterId: string, targetId: string, reason?: string): Promise<ShameVoteRow> {
@@ -53,7 +54,25 @@ export async function getShameLeaderboard(db: D1Database): Promise<ShameLeaderbo
 			HAVING shame_count > 0
 			ORDER BY shame_count DESC`,
 		)
-		.all<ShameLeaderboardRow>();
+		.all<Omit<ShameLeaderboardRow, 'recent_reasons'>>();
 
-	return result.results;
+	// Fetch recent reasons for each user
+	const entries: ShameLeaderboardRow[] = [];
+	for (const row of result.results) {
+		const reasons = await db
+			.prepare(
+				`SELECT reason FROM shame_votes
+				WHERE target_id = ? AND reason IS NOT NULL AND reason != ''
+				ORDER BY created_at DESC LIMIT 3`,
+			)
+			.bind(row.user_id)
+			.all<{ reason: string }>();
+
+		entries.push({
+			...row,
+			recent_reasons: reasons.results.map((r) => r.reason),
+		});
+	}
+
+	return entries;
 }
