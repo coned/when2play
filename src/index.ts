@@ -5,6 +5,9 @@ import { cors } from './middleware/cors';
 import { foreignKeys } from './middleware/fk';
 import auth from './routes/auth';
 import users from './routes/users';
+import games from './routes/games';
+import votes from './routes/votes';
+import steam from './routes/steam';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -19,6 +22,9 @@ const api = new Hono<{ Bindings: Bindings }>();
 api.use('*', foreignKeys);
 api.route('/auth', auth);
 api.route('/users', users);
+api.route('/games', games);
+api.route('/games', votes);
+api.route('/steam', steam);
 
 app.route('/api', api);
 
