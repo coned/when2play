@@ -40,3 +40,13 @@ export interface GameRanking {
 	vote_count: number;
 	votes: GameVote[];
 }
+
+export interface SteamSearchResult {
+	app_id: string;
+	name: string;
+	image_url: string;
+}
+
+export interface ReorderVotesRequest {
+	rankings: Array<{ game_id: string; rank: number }>;
+}
