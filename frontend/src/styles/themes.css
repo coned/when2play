@@ -1,0 +1,51 @@
+/* Cyberpunk — neon pink on deep purple */
+[data-theme="cyberpunk"] {
+	--bg-primary: #0d0221;
+	--bg-secondary: #1a0a3e;
+	--bg-tertiary: #240e52;
+	--bg-card: #1f0c45;
+	--accent: #ff2a6d;
+	--accent-hover: #e0245c;
+	--accent-dim: #b91c4e;
+	--border: #3a1a5e;
+	--border-hover: #4a2a6e;
+}
+
+/* Forest — earthy greens */
+[data-theme="forest"] {
+	--bg-primary: #0b1a0b;
+	--bg-secondary: #132a13;
+	--bg-tertiary: #1a3a1a;
+	--bg-card: #163016;
+	--accent: #2ecc71;
+	--accent-hover: #27ae60;
+	--accent-dim: #1e8449;
+	--border: #1e3e1e;
+	--border-hover: #2e4e2e;
+}
+
+/* Sakura — lavender and soft pink */
+[data-theme="sakura"] {
+	--bg-primary: #0f0f1a;
+	--bg-secondary: #1a1a2e;
+	--bg-tertiary: #242440;
+	--bg-card: #1e1e36;
+	--accent: #e891b9;
+	--accent-hover: #d47ca5;
+	--accent-dim: #b0658a;
+	--border: #2e2e4a;
+	--border-hover: #3e3e5a;
+}
+
+/* Amber — warm gold on charcoal */
+[data-theme="amber"] {
+	--bg-primary: #121212;
+	--bg-secondary: #1e1e1e;
+	--bg-tertiary: #2a2a2a;
+	--bg-card: #242424;
+	--accent: #f59e0b;
+	--accent-hover: #d97706;
+	--accent-dim: #b45309;
+	--border: #333333;
+	--border-hover: #444444;
+}
