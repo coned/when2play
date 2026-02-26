@@ -6,6 +6,7 @@ import { AvailabilityView } from '../components/availability/AvailabilityView';
 import { GatherBell } from '../components/gather/GatherBell';
 import { ShameWall } from '../components/shame/ShameWall';
 import { ScheduleSummary } from '../components/schedule/ScheduleSummary';
+import { AdminPanel } from '../components/admin/AdminPanel';
 
 interface HomeProps {
 	user: User;
@@ -22,6 +23,7 @@ export function Home({ user, onLogout }: HomeProps) {
 			{activeTab === 'availability' && <AvailabilityView userId={user.id} />}
 			{activeTab === 'gather' && <GatherBell />}
 			{activeTab === 'shame' && <ShameWall userId={user.id} />}
+			{activeTab === 'admin' && user.is_admin && <AdminPanel />}
 		</Shell>
 	);
 }
