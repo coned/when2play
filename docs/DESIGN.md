@@ -9,12 +9,12 @@
 1. Discord bot sends a one-time auth link to a user via DM
 2. User clicks link → browser opens → session cookie set → redirected to dashboard
 3. On the dashboard, users can:
-   - **Propose games** (via Steam App ID or manual entry)
-   - **Rank-vote** on proposed games (drag-and-drop ranking + approval toggle)
-   - **Set availability** (15-min time slots for today/tomorrow)
-   - **Ring the gather bell** (notify others you're ready to play)
-   - **Shame no-shows** (light-hearted accountability)
-4. The dashboard shows a schedule summary: top-ranked games + overlap windows + who's around
+   - **Propose games** (via Steam name search, App ID lookup, or manual entry)
+   - **Rank-vote** on proposed games (drag-to-reorder ranking)
+   - **Set availability** (15-min time slots for today/tomorrow, vertical layout with dual timezone)
+   - **Ring the gather bell** (notify others, with anonymous + targeted options)
+   - **Shame no-shows** (any user, with reasons)
+4. The dashboard shows a schedule summary: top-ranked games + overlap windows (with UTC + local times) + who's around
 
 ---
 
@@ -28,17 +28,28 @@
 | Database | Cloudflare D1 (SQLite) |
 | Frontend | Preact + Vite SPA |
 | Auth | One-time token → session cookie |
-| Styling | CSS custom properties (dark gaming theme) |
+| Bot Auth | `X-Bot-Token` header → `BOT_API_KEY` secret |
+| Styling | CSS custom properties with 5 switchable themes |
 
 ### Monorepo Structure
 
 ```
 when2play/
+├── Makefile        # Project commands (make help)
 ├── docs/           # Documentation
-├── migrations/     # D1 SQL migrations
+├── migrations/     # D1 SQL migrations (0000-0009)
 ├── shared/         # Shared TypeScript types (npm workspace)
 ├── src/            # Backend (Hono API)
+│   ├── middleware/  # error, cors, auth, bot-auth, security-headers, fk
+│   ├── routes/     # auth, users, games, votes, steam, availability, gather, shame, settings
+│   ├── db/queries/ # Database query functions
+│   └── lib/        # crypto, time, steam utilities
 ├── frontend/       # Preact + Vite SPA (npm workspace)
+│   └── src/
+│       ├── hooks/      # useAuth, useTheme, useMediaQuery
+│       ├── lib/        # time (dual timezone formatting)
+│       ├── styles/     # global.css, themes.css
+│       └── components/ # layout, games, availability, gather, shame, schedule, ui
 ├── scripts/        # Dev/seed/simulate scripts
 └── test/           # Backend tests (vitest)
 ```
@@ -47,8 +58,9 @@ when2play/
 
 ```
 Discord Bot ──POST /api/auth/token──► Worker API ──D1──► SQLite
-                                          ▲
-Browser SPA ──fetch /api/*──────────────┘
+  (X-Bot-Token header)                    ▲
+Browser SPA ──fetch /api/*───────────────┘
+  (session_id cookie)
 ```
 
 ---
@@ -96,9 +108,9 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | Column | Type | Notes |
 |--------|------|-------|
 | id | TEXT PK | UUID |
-| name | TEXT NOT NULL | Game title |
+| name | TEXT NOT NULL | Game title (max 100 chars) |
 | steam_app_id | TEXT | Nullable |
-| image_url | TEXT | Steam header or custom |
+| image_url | TEXT | Steam header or custom (max 500 chars) |
 | proposed_by | TEXT NOT NULL FK→users | |
 | is_archived | INTEGER DEFAULT 0 | Boolean |
 | created_at | TEXT NOT NULL | |
@@ -134,8 +146,10 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 |--------|------|-------|
 | id | TEXT PK | UUID |
 | user_id | TEXT NOT NULL FK→users | Who rang |
-| message | TEXT | Optional message |
+| message | TEXT | Optional message (max 500 chars) |
 | delivered | INTEGER DEFAULT 0 | Bot has picked up |
+| is_anonymous | INTEGER DEFAULT 0 | Hide sender identity |
+| target_user_ids | TEXT | JSON array of user IDs, NULL = all |
 | created_at | TEXT NOT NULL | |
 
 ### shame_votes
@@ -145,7 +159,7 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | id | TEXT PK | UUID |
 | voter_id | TEXT NOT NULL FK→users | Who shames |
 | target_id | TEXT NOT NULL FK→users | Who is shamed |
-| reason | TEXT | Optional reason |
+| reason | TEXT | Optional reason (max 200 chars) |
 | created_at | TEXT NOT NULL | |
 | UNIQUE(voter_id, target_id, date) | | One shame per pair per day |
 
@@ -167,14 +181,15 @@ Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `g
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /api/auth/token | Bot (deferred) | Create one-time auth token for a Discord user |
-| GET | /api/auth/callback/:token | None | Exchange token for session cookie |
+| POST | /api/auth/token | Bot (`X-Bot-Token`) | Create one-time auth token. Zod-validated body: `{ discord_id: 1-30, discord_username: 1-50, avatar_url?: max 500 }` |
+| GET | /api/auth/callback/:token | None | Exchange token for session cookie (`SameSite=Strict`) |
 | POST | /api/auth/logout | Session | Destroy session |
 
 ### Users
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
+| GET | /api/users | Session | List all users (id, discord_username, avatar_url) |
 | GET | /api/users/me | Session | Get current user |
 | PATCH | /api/users/me | Session | Update timezone, display name, granularity |
 
@@ -183,7 +198,7 @@ Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `g
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | /api/games | Session | List active games (optional ?include_archived=true) |
-| POST | /api/games | Session | Propose a game |
+| POST | /api/games | Session | Propose a game (name max 100, image_url max 500) |
 | PATCH | /api/games/:id | Session | Update game (owner only) |
 | DELETE | /api/games/:id | Session | Archive a game (owner only) |
 
@@ -193,14 +208,23 @@ Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `g
 |--------|------|------|-------------|
 | PUT | /api/games/:id/vote | Session | Set rank + approval for a game |
 | DELETE | /api/games/:id/vote | Session | Remove vote |
-| GET | /api/games/:id/votes | Session | Get all votes for a game |
+| GET | /api/games/:id/votes | Session | Get votes for a game (user_id stripped) |
 | GET | /api/games/ranking | Session | Aggregated Borda count ranking |
+| GET | /api/games/my-votes | Session | Current user's votes with game data |
+| PUT | /api/games/reorder-votes | Session | Bulk rank update: `{ rankings: [{ game_id, rank }] }` |
+
+### Steam
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/steam/search?q=QUERY | Session | Search Steam by name (2-100 chars, returns top 10) |
+| GET | /api/steam/lookup/:appId | None | Lookup game info by Steam App ID |
 
 ### Availability
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | /api/availability | Session | Get slots (optional ?user_id, ?date) |
+| GET | /api/availability | Session | Get slots (?user_id, ?date). user_id scoped to self without date filter |
 | PUT | /api/availability | Session | Set availability slots (bulk replace for a date) |
 | DELETE | /api/availability | Session | Clear slots for a date |
 
@@ -208,29 +232,23 @@ Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `g
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /api/gather | Session | Ring the gather bell |
-| GET | /api/gather/pending | Bot (deferred) | Get undelivered pings |
-| PATCH | /api/gather/:id/delivered | Bot (deferred) | Mark ping as delivered |
+| POST | /api/gather | Session | Ring the bell. Body: `{ message?, is_anonymous?, target_user_ids? }` |
+| GET | /api/gather/pending | Bot (`X-Bot-Token`) | Get undelivered pings (includes is_anonymous, target_user_ids) |
+| PATCH | /api/gather/:id/delivered | Bot (`X-Bot-Token`) | Mark ping as delivered |
 
 ### Shame
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /api/shame/:targetId | Session | Shame a user |
-| GET | /api/shame/leaderboard | Session | Get shame leaderboard |
+| POST | /api/shame/:targetId | Session | Shame a user (reason max 200 chars) |
+| GET | /api/shame/leaderboard | Session | Get leaderboard with recent reasons |
 
 ### Settings
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | /api/settings | Session | Get all settings |
-| PATCH | /api/settings | Session | Update settings (admin) |
-
-### Steam
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | /api/steam/lookup/:appId | Session | Lookup game info from Steam |
+| PATCH | /api/settings | Session (admin) | Update settings (first registered user only) |
 
 ### Health
 
@@ -261,16 +279,19 @@ Or on error:
 }
 ```
 
+Error messages are redacted in production (HTTPS) for unhandled errors.
+
 ---
 
 ## 5. Voting: Borda Count
 
-- Users drag games into their preferred order (rank 1 = top pick)
+- Users drag games into their preferred order via the **VoteRanking** component (rank 1 = top pick)
 - Users can toggle "approved" on/off per game (approval voting layer)
 - **Borda scoring**: With N ranked games, rank 1 gets N points, rank 2 gets N-1, etc.
 - Only approved games accumulate points
 - Games with fewer than 2 votes show "needs more votes"
 - Ranking endpoint returns games sorted by total Borda score descending
+- Bulk reorder via `PUT /api/games/reorder-votes` persists drag-and-drop changes
 
 ---
 
@@ -282,100 +303,124 @@ Or on error:
 2. **Home** (`/`) — main dashboard (requires auth)
 3. **NotFound** — 404 fallback
 
-### Dashboard Sections (Home page)
+### Responsive Layout
+
+**Desktop** (>768px):
 
 ```
 ┌──────────────────────────────────────────────┐
-│  Header: when2play logo + user avatar        │
+│  Header: logo + theme picker + user + logout │
 ├──────────┬───────────────────────────────────┤
-│          │  Schedule Summary                 │
-│ Sidebar  │  (ranked games + overlap windows) │
-│          ├───────────────────────────────────┤
-│ - Games  │  Main Content Area               │
-│ - Avail  │  (changes based on sidebar nav)   │
+│          │  Main Content Area               │
+│ Sidebar  │  (changes based on sidebar nav)   │
+│ - Sched  │                                   │
+│ - Games  │                                   │
+│ - Avail  │                                   │
 │ - Gather │                                   │
 │ - Shame  │                                   │
-│          │                                   │
 └──────────┴───────────────────────────────────┘
 ```
 
-### Theme
+**Mobile** (<=768px):
 
-- Dark background (`#0f0f0f`)
-- Accent color: electric blue (`#3b82f6`)
-- Card surfaces: `#1a1a2e`
-- Text: `#e0e0e0` / `#a0a0a0`
-- Gaming-inspired, clean and minimal
+```
+┌──────────────────────────────┐
+│ Header: logo + themes + ava  │
+├──────────────────────────────┤
+│                              │
+│  Main Content Area           │
+│  (full width, 16px padding)  │
+│                              │
+├──────────────────────────────┤
+│ BottomNav: 5 tabs with icons │
+└──────────────────────────────┘
+```
+
+- Header hides username on mobile, shows avatar only
+- Buttons have 44px min touch targets
+- Input font-size 16px (prevents iOS zoom)
+- `viewport-fit=cover` for safe-area support
+
+### Themes
+
+5 color themes, switchable from the header. Persisted in `localStorage('w2p-theme')`.
+
+| Theme | Background | Accent | Vibe |
+|-------|-----------|--------|------|
+| **Midnight** (default) | #0f0f0f / #1a1a2e | #3b82f6 (blue) | Dark blue |
+| **Cyberpunk** | #0d0221 / #1a0a3e | #ff2a6d (neon pink) | Neon on purple |
+| **Forest** | #0b1a0b / #132a13 | #2ecc71 (emerald) | Earthy greens |
+| **Sakura** | #0f0f1a / #1a1a2e | #e891b9 (soft pink) | Lavender pink |
+| **Amber** | #121212 / #1e1e1e | #f59e0b (gold) | Warm on charcoal |
+
+Themes override CSS variables via `[data-theme]` selectors. The default Midnight theme uses `:root` variables. `initTheme()` runs before first render to prevent flash.
+
+### Dual Timezone Display
+
+All time displays show both UTC and local time:
+- Schedule Summary header: "Times in UTC (your timezone: America/New_York)"
+- Availability header: same
+- Time slots: `"19:00 UTC / 2:00 PM"`
+- TimeGrid hour headers: `"19:00 UTC / 2:00 PM"`
+
+### Key Components
+
+- **TimeGrid**: Vertical single-column layout with hour group headers. Touch support via "Select mode" / "Scroll mode" toggle on mobile.
+- **ProposeGameForm**: Steam name search (300ms debounce, dropdown results), App ID lookup, or manual entry.
+- **VoteRanking**: Drag-to-reorder ranking list. Add games from unranked pool, remove from ranking. Auto-saves order.
+- **GatherBell**: Anonymous checkbox, Everyone/Specific user toggle, multi-select user picker with avatars.
+- **ShameWall**: Shows all users (not just those with shames). Per-target expand/collapse with inline reason input. Leaderboard shows latest 3 reasons.
 
 ---
 
-## 7. Local Development
+## 7. Security
 
-### Prerequisites
+### Middleware Stack
 
-- Node.js 20+
-- npm 10+
-- Wrangler CLI
+1. **Error handler** — catches unhandled errors, redacts messages in production
+2. **CORS** — dynamic origin (same-origin in production, localhost in dev)
+3. **Security headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
+4. **Foreign keys** — enables `PRAGMA foreign_keys = ON` per API request
+5. **Bot auth** (`requireBotAuth`) — validates `X-Bot-Token` against `BOT_API_KEY` secret
+6. **Session auth** (`requireAuth`) — validates `session_id` cookie
 
-### Setup
+### Input Validation
 
-```bash
-npm install
-npm run dev          # runs scripts/dev.sh
-```
+- Auth token creation: Zod schema (discord_id 1-30, discord_username 1-50, avatar_url optional max 500)
+- Game name: max 100 chars
+- Game image_url: max 500 chars
+- Gather message: max 500 chars
+- Gather target_user_ids: max 20 entries
+- Shame reason: max 200 chars
+- Steam search query: 2-100 chars
 
-`scripts/dev.sh` runs:
-- `wrangler dev --port 8787` (backend + D1 local)
-- `cd frontend && npx vite --port 5173` (frontend)
+### Access Control
 
-Vite proxies `/api/*` → `http://localhost:8787`.
-
-### Simulating Auth (No Bot)
-
-```bash
-bash scripts/simulate-bot.sh
-# → Creates auth token
-# → Prints: Open http://localhost:5173/auth/<token>
-```
-
-### Seeding Data
-
-```bash
-bash scripts/seed-data.sh
-# → Inserts test users, games, availability, votes
-```
-
-### Testing
-
-```bash
-npm test             # vitest with @cloudflare/vitest-pool-workers
-```
+- Settings PATCH: admin only (first registered user by `created_at`)
+- Game votes: `user_id` stripped from public response
+- Availability: `user_id` param scoped to authenticated user without date filter
 
 ---
 
 ## 8. Discord Bot Contract
 
-The Discord bot is **not implemented** in this repo. This section defines the API contract the bot must fulfill.
+The Discord bot is **not implemented** in this repo. See `docs/SETUP.md` for a complete working example.
 
-### Bot Responsibilities
+### Bot-Facing Endpoints
 
-1. **Auth**: When a user types `/play` in Discord, the bot:
-   - Calls `POST /api/auth/token` with `{ discord_id, discord_username, avatar_url }`
-   - DMs the user the auth URL: `https://<domain>/auth/<token>`
+All require `X-Bot-Token` header (matching `BOT_API_KEY` Cloudflare secret):
 
-2. **Gather**: Periodically polls `GET /api/gather/pending`:
-   - For each pending ping, sends a message to the Discord channel
-   - Calls `PATCH /api/gather/:id/delivered` to mark as delivered
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/auth/token` | Create auth link. Body: `{ discord_id, discord_username, avatar_url? }` |
+| `GET /api/gather/pending` | Poll for undelivered pings. Response includes `is_anonymous`, `target_user_ids` |
+| `PATCH /api/gather/:id/delivered` | Mark ping as delivered |
 
-### Bot Auth (Deferred)
+### Gather Ping Fields
 
-Bot-facing endpoints currently have no auth check. When the real bot is implemented, add an API key header (`X-Bot-Token`) validated against a Worker secret.
-
-### Endpoints Used by Bot
-
-- `POST /api/auth/token` — create auth link for a user
-- `GET /api/gather/pending` — poll for gather bell pings
-- `PATCH /api/gather/:id/delivered` — mark ping delivered
+When polling `GET /api/gather/pending`, each ping includes:
+- `is_anonymous` (boolean) — if true, hide the sender's identity
+- `target_user_ids` (string[] | null) — if non-null, only notify these specific users (internal UUIDs — bot must map to Discord IDs)
 
 ---
 
@@ -384,5 +429,10 @@ Bot-facing endpoints currently have no auth check. When the real bot is implemen
 - **Time granularity**: 15-min default, admin-adjustable globally via settings, user-adjustable individually
 - **Game pool lifespan**: 7 days; expired games auto-archived but remain visible with `?include_archived=true`
 - **Session cleanup**: Lazy — expired tokens/sessions deleted on access. No cron trigger for MVP.
-- **Cookie config**: `session_id=...; HttpOnly; SameSite=Lax; Path=/`. `Secure` flag only in production.
-- **CORS**: Dev mode allows `localhost:5173` origin. Production serves SPA from same origin.
+- **Cookie config**: `session_id=...; HttpOnly; SameSite=Strict; Path=/`. `Secure` flag only in production.
+- **CORS**: Production = same-origin. Dev = `localhost:5173` + `localhost:8787`.
+- **Bot auth**: `X-Bot-Token` header validated against `BOT_API_KEY` secret. Skipped when secret is unset (local dev).
+- **Error redaction**: Production returns generic error messages. Dev returns full error details.
+- **Theme persistence**: `localStorage('w2p-theme')` with `initTheme()` before render to prevent flash.
+- **Responsive breakpoint**: 768px. Below = BottomNav + mobile padding. Above = Sidebar + desktop layout.
+- **Steam search**: Fetches `store.steampowered.com/search/suggest` HTML, parses with regex for app IDs, names, and images.
