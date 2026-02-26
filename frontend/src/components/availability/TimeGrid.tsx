@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'preact/hooks';
+import { useState, useMemo, useRef, useCallback } from 'preact/hooks';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { utcToLocal } from '../../lib/time';
 
 interface TimeGridProps {
 	date: string;
@@ -31,6 +33,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 	);
 	const [isDragging, setIsDragging] = useState(false);
 	const [dragValue, setDragValue] = useState(true);
+	const [touchMode, setTouchMode] = useState<'select' | 'scroll'>('scroll');
+	const gridRef = useRef<HTMLDivElement>(null);
+	const isMobile = useMediaQuery(768);
 
 	const otherUsers = useMemo(() => {
 		const map = new Map<string, Set<string>>();
@@ -42,7 +47,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 		return map;
 	}, [allSlots, userId]);
 
-	const toggleSlot = (time: string, forceValue?: boolean) => {
+	const toggleSlot = useCallback((time: string, forceValue?: boolean) => {
 		setSelected((prev) => {
 			const next = new Set(prev);
 			const shouldAdd = forceValue ?? !next.has(time);
@@ -50,85 +55,177 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 			else next.delete(time);
 			return next;
 		});
-	};
+	}, []);
 
 	const handleSave = () => {
 		const slots = allTimeSlots.filter((s) => selected.has(s.start_time));
 		onSave(slots);
 	};
 
-	// Group by hour for display (show 6am-2am range)
+	const handleTouchStart = (time: string, isSelected: boolean) => {
+		if (touchMode !== 'select') return;
+		setIsDragging(true);
+		setDragValue(!isSelected);
+		toggleSlot(time);
+	};
+
+	const handleTouchMove = (e: TouchEvent) => {
+		if (!isDragging || touchMode !== 'select') return;
+		e.preventDefault();
+		const touch = e.touches[0];
+		const el = document.elementFromPoint(touch.clientX, touch.clientY);
+		const time = el?.getAttribute('data-time');
+		if (time) toggleSlot(time, dragValue);
+	};
+
+	const handleTouchEnd = () => {
+		setIsDragging(false);
+	};
+
+	// Show 6am-2am range
 	const displaySlots = allTimeSlots.filter((s) => {
 		const hour = parseInt(s.start_time.split(':')[0]);
 		return hour >= 6 || hour < 2;
 	});
 
+	// Group by hour
+	const hourGroups = useMemo(() => {
+		const groups: Array<{ hour: string; slots: typeof displaySlots }> = [];
+		let currentHour = '';
+		for (const slot of displaySlots) {
+			const hour = slot.start_time.split(':')[0];
+			if (hour !== currentHour) {
+				currentHour = hour;
+				groups.push({ hour: `${hour}:00`, slots: [] });
+			}
+			groups[groups.length - 1].slots.push(slot);
+		}
+		return groups;
+	}, [displaySlots]);
+
 	return (
 		<div>
-			<div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+			<div style={{
+				display: 'flex',
+				justifyContent: 'space-between',
+				alignItems: 'center',
+				marginBottom: '12px',
+				position: 'sticky',
+				top: 0,
+				background: 'var(--bg-primary)',
+				padding: '8px 0',
+				zIndex: 10,
+			}}>
+				<div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+					{isMobile && (
+						<button
+							class={`btn ${touchMode === 'select' ? 'btn-primary' : 'btn-secondary'}`}
+							style={{ fontSize: '12px', padding: '4px 10px' }}
+							onClick={() => setTouchMode(touchMode === 'select' ? 'scroll' : 'select')}
+						>
+							{touchMode === 'select' ? 'Select mode' : 'Scroll mode'}
+						</button>
+					)}
+				</div>
 				<button class="btn btn-primary" onClick={handleSave}>
 					Save
 				</button>
 			</div>
 
-			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '2px' }}>
-				{displaySlots.map((slot) => {
-					const isSelected = selected.has(slot.start_time);
-					const others = otherUsers.get(slot.start_time);
-					const overlapCount = others ? others.size : 0;
+			<div
+				ref={gridRef}
+				onMouseUp={() => setIsDragging(false)}
+				onMouseLeave={() => setIsDragging(false)}
+				onTouchMove={handleTouchMove}
+				onTouchEnd={handleTouchEnd}
+				style={{
+					display: 'flex',
+					flexDirection: 'column',
+					gap: '1px',
+					touchAction: touchMode === 'select' ? 'none' : 'auto',
+				}}
+			>
+				{hourGroups.map((group) => (
+					<div key={group.hour}>
+						<div style={{
+							padding: '8px 0 4px',
+							fontSize: '13px',
+							fontWeight: 700,
+							color: 'var(--text-secondary)',
+							borderBottom: '1px solid var(--border)',
+							marginBottom: '2px',
+						}}>
+							{group.hour} UTC / {utcToLocal(group.hour, date)}
+						</div>
+						{group.slots.map((slot) => {
+							const isSelected = selected.has(slot.start_time);
+							const others = otherUsers.get(slot.start_time);
+							const overlapCount = others ? others.size : 0;
 
-					return (
-						<div
-							key={slot.start_time}
-							onMouseDown={() => {
-								setIsDragging(true);
-								setDragValue(!isSelected);
-								toggleSlot(slot.start_time);
-							}}
-							onMouseEnter={() => {
-								if (isDragging) toggleSlot(slot.start_time, dragValue);
-							}}
-							onMouseUp={() => setIsDragging(false)}
-							style={{
-								padding: '4px 8px',
-								fontSize: '11px',
-								textAlign: 'center',
-								cursor: 'pointer',
-								userSelect: 'none',
-								borderRadius: '4px',
-								background: isSelected
-									? overlapCount > 0
-										? 'var(--success)'
-										: 'var(--accent)'
-									: overlapCount > 0
-										? 'rgba(34, 197, 94, 0.2)'
-										: 'var(--bg-tertiary)',
-								color: isSelected ? '#fff' : 'var(--text-secondary)',
-								border: `1px solid ${isSelected ? 'transparent' : 'var(--border)'}`,
-								position: 'relative',
-							}}
-						>
-							{slot.start_time}
-							{overlapCount > 0 && (
-								<span
+							return (
+								<div
+									key={slot.start_time}
+									data-time={slot.start_time}
+									onMouseDown={() => {
+										setIsDragging(true);
+										setDragValue(!isSelected);
+										toggleSlot(slot.start_time);
+									}}
+									onMouseEnter={() => {
+										if (isDragging) toggleSlot(slot.start_time, dragValue);
+									}}
+									onTouchStart={() => handleTouchStart(slot.start_time, isSelected)}
 									style={{
-										position: 'absolute',
-										top: '2px',
-										right: '4px',
-										fontSize: '9px',
-										color: isSelected ? '#fff' : 'var(--success)',
+										display: 'flex',
+										alignItems: 'center',
+										gap: '12px',
+										padding: '6px 12px',
+										cursor: 'pointer',
+										userSelect: 'none',
+										borderRadius: '4px',
+										marginBottom: '1px',
+										background: isSelected
+											? overlapCount > 0
+												? 'var(--success)'
+												: 'var(--accent)'
+											: overlapCount > 0
+												? 'rgba(34, 197, 94, 0.15)'
+												: 'var(--bg-tertiary)',
+										color: isSelected ? '#fff' : 'var(--text-secondary)',
 									}}
 								>
-									+{overlapCount}
-								</span>
-							)}
-						</div>
-					);
-				})}
+									<span style={{ minWidth: '120px', fontSize: '13px' }}>
+										{slot.start_time} / {utcToLocal(slot.start_time, date)}
+									</span>
+									<div style={{
+										flex: 1,
+										height: '8px',
+										borderRadius: '4px',
+										background: isSelected
+											? 'rgba(255,255,255,0.3)'
+											: 'var(--border)',
+									}} />
+									{overlapCount > 0 && (
+										<span style={{
+											fontSize: '12px',
+											fontWeight: 600,
+											color: isSelected ? '#fff' : 'var(--success)',
+										}}>
+											+{overlapCount}
+										</span>
+									)}
+								</div>
+							);
+						})}
+					</div>
+				))}
 			</div>
 
 			<p class="text-muted" style={{ fontSize: '12px', marginTop: '8px' }}>
-				Click or drag to select time slots. Green = overlap with others. Numbers show how many others are available.
+				{isMobile
+					? 'Toggle "Select mode" to tap/drag time slots. Green = overlap with others.'
+					: 'Click or drag to select time slots. Green = overlap with others.'
+				}
 			</p>
 		</div>
 	);
