@@ -3,10 +3,13 @@
  *
  * Routes:
  *   POST /interactions  — Discord interaction webhook (slash commands, buttons, modals)
- *   GET  /register      — Register/update Discord slash commands (one-time setup)
+ *   GET /register       — Manual trigger to register Discord commands
  *
  * Scheduled export:
  *   Cron every 15 min   — auto-close expired polls
+ *
+ * Command registration:
+ *   Auto-registers once per isolate, or manually via GET /register
  */
 
 import type { Env } from './env';
@@ -16,37 +19,33 @@ import { closeExpiredPolls } from './game/poll';
 import { DiscordAPI } from './discord/api';
 import { COMMANDS } from './discord/command-definitions';
 
+let commandsRegistered = false;
+
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
 
-		// ── GET /register ────────────────────────────────────────────────────────
-		// Registers (or re-registers) the bot's slash commands with Discord.
-		// Protected by the bot token — only you know it.
-		// Visit once after every deploy where commands change:
-		//   curl -H "Authorization: Bearer <BOT_TOKEN>" https://your-worker.workers.dev/register
+		// Optional manual trigger for command registration
 		if (request.method === 'GET' && url.pathname === '/register') {
-			if (request.headers.get('Authorization') !== `Bearer ${env.DISCORD_BOT_TOKEN}`) {
-				return new Response('Unauthorized', { status: 401 });
+			const api = new DiscordAPI(env.DISCORD_BOT_TOKEN, env.DISCORD_APP_ID);
+			try {
+				const registered = await api.registerCommands(COMMANDS);
+				return new Response(`Successfully registered ${registered.length} commands.`, { status: 200 });
+			} catch (e: any) {
+				return new Response(`Failed to register commands: ${e.message}`, { status: 500 });
 			}
-
-			const res = await fetch(`https://discord.com/api/v10/applications/${env.DISCORD_APP_ID}/commands`, {
-				method: 'PUT',
-				headers: {
-					Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify(COMMANDS),
-			});
-
-			const data = await res.json() as any[];
-			if (!res.ok) {
-				return Response.json({ error: data }, { status: 500 });
-			}
-			return Response.json({ registered: data.map((c: any) => `/${c.name}`) });
 		}
 
-		// ── POST /interactions ────────────────────────────────────────────────────
+		// Auto-register commands once per isolate
+		if (!commandsRegistered) {
+			const api = new DiscordAPI(env.DISCORD_BOT_TOKEN, env.DISCORD_APP_ID);
+			ctx.waitUntil(
+				api.registerCommands(COMMANDS)
+					.then(() => { commandsRegistered = true; })
+					.catch(e => console.error('Failed to register commands', e))
+			);
+		}
+
 		if (request.method !== 'POST' || url.pathname !== '/interactions') {
 			return new Response('Not Found', { status: 404 });
 		}
@@ -60,7 +59,6 @@ export default {
 		return handleInteraction(interaction, env, ctx);
 	},
 
-	// ── Cron (every 15 min) ──────────────────────────────────────────────────────
 	async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
 		const api = new DiscordAPI(env.DISCORD_BOT_TOKEN, env.DISCORD_APP_ID);
 		await closeExpiredPolls(env.DB, api);
