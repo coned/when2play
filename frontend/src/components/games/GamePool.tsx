@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import { GameCard } from './GameCard';
 import { ProposeGameForm } from './ProposeGameForm';
 import { GameRanking } from './GameRanking';
+import { VoteRanking } from './VoteRanking';
 
 interface GamePoolProps {
 	userId: string;
@@ -12,6 +13,7 @@ export function GamePool({ userId }: GamePoolProps) {
 	const [games, setGames] = useState<any[]>([]);
 	const [showPropose, setShowPropose] = useState(false);
 	const [loading, setLoading] = useState(true);
+	const [rankingKey, setRankingKey] = useState(0);
 
 	const fetchGames = useCallback(async () => {
 		setLoading(true);
@@ -56,7 +58,11 @@ export function GamePool({ userId }: GamePoolProps) {
 						))}
 					</div>
 
-					<GameRanking />
+					<div style={{ marginBottom: '32px' }}>
+						<VoteRanking games={games} onVoteChange={() => setRankingKey((k) => k + 1)} />
+					</div>
+
+					<GameRanking key={rankingKey} />
 				</>
 			)}
 		</div>
