@@ -9,6 +9,7 @@ type AuthEnv = {
 	Variables: {
 		user: UserRow;
 		sessionId: string;
+		isAdmin: boolean;
 	};
 };
 
@@ -30,5 +31,6 @@ export const requireAuth = createMiddleware<AuthEnv>(async (c, next) => {
 
 	c.set('user', user);
 	c.set('sessionId', sessionId);
+	c.set('isAdmin', Boolean(session.is_admin));
 	await next();
 });
