@@ -70,10 +70,13 @@ X-Bot-Token: <BOT_API_KEY>
     {
       "id": "ping-uuid",
       "user_id": "user-uuid",
+      "sender_discord_id": "123456789012345678",
+      "sender_username": "GamerDave",
       "message": "CS2 anyone?",
       "delivered": false,
       "is_anonymous": false,
       "target_user_ids": null,
+      "target_discord_ids": null,
       "created_at": "2026-02-26T19:00:00.000Z"
     }
   ]
@@ -83,7 +86,7 @@ X-Bot-Token: <BOT_API_KEY>
 For each pending ping, the bot should:
 
 1. **Check `is_anonymous`**: If `true`, hide the sender's identity (e.g., "Someone is ready to play!")
-2. **Check `target_user_ids`**: If non-null, only notify those specific users. These are internal UUIDs — the bot must map them to Discord user IDs (see [User ID Mapping](#user-id-mapping))
+2. **Check `target_discord_ids`**: If non-null, only mention those specific Discord users. These are already resolved to numeric Discord IDs — use `<@ID>` syntax directly.
 3. **Send a message** to the gaming channel
 4. **Mark as delivered** (see below)
 
@@ -99,12 +102,14 @@ X-Bot-Token: <BOT_API_KEY>
 { "ok": true, "data": null }
 ```
 
-## User ID Mapping
+## Discord ID Resolution
 
-The API uses internal UUIDs for `user_id` and `target_user_ids`. The bot needs to map these back to Discord user IDs. Options:
+The gather pending response already includes resolved Discord IDs — no bot-side mapping is needed:
 
-- **Cache on token creation**: When `POST /api/auth/token` is called, store the mapping `internal_user_id ↔ discord_id` locally. The response doesn't return the internal user ID directly, but you can track the discord_id you sent.
-- **Future enhancement**: Extend the gather pending response to include `discord_id` alongside `user_id`.
+- **`sender_discord_id`**: The sender's numeric Discord ID. Use `<@sender_discord_id>` in Discord messages to mention them.
+- **`target_discord_ids`**: Array of numeric Discord IDs (or `null` for broadcast). Use `<@id>` to mention each.
+
+The internal `user_id` (UUID) is included for reference but is not needed for Discord interactions.
 
 ## Rate Limits
 
@@ -117,11 +122,14 @@ The API uses internal UUIDs for `user_id` and `target_user_ids`. The bot needs t
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string | Ping UUID |
-| `user_id` | string | Internal UUID of the sender |
+| `user_id` | string | Internal UUID of the sender (for reference) |
+| `sender_discord_id` | string | Numeric Discord ID of the sender — use `<@id>` to mention |
+| `sender_username` | string | Discord username of the sender |
 | `message` | string \| null | Optional message (max 500 chars) |
 | `delivered` | boolean | Whether the bot has picked this up |
 | `is_anonymous` | boolean | If true, hide sender identity |
-| `target_user_ids` | string[] \| null | If non-null, only notify these users (internal UUIDs, max 20) |
+| `target_user_ids` | string[] \| null | Internal UUIDs of targets (for reference) |
+| `target_discord_ids` | string[] \| null | Numeric Discord IDs of targets — use `<@id>` to mention each |
 | `created_at` | string | ISO 8601 timestamp |
 
 ## Example Bot Implementation
@@ -157,9 +165,13 @@ async def poll_gather():
         pings = response.json()["data"]
         for ping in pings:
             channel = bot.get_channel(GAMING_CHANNEL_ID)
-            sender = "Someone" if ping["is_anonymous"] else f"A player"
+            sender = "Someone" if ping["is_anonymous"] else f"<@{ping['sender_discord_id']}>"
             msg = ping["message"] or "Ready to play!"
-            await channel.send(f"🔔 {sender}: {msg}")
+            text = f"🔔 **Gather bell!** {sender}: {msg}"
+            if ping.get("target_discord_ids"):
+                mentions = " ".join(f"<@{uid}>" for uid in ping["target_discord_ids"])
+                text += f" → {mentions}"
+            await channel.send(text)
             requests.patch(f"{API_URL}/api/gather/{ping['id']}/delivered", headers=HEADERS)
         await asyncio.sleep(15)
 ```

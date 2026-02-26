@@ -327,15 +327,15 @@ async function pollGatherPings() {
         if (!channel?.isTextBased()) return;
 
         for (const ping of json.data) {
-            const sender = ping.is_anonymous ? 'Someone' : `<@${ping.user_id}>`;
+            // sender_discord_id is the numeric Discord ID (e.g. "123456789012345678")
+            const sender = ping.is_anonymous ? 'Someone' : `<@${ping.sender_discord_id}>`;
             const msg = ping.message || 'Ready to play!';
             let text = `🔔 **Gather bell!** ${sender}: ${msg}`;
 
-            // If targeted, mention specific users
-            if (ping.target_user_ids && ping.target_user_ids.length > 0) {
-                // target_user_ids are internal UUIDs — bot would need to map these
-                // to Discord IDs. For now, just note it's targeted.
-                text += ` (targeted ping)`;
+            // target_discord_ids are numeric Discord IDs resolved server-side
+            if (ping.target_discord_ids && ping.target_discord_ids.length > 0) {
+                const mentions = ping.target_discord_ids.map((id) => `<@${id}>`).join(' ');
+                text += ` → ${mentions}`;
             }
 
             await channel.send(text);
