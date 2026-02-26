@@ -3,6 +3,10 @@ import { api } from '../../api/client';
 
 export function GatherBell() {
 	const [message, setMessage] = useState('');
+	const [isAnonymous, setIsAnonymous] = useState(false);
+	const [sendTo, setSendTo] = useState<'everyone' | 'specific'>('everyone');
+	const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+	const [users, setUsers] = useState<Array<{ id: string; discord_username: string; avatar_url: string | null }>>([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
 	const [success, setSuccess] = useState(false);
@@ -10,21 +14,43 @@ export function GatherBell() {
 
 	useEffect(() => {
 		(async () => {
-			const result = await api.getPendingGather();
-			if (result.ok) setPending(result.data);
+			const [pendingResult, usersResult] = await Promise.all([
+				api.getPendingGather(),
+				api.getUsers(),
+			]);
+			if (pendingResult.ok) setPending(pendingResult.data);
+			if (usersResult.ok) setUsers(usersResult.data);
 		})();
 	}, []);
+
+	const toggleUser = (id: string) => {
+		setSelectedUserIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	};
 
 	const handleRing = async () => {
 		setLoading(true);
 		setError('');
 		setSuccess(false);
 
-		const result = await api.ringGather(message || undefined);
+		const result = await api.ringGather({
+			message: message || undefined,
+			is_anonymous: isAnonymous || undefined,
+			target_user_ids: sendTo === 'specific' && selectedUserIds.size > 0
+				? Array.from(selectedUserIds)
+				: undefined,
+		});
+
 		if (result.ok) {
 			setSuccess(true);
 			setMessage('');
-			// Refresh pending
+			setIsAnonymous(false);
+			setSendTo('everyone');
+			setSelectedUserIds(new Set());
 			const pendingResult = await api.getPendingGather();
 			if (pendingResult.ok) setPending(pendingResult.data);
 		} else {
@@ -39,7 +65,7 @@ export function GatherBell() {
 
 			<div class="card" style={{ maxWidth: '480px', width: '100%' }}>
 				<p style={{ marginBottom: '12px', color: 'var(--text-secondary)' }}>
-					Ring the gather bell to notify everyone you're ready to play!
+					Ring the gather bell to notify others you're ready to play!
 				</p>
 
 				<input
@@ -49,6 +75,53 @@ export function GatherBell() {
 					onInput={(e) => setMessage((e.target as HTMLInputElement).value)}
 					style={{ width: '100%', marginBottom: '12px' }}
 				/>
+
+				<label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', cursor: 'pointer', fontSize: '14px' }}>
+					<input
+						type="checkbox"
+						checked={isAnonymous}
+						onChange={(e) => setIsAnonymous((e.target as HTMLInputElement).checked)}
+						style={{ width: '16px', height: '16px' }}
+					/>
+					Ring anonymously
+				</label>
+
+				<div style={{ marginBottom: '12px' }}>
+					<div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+						<button
+							class={`btn ${sendTo === 'everyone' ? 'btn-primary' : 'btn-secondary'}`}
+							style={{ padding: '4px 12px', fontSize: '12px' }}
+							onClick={() => setSendTo('everyone')}
+						>
+							Everyone
+						</button>
+						<button
+							class={`btn ${sendTo === 'specific' ? 'btn-primary' : 'btn-secondary'}`}
+							style={{ padding: '4px 12px', fontSize: '12px' }}
+							onClick={() => setSendTo('specific')}
+						>
+							Specific users
+						</button>
+					</div>
+
+					{sendTo === 'specific' && (
+						<div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+							{users.map((u) => (
+								<button
+									key={u.id}
+									class={`btn ${selectedUserIds.has(u.id) ? 'btn-primary' : 'btn-secondary'}`}
+									style={{ padding: '4px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+									onClick={() => toggleUser(u.id)}
+								>
+									{u.avatar_url && (
+										<img src={u.avatar_url} alt="" style={{ width: '18px', height: '18px', borderRadius: '50%' }} />
+									)}
+									{u.discord_username}
+								</button>
+							))}
+						</div>
+					)}
+				</div>
 
 				<button class="btn btn-primary" onClick={handleRing} disabled={loading}>
 					{loading ? 'Ringing...' : 'Ring the Bell'}
@@ -67,6 +140,9 @@ export function GatherBell() {
 								<span style={{ color: 'var(--warning)', fontSize: '18px' }}>*</span>
 								<div>
 									<span style={{ fontSize: '13px' }}>{ping.message || 'Ready to play!'}</span>
+									{ping.is_anonymous && (
+										<span class="badge badge-accent" style={{ marginLeft: '6px', fontSize: '10px' }}>anon</span>
+									)}
 									<span class="text-muted" style={{ fontSize: '11px', marginLeft: '8px' }}>
 										{new Date(ping.created_at).toLocaleTimeString()}
 									</span>
