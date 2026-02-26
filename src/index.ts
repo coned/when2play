@@ -8,6 +8,10 @@ import users from './routes/users';
 import games from './routes/games';
 import votes from './routes/votes';
 import steam from './routes/steam';
+import availability from './routes/availability';
+import gather from './routes/gather';
+import shame from './routes/shame';
+import settings from './routes/settings';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -25,6 +29,10 @@ api.route('/users', users);
 api.route('/games', games);
 api.route('/games', votes);
 api.route('/steam', steam);
+api.route('/availability', availability);
+api.route('/gather', gather);
+api.route('/shame', shame);
+api.route('/settings', settings);
 
 app.route('/api', api);
 
