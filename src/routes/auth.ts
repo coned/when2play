@@ -14,6 +14,7 @@ type AuthEnv = {
 	Variables: {
 		user: UserRow;
 		sessionId: string;
+		isAdmin: boolean;
 	};
 };
 
@@ -45,6 +46,26 @@ auth.post('/token', requireBotAuth, async (c) => {
 	return c.json({ ok: true, data: { token, url: authUrl } }, 201);
 });
 
+// POST /api/auth/admin-token — Bot creates a one-time admin auth token for a Discord user with ADMINISTRATOR permission
+auth.post('/admin-token', requireBotAuth, async (c) => {
+	const raw = await c.req.json().catch(() => null);
+	const parsed = createTokenSchema.safeParse(raw);
+
+	if (!parsed.success) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Invalid request body' } }, 400);
+	}
+
+	const { discord_id, discord_username, avatar_url } = parsed.data;
+	const user = await upsertUser(c.env.DB, discord_id, discord_username, avatar_url);
+	const token = generateToken();
+	await createAuthToken(c.env.DB, user.id, token, true);
+
+	const url = new URL(c.req.url);
+	const authUrl = `${url.protocol}//${url.host}/auth/${token}`;
+
+	return c.json({ ok: true, data: { token, url: authUrl } }, 201);
+});
+
 // GET /api/auth/callback/:token — Exchange one-time token for session cookie
 auth.get('/callback/:token', async (c) => {
 	const token = c.req.param('token');
@@ -54,17 +75,19 @@ auth.get('/callback/:token', async (c) => {
 		return c.json({ ok: false, error: { code: 'INVALID_TOKEN', message: 'Token is invalid, expired, or already used' } }, 401);
 	}
 
+	const isAdmin = Boolean(authToken.is_admin);
 	const sessionId = generateSessionId();
-	await createSession(c.env.DB, authToken.user_id, sessionId);
+	await createSession(c.env.DB, authToken.user_id, sessionId, isAdmin);
 
 	const isProduction = new URL(c.req.url).protocol === 'https:';
-	setCookie(c, 'session_id', sessionId, {
+	const cookieOptions = {
 		httpOnly: true,
-		sameSite: 'Strict',
+		sameSite: 'Strict' as const,
 		path: '/',
 		secure: isProduction,
-		maxAge: 7 * 24 * 60 * 60,
-	});
+		...(isAdmin ? {} : { maxAge: 7 * 24 * 60 * 60 }),
+	};
+	setCookie(c, 'session_id', sessionId, cookieOptions);
 
 	return c.redirect('/');
 });
