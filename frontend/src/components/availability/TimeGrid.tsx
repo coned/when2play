@@ -7,11 +7,11 @@ interface TimeGridProps {
 	mySlots: any[];
 	allSlots: any[];
 	userId: string;
-	onSave: (slots: Array<{ start_time: string; end_time: string }>) => void;
+	onSave: (slots: Array<{ start_time: string; end_time: string }>) => Promise<void>;
 }
 
 const GRANULARITY = 15;
-const SLOT_HEIGHT = 34; // px per row
+const SLOT_HEIGHT = 34;
 
 function generateSlots() {
 	const slots: Array<{ start_time: string; end_time: string }> = [];
@@ -28,7 +28,7 @@ function generateSlots() {
 	return slots;
 }
 
-const ALL_SLOTS = generateSlots(); // 96 slots total
+const ALL_SLOTS = generateSlots();
 
 function getNextDate(dateStr: string): string {
 	const d = new Date(dateStr + 'T12:00:00Z');
@@ -36,14 +36,20 @@ function getNextDate(dateStr: string): string {
 	return d.toISOString().split('T')[0];
 }
 
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridProps) {
 	const [selected, setSelected] = useState<Set<string>>(new Set(mySlots.map((s) => s.start_time)));
 	const [isDragging, setIsDragging] = useState(false);
 	const [dragValue, setDragValue] = useState(true);
 	const [touchMode, setTouchMode] = useState<'select' | 'scroll'>('scroll');
+	const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [containerHeight, setContainerHeight] = useState(400);
 	const isMobile = useMediaQuery(768);
+	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const isFirstRender = useRef(true);
 
 	// Measure available height after mount
 	useEffect(() => {
@@ -54,6 +60,33 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 			setContainerHeight(available);
 		}
 	}, [isMobile]);
+
+	// Debounced auto-save when selected changes
+	useEffect(() => {
+		if (isFirstRender.current) {
+			isFirstRender.current = false;
+			return;
+		}
+		setSaveStatus('saving');
+		if (saveTimer.current) clearTimeout(saveTimer.current);
+		if (clearTimer.current) clearTimeout(clearTimer.current);
+
+		saveTimer.current = setTimeout(async () => {
+			try {
+				const slots = ALL_SLOTS.filter((s) => selected.has(s.start_time));
+				await onSave(slots);
+				setSaveStatus('saved');
+				clearTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
+			} catch {
+				setSaveStatus('error');
+				clearTimer.current = setTimeout(() => setSaveStatus('idle'), 3000);
+			}
+		}, 600);
+
+		return () => {
+			if (saveTimer.current) clearTimeout(saveTimer.current);
+		};
+	}, [selected]);
 
 	// Find start slot index = current UTC time, rounded down to slot boundary
 	const startIndex = useMemo(() => {
@@ -72,7 +105,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 	const slotsPerColumn = Math.max(4, Math.floor((containerHeight - 28) / SLOT_HEIGHT));
 	const totalSlots = numColumns * slotsPerColumn;
 
-	// Build visible slots, wrapping around 24h boundary into the next date
+	// Build visible slots, wrapping around 24h boundary
 	const visibleSlots = useMemo(() => {
 		const total = ALL_SLOTS.length;
 		return Array.from({ length: totalSlots }, (_, i) => {
@@ -83,13 +116,11 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 		});
 	}, [startIndex, totalSlots, date, nextDate]);
 
-	// Split into columns
 	const columns = useMemo(
 		() => Array.from({ length: numColumns }, (_, i) => visibleSlots.slice(i * slotsPerColumn, (i + 1) * slotsPerColumn)),
 		[visibleSlots, numColumns, slotsPerColumn],
 	);
 
-	// Other users' overlap counts per slot
 	const otherUsers = useMemo(() => {
 		const map = new Map<string, Set<string>>();
 		for (const slot of allSlots) {
@@ -110,11 +141,6 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 		});
 	}, []);
 
-	const handleSave = () => {
-		const slots = ALL_SLOTS.filter((s) => selected.has(s.start_time));
-		onSave(slots);
-	};
-
 	const handleTouchMove = (e: TouchEvent) => {
 		if (!isDragging || touchMode !== 'select') return;
 		e.preventDefault();
@@ -130,6 +156,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 		const last = formatLocalTime(col[col.length - 1].start_time, col[col.length - 1].slotDate);
 		return `${first} – ${last}`;
 	};
+
+	const statusText = saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? 'Save failed' : '';
+	const statusColor = saveStatus === 'saved' ? 'var(--success)' : saveStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)';
 
 	return (
 		<div>
@@ -149,9 +178,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 						{isMobile ? 'Tap to toggle · drag to range' : 'Click or drag to select'}
 					</span>
 				</div>
-				<button class="btn btn-primary" style={{ padding: '4px 16px' }} onClick={handleSave}>
-					Save
-				</button>
+				<span style={{ fontSize: '12px', color: statusColor, minWidth: '70px', textAlign: 'right' }}>
+					{statusText}
+				</span>
 			</div>
 
 			{/* Time columns */}
@@ -182,7 +211,6 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 							overflow: 'hidden',
 						}}
 					>
-						{/* Column header: time range */}
 						<div
 							style={{
 								fontSize: '10px',
@@ -277,7 +305,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 				))}
 			</div>
 			<p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-				Green = overlap with others
+				Changes save automatically · Green = overlap with others
 			</p>
 		</div>
 	);
