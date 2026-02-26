@@ -55,7 +55,7 @@ votes.delete('/:id/vote', async (c) => {
 votes.get('/:id/votes', async (c) => {
 	const gameId = c.req.param('id');
 	const gameVotes = await getVotesForGame(c.env.DB, gameId);
-	const data = gameVotes.map((v) => ({ ...v, is_approved: Boolean(v.is_approved) }));
+	const data = gameVotes.map(({ user_id, ...v }) => ({ ...v, is_approved: Boolean(v.is_approved) }));
 	return c.json({ ok: true, data });
 });
 
