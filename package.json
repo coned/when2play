@@ -2,7 +2,10 @@
 	"name": "when2play",
 	"version": "0.1.0",
 	"private": true,
-	"workspaces": ["shared", "frontend"],
+	"workspaces": [
+		"shared",
+		"frontend"
+	],
 	"scripts": {
 		"deploy": "wrangler deploy",
 		"dev": "bash scripts/dev.sh",
@@ -12,7 +15,9 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.12.4",
+		"@types/better-sqlite3": "^7.6.13",
 		"@types/node": "^25.3.0",
+		"better-sqlite3": "^12.6.2",
 		"typescript": "^5.5.2",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.67.0"
