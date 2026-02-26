@@ -1,5 +1,6 @@
 import type { User } from '@when2play/shared';
 import { useTheme, THEMES } from '../../hooks/useTheme';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 
 interface HeaderProps {
 	user: User | null;
@@ -8,6 +9,7 @@ interface HeaderProps {
 
 export function Header({ user, onLogout }: HeaderProps) {
 	const { theme, setTheme } = useTheme();
+	const isMobile = useMediaQuery(768);
 
 	return (
 		<header
@@ -18,14 +20,14 @@ export function Header({ user, onLogout }: HeaderProps) {
 				display: 'flex',
 				alignItems: 'center',
 				justifyContent: 'space-between',
-				padding: '0 20px',
+				padding: isMobile ? '0 12px' : '0 20px',
 			}}
 		>
 			<div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
 				<span style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent)' }}>when2play</span>
 			</div>
 
-			<div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+			<div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px' }}>
 				<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
 					{THEMES.map((t) => (
 						<button
@@ -56,9 +58,11 @@ export function Header({ user, onLogout }: HeaderProps) {
 								style={{ width: '32px', height: '32px', borderRadius: '50%' }}
 							/>
 						)}
-						<span class="header-username" style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-							{user.discord_username}
-						</span>
+						{!isMobile && (
+							<span style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+								{user.discord_username}
+							</span>
+						)}
 						<button class="btn btn-secondary" style={{ padding: '4px 12px', fontSize: '12px' }} onClick={onLogout}>
 							Logout
 						</button>
