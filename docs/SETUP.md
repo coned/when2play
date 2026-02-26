@@ -382,7 +382,62 @@ Bot-facing endpoints require `X-Bot-Token` header matching the `BOT_API_KEY` Clo
 
 ### Admin Privileges
 
-The first registered user (earliest `created_at`) is the admin. Only the admin can modify global settings via `PATCH /api/settings`.
+Admin access is Discord-gated. There is no default admin — a Discord server member with the `ADMINISTRATOR` permission must run the `/when2play-admin` bot command to receive a one-time admin login link.
+
+**Admin session properties:**
+- Browser-session cookie only (no `Max-Age`) — expires when the browser closes
+- DB session expires after 1 hour regardless
+- `GET /api/users/me` returns `is_admin: true` while active
+- `PATCH /api/settings` is allowed
+
+**Example `/when2play-admin` discord.js command:**
+
+```js
+// Register the command (add to your commands array)
+new SlashCommandBuilder()
+    .setName('when2play-admin')
+    .setDescription('Get a one-time admin link for when2play (requires ADMINISTRATOR)'),
+
+// Handle the interaction
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'when2play-admin') return;
+    await interaction.deferReply({ flags: 64 }); // ephemeral
+
+    // Gate: require ADMINISTRATOR permission
+    if (!interaction.memberPermissions?.has('Administrator')) {
+        await interaction.editReply('You need the ADMINISTRATOR permission to use this command.');
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/api/auth/admin-token`, {
+            method: 'POST',
+            headers: botHeaders,
+            body: JSON.stringify({
+                discord_id: interaction.user.id,
+                discord_username: interaction.user.displayName,
+                avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
+            }),
+        });
+        const json = await res.json();
+
+        if (!json.ok) {
+            await interaction.editReply(`Failed: ${json.error.message}`);
+            return;
+        }
+
+        try {
+            await interaction.user.send(`Admin link for **when2play** (expires in 10 min, session lasts 1h):\n${json.data.url}`);
+            await interaction.editReply('Check your DMs for the admin link!');
+        } catch {
+            await interaction.editReply(`Admin link (expires in 10 min):\n${json.data.url}`);
+        }
+    } catch (err) {
+        console.error('Error handling /when2play-admin:', err);
+        await interaction.editReply('Something went wrong.');
+    }
+});
+```
 
 ### CORS
 
