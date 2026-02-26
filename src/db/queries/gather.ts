@@ -11,6 +11,12 @@ export interface GatherPingRow {
 	created_at: string;
 }
 
+export interface GatherPingWithDiscord extends GatherPingRow {
+	sender_discord_id: string;
+	sender_username: string;
+	target_discord_ids: string[] | null;
+}
+
 export interface CreateGatherPingOptions {
 	message?: string;
 	is_anonymous?: boolean;
@@ -50,9 +56,35 @@ export async function getLastGatherPing(db: D1Database, userId: string): Promise
 	return db.prepare('SELECT * FROM gather_pings WHERE user_id = ? ORDER BY created_at DESC LIMIT 1').bind(userId).first<GatherPingRow>();
 }
 
-export async function getPendingGatherPings(db: D1Database): Promise<GatherPingRow[]> {
-	const result = await db.prepare('SELECT * FROM gather_pings WHERE delivered = 0 ORDER BY created_at ASC').all<GatherPingRow>();
-	return result.results;
+export async function getPendingGatherPings(db: D1Database): Promise<GatherPingWithDiscord[]> {
+	const result = await db
+		.prepare(
+			`SELECT gp.*, u.discord_id as sender_discord_id, u.discord_username as sender_username
+			FROM gather_pings gp
+			JOIN users u ON gp.user_id = u.id
+			WHERE gp.delivered = 0
+			ORDER BY gp.created_at ASC`,
+		)
+		.all<GatherPingRow & { sender_discord_id: string; sender_username: string }>();
+
+	const pings: GatherPingWithDiscord[] = [];
+	for (const row of result.results) {
+		let target_discord_ids: string[] | null = null;
+		if (row.target_user_ids) {
+			const targetIds: string[] = JSON.parse(row.target_user_ids);
+			const resolved: string[] = [];
+			for (const id of targetIds) {
+				const user = await db
+					.prepare('SELECT discord_id FROM users WHERE id = ?')
+					.bind(id)
+					.first<{ discord_id: string }>();
+				if (user) resolved.push(user.discord_id);
+			}
+			target_discord_ids = resolved;
+		}
+		pings.push({ ...row, target_discord_ids });
+	}
+	return pings;
 }
 
 export async function markGatherDelivered(db: D1Database, id: string): Promise<boolean> {
