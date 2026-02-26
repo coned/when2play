@@ -9,6 +9,7 @@ type SettingsEnv = {
 	Variables: {
 		user: UserRow;
 		sessionId: string;
+		isAdmin: boolean;
 	};
 };
 
@@ -22,15 +23,9 @@ settings.get('/', async (c) => {
 	return c.json({ ok: true, data });
 });
 
-// PATCH /api/settings — admin only (first registered user)
+// PATCH /api/settings — admin only (Discord-gated via /when2play-admin bot command)
 settings.patch('/', async (c) => {
-	const user = c.get('user');
-
-	const firstUser = await c.env.DB
-		.prepare('SELECT id FROM users ORDER BY created_at ASC LIMIT 1')
-		.first<{ id: string }>();
-
-	if (!firstUser || firstUser.id !== user.id) {
+	if (!c.get('isAdmin')) {
 		return c.json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the admin can update settings' } }, 403);
 	}
 
