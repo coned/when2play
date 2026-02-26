@@ -1,9 +1,10 @@
 interface SidebarProps {
 	activeTab: string;
 	onTabChange: (tab: string) => void;
+	isAdmin: boolean;
 }
 
-const tabs = [
+const BASE_TABS = [
 	{ id: 'schedule', label: 'Schedule' },
 	{ id: 'games', label: 'Games' },
 	{ id: 'availability', label: 'Availability' },
@@ -11,7 +12,11 @@ const tabs = [
 	{ id: 'shame', label: 'Shame Wall' },
 ];
 
-export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
+const ADMIN_TAB = { id: 'admin', label: 'Settings' };
+
+export function Sidebar({ activeTab, onTabChange, isAdmin }: SidebarProps) {
+	const tabs = isAdmin ? [...BASE_TABS, ADMIN_TAB] : BASE_TABS;
+
 	return (
 		<nav
 			style={{
