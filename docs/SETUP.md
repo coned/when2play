@@ -1,136 +1,194 @@
-# when2play — Developer Setup Guide
+# when2play — Setup Guide
 
-This guide walks through deploying the when2play backend to Cloudflare Workers and setting up a Discord bot to integrate with it.
+## Prerequisites
+
+- Node.js 22+ (`nvm use 22`)
+- npm 10+
+- Wrangler CLI (included in devDependencies)
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier works)
 
 ---
 
-## Part 1: Cloudflare Workers Deployment
+## Part 1: Local Development
 
-### Prerequisites
+### Install & Run
 
-- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier works)
-- Node.js 20+ and npm
-- `wrangler` CLI (already in devDependencies)
+```bash
+npm install
+make migrate-local
+make dev
+```
 
-### Step 1: Authenticate with Cloudflare
+This starts:
+- Backend at `http://localhost:8787` (Wrangler + local D1)
+- Frontend at `http://localhost:5173` (Vite, proxies `/api/*` to backend)
+
+### Simulating Auth (No Discord Bot)
+
+```bash
+make simulate
+# Prints: Open http://localhost:5173/auth/<token>
+```
+
+### Seeding Test Data
+
+```bash
+make seed
+```
+
+### Alternative: Local Node.js Server
+
+Runs without Wrangler using better-sqlite3 in-memory:
+
+```bash
+make dev-local
+```
+
+### Running Tests
+
+```bash
+make test          # single run
+make test-watch    # watch mode
+```
+
+Tests use an in-memory SQLite database and apply all migrations automatically. No Cloudflare account needed.
+
+### Available Commands
+
+Run `make help` to see all targets:
+
+| Command | Description |
+|---------|-------------|
+| `make dev` | Run wrangler + vite concurrently |
+| `make dev-local` | Run local Node.js server |
+| `make build` | Build frontend |
+| `make test` | Run all tests |
+| `make test-watch` | Run tests in watch mode |
+| `make deploy` | Build and deploy to Cloudflare |
+| `make deploy-only` | Deploy without rebuilding |
+| `make migrate-local` | Apply migrations locally |
+| `make migrate-remote` | Apply migrations remotely |
+| `make seed` | Seed test data |
+| `make simulate` | Create test auth token |
+| `make logs` | Stream live logs |
+| `make clean` | Clean build artifacts |
+
+---
+
+## Part 2: Production Deployment
+
+### First-Time Setup
+
+#### 1. Authenticate with Cloudflare
 
 ```bash
 npx wrangler login
+npx wrangler whoami   # verify
 ```
 
-This opens a browser window. Log in and authorize Wrangler.
-
-Verify:
-
-```bash
-npx wrangler whoami
-```
-
-### Step 2: Create a D1 Database
+#### 2. Create D1 Database
 
 ```bash
 npx wrangler d1 create when2play-db
 ```
 
-This outputs something like:
-
-```
-Created D1 database 'when2play-db'
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-```
-
-**Copy the `database_id` value.**
-
-### Step 3: Update wrangler.jsonc
-
-Open `wrangler.jsonc` and replace `"database_id": "local"` with your real database ID:
+Copy the returned `database_id` into `wrangler.jsonc`:
 
 ```jsonc
 "d1_databases": [
     {
         "binding": "DB",
         "database_name": "when2play-db",
-        "database_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",  // ← paste here
+        "database_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
         "migrations_dir": "migrations"
     }
 ]
 ```
 
-### Step 4: Apply Database Migrations
+#### 3. Apply Migrations
 
 ```bash
-npx wrangler d1 migrations apply when2play-db --remote
+make migrate-remote
 ```
 
-This runs all SQL files in `migrations/` against your remote D1 database.
-
-Verify:
+Verify tables exist:
 
 ```bash
 npx wrangler d1 execute when2play-db --remote --command "SELECT name FROM sqlite_master WHERE type='table'"
 ```
 
-You should see all 9 tables (users, auth_tokens, sessions, games, game_votes, availability, gather_pings, shame_votes, settings).
+#### 4. Set Bot API Key
 
-### Step 5: Build the Frontend
-
-```bash
-npm run build
-```
-
-This builds the Preact SPA into `frontend/dist/`, which Wrangler serves as static assets.
-
-### Step 6: Deploy
+This protects bot-facing endpoints from unauthorized access. **Required before going public.**
 
 ```bash
-npx wrangler deploy
+# Generate a key
+openssl rand -hex 32
+
+# Store as Cloudflare secret
+npx wrangler secret put BOT_API_KEY
+# Paste the key when prompted
 ```
 
-Output will show your Worker URL:
+Your Discord bot must send this key as `X-Bot-Token` header on all bot-facing requests. See [Bot Authentication](#bot-authentication) for details.
+
+If `BOT_API_KEY` is not set, the bot auth middleware is skipped — fine for local dev, **not safe for production** since anyone can create login sessions for arbitrary users via `POST /api/auth/token`.
+
+#### 5. Deploy
+
+```bash
+make deploy
+```
+
+Output shows your Worker URL:
 
 ```
 Published when2play (x.xx sec)
   https://when2play.<your-subdomain>.workers.dev
 ```
 
-**This is your `WORKER_URL`.** Save it — the Discord bot needs it.
-
-### Step 7: Verify Deployment
+#### 6. Verify
 
 ```bash
 curl https://when2play.<your-subdomain>.workers.dev/api/health
+# → {"ok":true,"data":{"status":"healthy","timestamp":"..."}}
 ```
 
-Expected: `{"ok":true,"data":{"status":"healthy","timestamp":"..."}}`
+Open the URL in a browser — you should see the login page.
 
-Open the URL in a browser — you should see the when2play landing page.
+### Subsequent Deploys
+
+```bash
+# If new migrations exist:
+make migrate-remote
+
+# Deploy:
+make deploy
+```
 
 ### Optional: Custom Domain
 
-In the Cloudflare dashboard:
-1. Go to **Workers & Pages** → your worker → **Settings** → **Domains & Routes**
-2. Add a custom domain (your domain must be on Cloudflare DNS)
+In the Cloudflare dashboard: **Workers & Pages** → your worker → **Settings** → **Domains & Routes**.
 
-### Environment Notes
+### Environment
 
-| Item | Detail |
-|------|--------|
-| Free tier limits | 100k requests/day, 10ms CPU per request, D1 5M rows read/day |
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `DB` | D1 Binding | Yes | Configured in `wrangler.jsonc` |
+| `BOT_API_KEY` | Secret | Recommended | Shared secret for bot auth. Set via `wrangler secret put`. When unset, bot auth is skipped. |
+
+| Limit | Detail |
+|-------|--------|
+| Free tier | 100k requests/day, 10ms CPU per request, D1 5M rows read/day |
 | D1 storage | 5GB free, 10GB on paid plan |
-| Static assets | Served from Cloudflare's edge CDN automatically |
-| Logs | `npx wrangler tail` for real-time logs |
+| Static assets | Served from Cloudflare's edge CDN |
+| Logs | `make logs` for real-time streaming |
 
 ---
 
-## Part 2: Discord Bot Setup
+## Part 3: Discord Bot Setup
 
-### What the Bot Does
-
-The Discord bot is a **separate service** — it is **not included in this repo**. You must build and host it yourself.
-
-The bot's responsibilities:
-1. **`/play` command** — creates a one-time auth link and DMs it to the user
-2. **Gather polling** — periodically checks for gather bell pings and posts them in a Discord channel
+The Discord bot is a **separate service** not included in this repo. It calls 3 API endpoints on the Worker.
 
 ### Architecture
 
@@ -138,138 +196,119 @@ The bot's responsibilities:
 Discord ←→ Bot (your code, hosted anywhere) ←→ when2play API (Cloudflare Worker)
 ```
 
-The bot calls 3 API endpoints on the Worker:
-- `POST /api/auth/token` — create auth link
-- `GET /api/gather/pending` — poll for gather pings
-- `PATCH /api/gather/:id/delivered` — mark ping delivered
+### Bot Responsibilities
 
-### Step 1: Create a Discord Application
+1. **`/play` command** — creates a one-time auth link and DMs it to the user
+2. **Gather polling** — periodically checks for gather pings and posts them in a Discord channel
+
+### Bot Authentication
+
+All bot-facing endpoints require the `X-Bot-Token` header matching the `BOT_API_KEY` secret:
+
+```
+X-Bot-Token: <your-bot-api-key>
+```
+
+Protected endpoints:
+- `POST /api/auth/token` — create login tokens for Discord users
+- `GET /api/gather/pending` — poll for undelivered gather pings
+- `PATCH /api/gather/:id/delivered` — mark ping as delivered
+
+### Create a Discord Application
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
 2. Click **New Application**, name it "when2play"
-3. Go to the **Bot** tab
-4. Click **Reset Token** and **copy the bot token** — you'll need it later
-5. Under **Privileged Gateway Intents**, enable:
-   - **Message Content Intent** (if your bot reads messages)
-6. Under **Bot Permissions**, the bot needs:
-   - `Send Messages`
-   - `Send Messages in Threads` (optional)
-   - `Use Slash Commands`
+3. Go to **Bot** tab → **Reset Token** → copy the bot token
+4. Enable **Message Content Intent** under Privileged Gateway Intents
+5. Bot Permissions: `Send Messages`, `Use Slash Commands`
 
-### Step 2: Invite the Bot to Your Server
+### Invite the Bot
 
 Go to **OAuth2** → **URL Generator**:
 - Scopes: `bot`, `applications.commands`
 - Permissions: `Send Messages`, `Use Slash Commands`
 
-Copy the generated URL, open it in a browser, and select your server.
+Open the generated URL and select your server.
 
-### Step 3: Build the Bot
-
-The bot can be written in any language. Below is a **complete working example** using **discord.js** (Node.js).
-
-#### Project Setup
+### Example Bot (discord.js)
 
 ```bash
-mkdir when2play-bot
-cd when2play-bot
+mkdir when2play-bot && cd when2play-bot
 npm init -y
 npm install discord.js
 ```
 
-#### Create `.env`
+Create `.env`:
 
 ```env
 DISCORD_TOKEN=your-bot-token-here
 WHEN2PLAY_API_URL=https://when2play.<your-subdomain>.workers.dev
+BOT_API_KEY=your-generated-key-here
 GAMING_CHANNEL_ID=123456789012345678
 ```
 
-Replace:
-- `DISCORD_TOKEN` — the bot token from Step 1
-- `WHEN2PLAY_API_URL` — your deployed Worker URL from Part 1, Step 6
-- `GAMING_CHANNEL_ID` — right-click a Discord channel → Copy Channel ID (enable Developer Mode in Discord settings)
-
-#### Create `bot.mjs`
+Create `bot.mjs`:
 
 ```js
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
 
-// --- Configuration ---
-
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const API_URL = process.env.WHEN2PLAY_API_URL;
+const BOT_API_KEY = process.env.BOT_API_KEY;
 const GAMING_CHANNEL_ID = process.env.GAMING_CHANNEL_ID;
-const GATHER_POLL_INTERVAL_MS = 15_000; // 15 seconds
+const GATHER_POLL_INTERVAL_MS = 15_000;
 
 if (!DISCORD_TOKEN || !API_URL || !GAMING_CHANNEL_ID) {
-    console.error('Missing required environment variables: DISCORD_TOKEN, WHEN2PLAY_API_URL, GAMING_CHANNEL_ID');
+    console.error('Missing required env vars');
     process.exit(1);
 }
 
-// --- Discord Client ---
+const botHeaders = {
+    'Content-Type': 'application/json',
+    ...(BOT_API_KEY ? { 'X-Bot-Token': BOT_API_KEY } : {}),
+};
 
-const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
-});
-
-// --- Register Slash Command ---
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const commands = [
-    new SlashCommandBuilder()
-        .setName('play')
-        .setDescription('Get a login link for when2play'),
+    new SlashCommandBuilder().setName('play').setDescription('Get a login link for when2play'),
 ];
 
 async function registerCommands() {
     const rest = new REST().setToken(DISCORD_TOKEN);
-    console.log('Registering slash commands...');
     await rest.put(Routes.applicationCommands(client.user.id), {
         body: commands.map(c => c.toJSON()),
     });
     console.log('Slash commands registered.');
 }
 
-// --- /play Command Handler ---
-
+// /play handler
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-    if (interaction.commandName !== 'play') return;
-
-    await interaction.deferReply({ flags: 64 }); // ephemeral
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'play') return;
+    await interaction.deferReply({ flags: 64 });
 
     try {
         const res = await fetch(`${API_URL}/api/auth/token`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: botHeaders,
             body: JSON.stringify({
                 discord_id: interaction.user.id,
                 discord_username: interaction.user.displayName,
                 avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
             }),
         });
-
         const json = await res.json();
 
         if (!json.ok) {
-            await interaction.editReply(`Failed to create login link: ${json.error.message}`);
+            await interaction.editReply(`Failed: ${json.error.message}`);
             return;
         }
 
-        // The URL from the API points to the Worker domain.
-        // Send it as a DM and also reply in-channel.
-        const url = json.data.url;
-
         try {
-            await interaction.user.send(
-                `Click here to open **when2play**: ${url}\n\nThis link expires in 10 minutes.`
-            );
+            await interaction.user.send(`Click to open **when2play**: ${json.data.url}\n\nExpires in 10 minutes.`);
             await interaction.editReply('Check your DMs for the login link!');
         } catch {
-            // DMs might be disabled — fall back to ephemeral reply
-            await interaction.editReply(
-                `Here's your login link (expires in 10 min):\n${url}`
-            );
+            await interaction.editReply(`Login link (expires in 10 min):\n${json.data.url}`);
         }
     } catch (err) {
         console.error('Error handling /play:', err);
@@ -277,29 +316,32 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// --- Gather Ping Polling ---
-
-// Maps discord_id → discord user ID for resolving pings.
-// Populated when /play is used; in a real setup you'd query the API or cache.
-const discordIdCache = new Map();
-
+// Gather ping polling
 async function pollGatherPings() {
     try {
-        const res = await fetch(`${API_URL}/api/gather/pending`);
+        const res = await fetch(`${API_URL}/api/gather/pending`, { headers: botHeaders });
         const json = await res.json();
-
         if (!json.ok || json.data.length === 0) return;
 
         const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
         if (!channel?.isTextBased()) return;
 
         for (const ping of json.data) {
-            const message = ping.message || 'Ready to play!';
-            await channel.send(`🔔 **Gather bell!** ${message}`);
+            const sender = ping.is_anonymous ? 'Someone' : `<@${ping.user_id}>`;
+            const msg = ping.message || 'Ready to play!';
+            let text = `🔔 **Gather bell!** ${sender}: ${msg}`;
 
-            // Mark as delivered
+            // If targeted, mention specific users
+            if (ping.target_user_ids && ping.target_user_ids.length > 0) {
+                // target_user_ids are internal UUIDs — bot would need to map these
+                // to Discord IDs. For now, just note it's targeted.
+                text += ` (targeted ping)`;
+            }
+
+            await channel.send(text);
             await fetch(`${API_URL}/api/gather/${ping.id}/delivered`, {
                 method: 'PATCH',
+                headers: botHeaders,
             });
         }
     } catch (err) {
@@ -307,13 +349,9 @@ async function pollGatherPings() {
     }
 }
 
-// --- Startup ---
-
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
     await registerCommands();
-
-    // Start gather polling loop
     setInterval(pollGatherPings, GATHER_POLL_INTERVAL_MS);
     console.log(`Polling for gather pings every ${GATHER_POLL_INTERVAL_MS / 1000}s`);
 });
@@ -321,126 +359,84 @@ client.once('ready', async () => {
 client.login(DISCORD_TOKEN);
 ```
 
-#### Run the Bot
+Run: `node --env-file=.env bot.mjs`
 
-```bash
-node --env-file=.env bot.mjs
-```
+### Hosting the Bot
 
-You should see:
-
-```
-Logged in as when2play#1234
-Registering slash commands...
-Slash commands registered.
-Polling for gather pings every 15s
-```
-
-### Step 4: Test the Integration
-
-1. In Discord, type `/play`
-2. The bot DMs you a login link
-3. Click the link → browser opens → you're logged in to when2play
-4. In the dashboard, ring the **Gather Bell**
-5. Within 15 seconds, the bot posts a message in your gaming channel
-
-### Step 5: Host the Bot
-
-The bot needs to run 24/7. Options:
+The bot needs to run 24/7:
 
 | Platform | Cost | Notes |
 |----------|------|-------|
-| **Home server / VPS** | Free–$5/mo | Run with `pm2`, `systemd`, or Docker |
-| **Railway** | Free tier available | `railway up` |
-| **Fly.io** | Free tier available | Dockerfile-based |
-| **Render** | Free tier (sleeps) | Background worker type |
-| **AWS EC2 / Lightsail** | $3.50+/mo | Full control |
-
-Example with `pm2`:
-
-```bash
-npm install -g pm2
-pm2 start bot.mjs --name when2play-bot
-pm2 save
-pm2 startup   # auto-start on reboot
-```
+| Home server / VPS | Free–$5/mo | Use `pm2`, `systemd`, or Docker |
+| Railway | Free tier | `railway up` |
+| Fly.io | Free tier | Dockerfile-based |
+| Render | Free tier (sleeps) | Background worker type |
 
 ---
 
-## Part 3: Security Hardening (Before Going Public)
+## Part 4: Security Reference
 
-The bot-facing API endpoints currently have **no authentication**. Before exposing to the internet:
+### Bot Authentication
 
-### Add Bot API Key
+Bot-facing endpoints require `X-Bot-Token` header matching the `BOT_API_KEY` Cloudflare secret. When the secret is not set, the check is skipped (local dev mode).
 
-1. Generate a secret key:
+### Admin Privileges
 
-   ```bash
-   openssl rand -hex 32
-   ```
+The first registered user (earliest `created_at`) is the admin. Only the admin can modify global settings via `PATCH /api/settings`.
 
-2. Add it as a Cloudflare Worker secret:
+### CORS
 
-   ```bash
-   npx wrangler secret put BOT_API_KEY
-   # Paste the key when prompted
-   ```
+- **Production** (HTTPS): same-origin only
+- **Development** (HTTP): allows `localhost:5173` and `localhost:8787`
 
-3. Add the same key to the bot's `.env`:
+### Cookie Security
 
-   ```env
-   BOT_API_KEY=your-generated-key-here
-   ```
+Session cookies: `HttpOnly`, `SameSite=Strict`, `Path=/`, `Secure` (production only). Sessions expire after 7 days.
 
-4. Update the bot to send the key on every request:
+### Input Validation
 
-   ```js
-   const headers = {
-       'Content-Type': 'application/json',
-       'X-Bot-Token': process.env.BOT_API_KEY,
-   };
-   ```
+| Field | Limit |
+|-------|-------|
+| `discord_id` | 1-30 chars (Zod validated) |
+| `discord_username` | 1-50 chars (Zod validated) |
+| `avatar_url` | max 500 chars |
+| Game `name` | max 100 chars |
+| Game `image_url` | max 500 chars |
+| Gather `message` | max 500 chars |
+| Shame `reason` | max 200 chars |
+| Gather `target_user_ids` | max 20 users |
 
-5. Add middleware to the Worker to validate bot-facing endpoints. In `src/middleware/bot-auth.ts`:
+### Security Headers
 
-   ```ts
-   import { createMiddleware } from 'hono/factory';
+All responses include:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
 
-   export const requireBotAuth = createMiddleware(async (c, next) => {
-       const token = c.req.header('X-Bot-Token');
-       const expected = c.env.BOT_API_KEY;
-       if (!expected || token !== expected) {
-           return c.json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Invalid bot token' } }, 401);
-       }
-       await next();
-   });
-   ```
+### Error Redaction
 
-6. Apply to bot-facing routes (`POST /api/auth/token`, `GET /api/gather/pending`, `PATCH /api/gather/:id/delivered`).
+In production (HTTPS), unhandled errors return generic "Internal server error". In development, the full error message is returned.
 
-### Update Env Bindings
+### Data Privacy
 
-Add `BOT_API_KEY` to `src/env.ts`:
-
-```ts
-export interface Bindings {
-    DB: D1Database;
-    BOT_API_KEY: string;
-}
-```
+- `GET /api/games/:id/votes` strips `user_id` from the response
+- `GET /api/availability` scopes `user_id` param to the authenticated user (no cross-user personal data access without a date filter)
 
 ---
 
-## Quick Reference
+## Part 5: Quick Reference
 
 | What | Command |
 |------|---------|
-| Deploy Worker | `npx wrangler deploy` |
-| View logs | `npx wrangler tail` |
-| Apply migrations (remote) | `npx wrangler d1 migrations apply when2play-db --remote` |
-| Apply migrations (local) | `npx wrangler d1 migrations apply when2play-db --local` |
-| Build frontend | `npm run build` |
-| Run tests | `npm test` |
-| Run local dev server | `npx tsx scripts/serve-local.ts` |
-| Create test auth token | `bash scripts/simulate-bot.sh` |
+| Install | `npm install` |
+| Dev server | `make dev` |
+| Build frontend | `make build` |
+| Run tests | `make test` |
+| Deploy | `make deploy` |
+| Apply remote migrations | `make migrate-remote` |
+| Apply local migrations | `make migrate-local` |
+| Set bot secret | `npx wrangler secret put BOT_API_KEY` |
+| Stream logs | `make logs` |
+| Simulate auth | `make simulate` |
+| Seed data | `make seed` |
 | Query remote D1 | `npx wrangler d1 execute when2play-db --remote --command "SELECT ..."` |
