@@ -10,13 +10,16 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 app.use('*', errorHandler);
 app.use('*', cors);
-app.use('/api/*', foreignKeys);
 
 app.get('/api/health', (c) => {
 	return c.json({ ok: true, data: { status: 'healthy', timestamp: new Date().toISOString() } });
 });
 
-app.route('/api/auth', auth);
-app.route('/api/users', users);
+const api = new Hono<{ Bindings: Bindings }>();
+api.use('*', foreignKeys);
+api.route('/auth', auth);
+api.route('/users', users);
+
+app.route('/api', api);
 
 export default app;
