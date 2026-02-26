@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "cone-quest",
+	"name": "when2play",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-02-19",
 	"observability": {
@@ -12,6 +12,14 @@
 	},
 	"compatibility_flags": [
 		"nodejs_compat"
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "when2play-db",
+			"database_id": "local",
+			"migrations_dir": "migrations"
+		}
 	]
 	/**
 	 * Smart Placement
