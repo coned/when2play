@@ -63,4 +63,5 @@ export const api = {
 
 	// Steam
 	lookupSteam: (appId: string) => request<{ name: string; header_image: string }>(`/steam/lookup/${appId}`),
+	searchSteam: (query: string) => request<Array<{ app_id: string; name: string; image_url: string }>>(`/steam/search?q=${encodeURIComponent(query)}`),
 };
