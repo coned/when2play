@@ -91,3 +91,18 @@ export async function markGatherDelivered(db: D1Database, id: string): Promise<b
 	await db.prepare('UPDATE gather_pings SET delivered = 1 WHERE id = ?').bind(id).run();
 	return true;
 }
+
+export async function getRecentGatherPingCount(db: D1Database, userId: string, sinceIso: string): Promise<number> {
+	const row = await db
+		.prepare('SELECT COUNT(*) as count FROM gather_pings WHERE user_id = ? AND created_at >= ?')
+		.bind(userId, sinceIso)
+		.first<{ count: number }>();
+	return row?.count ?? 0;
+}
+
+export async function getOldestRecentGatherPing(db: D1Database, userId: string, sinceIso: string): Promise<GatherPingRow | null> {
+	return db
+		.prepare('SELECT * FROM gather_pings WHERE user_id = ? AND created_at >= ? ORDER BY created_at ASC LIMIT 1')
+		.bind(userId, sinceIso)
+		.first<GatherPingRow>();
+}
