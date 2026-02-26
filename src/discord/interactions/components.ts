@@ -11,7 +11,7 @@
 import type { Env } from '../../env';
 import type { DiscordAPI } from '../api';
 import { ResponseType, EPHEMERAL, jsonResponse } from './handler';
-import { getPollById, getSlotsByPollId, getVoteByVoter, getVotesByPollId, getSlotVoteCounts } from '../../db/queries';
+import { getPollById, getSlotsByPollId, getVoteByVoter, getVoteSlotsByVoteId, getVotesByPollId, getSlotVoteCounts } from '../../db/queries';
 import { recordVote } from '../../game/vote';
 import { buildSlotSelectRow, buildResultsText } from '../../game/messages';
 
@@ -49,9 +49,8 @@ async function handleVoteYes(interaction: any, pollId: string, env: Env, api: Di
 
 	// Find any slots this voter previously selected
 	const existingVote = await getVoteByVoter(env.DB, pollId, voterId);
-	const preselectedIds = existingVote?.vote_type === 'yes'
-		? [] // We'd need a separate query for this; keep it simple
-		: [];
+	const preselectedIds =
+		existingVote?.vote_type === 'yes' ? await getVoteSlotsByVoteId(env.DB, existingVote.id) : [];
 
 	// Send ephemeral message with the slot picker
 	return jsonResponse({

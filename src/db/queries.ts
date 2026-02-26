@@ -138,6 +138,12 @@ export async function getVoteByVoter(db: D1Database, pollId: string, voterId: st
 	return db.prepare(`SELECT * FROM votes WHERE poll_id = ? AND voter_id = ?`).bind(pollId, voterId).first<Vote>();
 }
 
+/** Returns the slot IDs a voter previously selected for a given vote. */
+export async function getVoteSlotsByVoteId(db: D1Database, voteId: number): Promise<number[]> {
+	const result = await db.prepare(`SELECT slot_id FROM vote_slots WHERE vote_id = ?`).bind(voteId).all<{ slot_id: number }>();
+	return result.results.map((r) => r.slot_id);
+}
+
 /** Returns slot_id → yes_voter_count for a poll. */
 export async function getSlotVoteCounts(db: D1Database, pollId: string): Promise<Array<{ slot_id: number; count: number }>> {
 	const result = await db
