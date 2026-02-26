@@ -46,7 +46,7 @@ auth.post('/token', requireBotAuth, async (c) => {
 	return c.json({ ok: true, data: { token, url: authUrl } }, 201);
 });
 
-// POST /api/auth/admin-token — Bot creates a one-time admin auth token for a Discord user with ADMINISTRATOR permission
+// POST /api/auth/admin-token — Bot creates a one-time admin auth token (Discord ADMINISTRATOR permission gated at bot)
 auth.post('/admin-token', requireBotAuth, async (c) => {
 	const raw = await c.req.json().catch(() => null);
 	const parsed = createTokenSchema.safeParse(raw);
@@ -55,8 +55,8 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Invalid request body' } }, 400);
 	}
 
-	const { discord_id, discord_username, avatar_url } = parsed.data;
-	const user = await upsertUser(c.env.DB, discord_id, discord_username, avatar_url);
+	// Always log into the fixed system admin account, not the requesting Discord user's account
+	const user = await upsertUser(c.env.DB, 'system-admin', 'Administrator', null);
 	const token = generateToken();
 	await createAuthToken(c.env.DB, user.id, token, true);
 
