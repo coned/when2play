@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { api } from '../../api/client';
+import { getUserTimezone, formatDualTime } from '../../lib/time';
 
 interface ScheduleSummaryProps {
 	userId: string;
@@ -10,9 +11,10 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 	const [availability, setAvailability] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 
+	const today = new Date().toISOString().split('T')[0];
+
 	useEffect(() => {
 		(async () => {
-			const today = new Date().toISOString().split('T')[0];
 			const [rankResult, availResult] = await Promise.all([api.getGameRanking(), api.getAvailability({ date: today })]);
 
 			if (rankResult.ok) setRanking(rankResult.data);
@@ -36,7 +38,10 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 
 	return (
 		<div>
-			<h2 style={{ marginBottom: '20px' }}>Schedule Summary</h2>
+			<h2 style={{ marginBottom: '8px' }}>Schedule Summary</h2>
+			<p style={{ marginBottom: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
+				Times in UTC (your timezone: {getUserTimezone()})
+			</p>
 
 			{/* Top Games */}
 			<div style={{ marginBottom: '24px' }}>
@@ -78,7 +83,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 									fontSize: '12px',
 								}}
 							>
-								<span style={{ fontWeight: 600 }}>{time}</span>
+								<span style={{ fontWeight: 600 }}>{formatDualTime(time, today)}</span>
 								<span style={{ color: 'var(--success)', marginLeft: '6px' }}>{users.size} available</span>
 							</div>
 						))}
@@ -105,7 +110,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 										fontSize: '12px',
 									}}
 								>
-									{s.start_time}
+									{formatDualTime(s.start_time, today)}
 								</span>
 							))}
 						</div>

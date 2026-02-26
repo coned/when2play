@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import { api } from '../../api/client';
 import { TimeGrid } from './TimeGrid';
+import { getUserTimezone } from '../../lib/time';
 
 interface AvailabilityViewProps {
 	userId: string;
@@ -48,7 +49,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 
 	return (
 		<div>
-			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
 				<h2>Availability</h2>
 				<div style={{ display: 'flex', gap: '8px' }}>
 					<button
@@ -65,6 +66,10 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 					</button>
 				</div>
 			</div>
+
+			<p style={{ marginBottom: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
+				Times in UTC (your timezone: {getUserTimezone()})
+			</p>
 
 			{loading ? (
 				<div class="spinner" style={{ margin: '20px auto' }} />
