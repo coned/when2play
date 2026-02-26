@@ -41,6 +41,62 @@ describe('Auth routes', () => {
 
 			expect(res.status).toBe(400);
 		});
+
+		it('returns 400 if discord_id is too long', async () => {
+			const res = await app.request(
+				'/api/auth/token',
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ discord_id: 'a'.repeat(31), discord_username: 'TestUser' }),
+				},
+				{ DB: db },
+			);
+
+			expect(res.status).toBe(400);
+		});
+
+		it('returns 400 if discord_username is too long', async () => {
+			const res = await app.request(
+				'/api/auth/token',
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ discord_id: '123', discord_username: 'a'.repeat(51) }),
+				},
+				{ DB: db },
+			);
+
+			expect(res.status).toBe(400);
+		});
+
+		it('returns 403 when BOT_API_KEY is set and token is wrong', async () => {
+			const res = await app.request(
+				'/api/auth/token',
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'X-Bot-Token': 'wrong' },
+					body: JSON.stringify({ discord_id: '123', discord_username: 'TestUser' }),
+				},
+				{ DB: db, BOT_API_KEY: 'correct-key' },
+			);
+
+			expect(res.status).toBe(403);
+		});
+
+		it('allows request when BOT_API_KEY matches', async () => {
+			const res = await app.request(
+				'/api/auth/token',
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'X-Bot-Token': 'my-secret' },
+					body: JSON.stringify({ discord_id: '123', discord_username: 'TestUser' }),
+				},
+				{ DB: db, BOT_API_KEY: 'my-secret' },
+			);
+
+			expect(res.status).toBe(201);
+		});
 	});
 
 	describe('GET /api/auth/callback/:token', () => {
