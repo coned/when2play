@@ -1,0 +1,12 @@
+# Local development secrets — copy this to .dev.vars and fill in your values.
+# .dev.vars is gitignored; never commit real tokens.
+#
+# How to get these values:
+#   1. Go to https://discord.com/developers/applications
+#   2. Select your app (or create one)
+#   3. General Information page → Application ID and Public Key
+#   4. Bot page → Reset Token → copy the token
+
+DISCORD_APP_ID=your_application_id_here
+DISCORD_PUBLIC_KEY=your_public_key_here
+DISCORD_BOT_TOKEN=your_bot_token_here
