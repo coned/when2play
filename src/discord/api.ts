@@ -69,16 +69,30 @@ export class DiscordAPI {
 	}
 
 	/**
-	 * Register slash commands with Discord.
+	 * Register global slash commands with Discord.
 	 * Safe to run repeatedly — PUT does a full overwrite (idempotent).
 	 */
-	async registerCommands(commands: any[]): Promise<any[]> {
+	async registerGlobalCommands(commands: any[]): Promise<any[]> {
 		const res = await fetch(`${DISCORD_API}/applications/${this.appId}/commands`, {
 			method: 'PUT',
 			headers: this.headers(),
 			body: JSON.stringify(commands),
 		});
-		if (!res.ok) throw new Error(`registerCommands failed: ${res.status} ${await res.text()}`);
+		if (!res.ok) throw new Error(`registerGlobalCommands failed: ${res.status} ${await res.text()}`);
+		return res.json();
+	}
+
+	/**
+	 * Register guild-specific slash commands with Discord.
+	 * Updates instantly, unlike global commands which can take up to an hour.
+	 */
+	async registerGuildCommands(commands: any[], guildId: string): Promise<any[]> {
+		const res = await fetch(`${DISCORD_API}/applications/${this.appId}/guilds/${guildId}/commands`, {
+			method: 'PUT',
+			headers: this.headers(),
+			body: JSON.stringify(commands),
+		});
+		if (!res.ok) throw new Error(`registerGuildCommands failed: ${res.status} ${await res.text()}`);
 		return res.json();
 	}
 }

@@ -11,4 +11,7 @@ export interface Env {
 
 	// Secret (set via: wrangler secret put DISCORD_BOT_TOKEN)
 	DISCORD_BOT_TOKEN: string;
+
+	// Optional secret for guild-specific command registration
+	DISCORD_GUILD_ID?: string;
 }
