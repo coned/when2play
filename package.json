@@ -7,8 +7,9 @@
 		"frontend"
 	],
 	"scripts": {
-		"deploy": "wrangler deploy",
+		"deploy": "npm run build && wrangler deploy",
 		"dev": "bash scripts/dev.sh",
+		"build": "cd frontend && npx vite build",
 		"start": "wrangler dev",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
