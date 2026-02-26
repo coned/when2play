@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
 import { setCookie, deleteCookie } from 'hono/cookie';
+import { z } from 'zod';
 import type { Bindings } from '../env';
 import { generateToken, generateSessionId } from '../lib/crypto';
 import { upsertUser } from '../db/queries/users';
 import { createAuthToken, consumeAuthToken, createSession, deleteSession } from '../db/queries/auth';
 import { requireAuth } from '../middleware/auth';
+import { requireBotAuth } from '../middleware/bot-auth';
 import type { UserRow } from '../db/queries/users';
 
 type AuthEnv = {
@@ -15,17 +17,25 @@ type AuthEnv = {
 	};
 };
 
+const createTokenSchema = z.object({
+	discord_id: z.string().min(1).max(30),
+	discord_username: z.string().min(1).max(50),
+	avatar_url: z.string().max(500).optional(),
+});
+
 const auth = new Hono<AuthEnv>();
 
 // POST /api/auth/token — Bot creates a one-time auth token for a Discord user
-auth.post('/token', async (c) => {
-	const body = await c.req.json<{ discord_id: string; discord_username: string; avatar_url?: string }>();
+auth.post('/token', requireBotAuth, async (c) => {
+	const raw = await c.req.json().catch(() => null);
+	const parsed = createTokenSchema.safeParse(raw);
 
-	if (!body.discord_id || !body.discord_username) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'discord_id and discord_username required' } }, 400);
+	if (!parsed.success) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Invalid request body' } }, 400);
 	}
 
-	const user = await upsertUser(c.env.DB, body.discord_id, body.discord_username, body.avatar_url);
+	const { discord_id, discord_username, avatar_url } = parsed.data;
+	const user = await upsertUser(c.env.DB, discord_id, discord_username, avatar_url);
 	const token = generateToken();
 	await createAuthToken(c.env.DB, user.id, token);
 
@@ -50,7 +60,7 @@ auth.get('/callback/:token', async (c) => {
 	const isProduction = new URL(c.req.url).protocol === 'https:';
 	setCookie(c, 'session_id', sessionId, {
 		httpOnly: true,
-		sameSite: 'Lax',
+		sameSite: 'Strict',
 		path: '/',
 		secure: isProduction,
 		maxAge: 7 * 24 * 60 * 60,
