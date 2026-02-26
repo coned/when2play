@@ -53,7 +53,44 @@ The bot should DM the user with `data.url`. The token expires in 10 minutes and 
 
 **Auth errors (403):** Returned if `X-Bot-Token` doesn't match `BOT_API_KEY`.
 
-### 2. Poll for Gather Pings
+### 2. Create Admin Auth Token
+
+When a Discord user with the `ADMINISTRATOR` server permission runs `/when2play-admin`:
+
+```bash
+POST /api/auth/admin-token
+Content-Type: application/json
+X-Bot-Token: <BOT_API_KEY>
+
+{
+  "discord_id": "123456789012345678",    # 1-30 chars, required
+  "discord_username": "GuildAdmin",      # 1-50 chars, required
+  "avatar_url": "https://cdn.discordapp.com/avatars/123/abc.png"  # max 500 chars, optional
+}
+```
+
+**Response (201):**
+```json
+{
+  "ok": true,
+  "data": {
+    "token": "a1b2c3d4...",
+    "url": "https://when2play.example.com/auth/a1b2c3d4..."
+  }
+}
+```
+
+The bot should DM the user with `data.url`. The token expires in 10 minutes, is single-use, and grants an admin browser session (no `Max-Age`, expires on browser close; DB TTL 1 hour).
+
+**Bot responsibility:** Only call this endpoint after verifying the requesting Discord member has `ADMINISTRATOR` permission in the guild. The API trusts the bot to enforce this gate.
+
+**Admin session properties:**
+- Cookie has no `Max-Age` — expires when the browser closes
+- Session DB row expires after 1 hour regardless
+- `GET /api/users/me` returns `is_admin: true` while the session is active
+- `PATCH /api/settings` is allowed
+
+### 4. Poll for Gather Pings
 
 Periodically (every 10-30 seconds):
 
@@ -90,7 +127,7 @@ For each pending ping, the bot should:
 3. **Send a message** to the gaming channel
 4. **Mark as delivered** (see below)
 
-### 3. Mark Ping Delivered
+### 5. Mark Ping Delivered
 
 ```bash
 PATCH /api/gather/:id/delivered
@@ -113,8 +150,10 @@ The internal `user_id` (UUID) is included for reference but is not needed for Di
 
 ## Rate Limits
 
-- **Gather bell**: Configurable cooldown (default 30 minutes per user, controlled by `gather_cooldown_minutes` setting)
+- **Gather bell per-ping cooldown**: 10 seconds per user (controlled by `gather_cooldown_seconds` setting, 0 = disabled)
+- **Gather bell hourly limit**: 30 pings per rolling 60-minute window (controlled by `gather_hourly_limit` setting, 0 = disabled). Exceeding the limit returns 429 with a lockout until the oldest ping in the window ages out.
 - **Auth tokens**: Expire after 10 minutes, one-time use
+- **Admin sessions**: Expire after 1 hour (or on browser close, whichever comes first)
 - **Shame votes**: One per voter-target pair per day
 
 ## Gather Ping Fields
