@@ -7,6 +7,7 @@ export interface AuthTokenRow {
 	user_id: string;
 	expires_at: string;
 	used: number;
+	is_admin: number;
 	created_at: string;
 }
 
@@ -15,23 +16,26 @@ export interface SessionRow {
 	session_id: string;
 	user_id: string;
 	expires_at: string;
+	is_admin: number;
 	created_at: string;
 }
 
 const TOKEN_EXPIRY_MINUTES = 10;
 const SESSION_EXPIRY_DAYS = 7;
+const SESSION_EXPIRY_HOURS = 1;
 
-export async function createAuthToken(db: D1Database, userId: string, token: string): Promise<AuthTokenRow> {
+export async function createAuthToken(db: D1Database, userId: string, token: string, isAdmin = false): Promise<AuthTokenRow> {
 	const id = uuid();
 	const timestamp = now();
 	const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_MINUTES * 60 * 1000).toISOString();
+	const isAdminInt = isAdmin ? 1 : 0;
 
 	await db
-		.prepare('INSERT INTO auth_tokens (id, token, user_id, expires_at, used, created_at) VALUES (?, ?, ?, ?, 0, ?)')
-		.bind(id, token, userId, expiresAt, timestamp)
+		.prepare('INSERT INTO auth_tokens (id, token, user_id, expires_at, used, is_admin, created_at) VALUES (?, ?, ?, ?, 0, ?, ?)')
+		.bind(id, token, userId, expiresAt, isAdminInt, timestamp)
 		.run();
 
-	return { id, token, user_id: userId, expires_at: expiresAt, used: 0, created_at: timestamp };
+	return { id, token, user_id: userId, expires_at: expiresAt, used: 0, is_admin: isAdminInt, created_at: timestamp };
 }
 
 export async function consumeAuthToken(db: D1Database, token: string): Promise<AuthTokenRow | null> {
@@ -47,17 +51,20 @@ export async function consumeAuthToken(db: D1Database, token: string): Promise<A
 	return row;
 }
 
-export async function createSession(db: D1Database, userId: string, sessionId: string): Promise<SessionRow> {
+export async function createSession(db: D1Database, userId: string, sessionId: string, isAdmin = false): Promise<SessionRow> {
 	const id = uuid();
 	const timestamp = now();
-	const expiresAt = new Date(Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+	const expiresAt = isAdmin
+		? new Date(Date.now() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000).toISOString()
+		: new Date(Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+	const isAdminInt = isAdmin ? 1 : 0;
 
 	await db
-		.prepare('INSERT INTO sessions (id, session_id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)')
-		.bind(id, sessionId, userId, expiresAt, timestamp)
+		.prepare('INSERT INTO sessions (id, session_id, user_id, expires_at, is_admin, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+		.bind(id, sessionId, userId, expiresAt, isAdminInt, timestamp)
 		.run();
 
-	return { id, session_id: sessionId, user_id: userId, expires_at: expiresAt, created_at: timestamp };
+	return { id, session_id: sessionId, user_id: userId, expires_at: expiresAt, is_admin: isAdminInt, created_at: timestamp };
 }
 
 export async function getSessionBySessionId(db: D1Database, sessionId: string): Promise<SessionRow | null> {
