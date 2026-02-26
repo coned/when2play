@@ -20,7 +20,7 @@ export const MODAL_PROPOSE = 'modal_propose';
 export async function handleCommand(interaction: any, env: Env, api: DiscordAPI, ctx: ExecutionContext): Promise<Response> {
 	const commandName: string = interaction.data.name;
 
-	if (commandName !== 'game') {
+	if (commandName !== 'conequest') {
 		return jsonResponse({ type: ResponseType.CHANNEL_MESSAGE_WITH_SOURCE, data: { content: 'Unknown command.', flags: EPHEMERAL } });
 	}
 
