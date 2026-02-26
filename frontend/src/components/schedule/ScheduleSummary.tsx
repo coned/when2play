@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { api } from '../../api/client';
-import { getUserTimezone, formatDualTime } from '../../lib/time';
+import { getTimezoneAbbreviation, formatLocalTime } from '../../lib/time';
 
 interface ScheduleSummaryProps {
 	userId: string;
@@ -40,7 +40,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 		<div>
 			<h2 style={{ marginBottom: '8px' }}>Schedule Summary</h2>
 			<p style={{ marginBottom: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
-				Times in UTC (your timezone: {getUserTimezone()})
+				Times shown in {getTimezoneAbbreviation()} (local time)
 			</p>
 
 			{/* Top Games */}
@@ -83,7 +83,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 									fontSize: '12px',
 								}}
 							>
-								<span style={{ fontWeight: 600 }}>{formatDualTime(time, today)}</span>
+								<span style={{ fontWeight: 600 }}>{formatLocalTime(time, today)}</span>
 								<span style={{ color: 'var(--success)', marginLeft: '6px' }}>{users.size} available</span>
 							</div>
 						))}
@@ -110,7 +110,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 										fontSize: '12px',
 									}}
 								>
-									{formatDualTime(s.start_time, today)}
+									{formatLocalTime(s.start_time, today)}
 								</span>
 							))}
 						</div>
