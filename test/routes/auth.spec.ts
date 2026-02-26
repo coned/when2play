@@ -148,6 +148,73 @@ describe('Auth routes', () => {
 		});
 	});
 
+	describe('POST /api/auth/admin-token', () => {
+		it('creates an admin token', async () => {
+			const res = await app.request(
+				'/api/auth/admin-token',
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
+				},
+				{ DB: db },
+			);
+
+			expect(res.status).toBe(201);
+			const body = await res.json();
+			expect(body.ok).toBe(true);
+			expect(body.data.token).toBeDefined();
+			expect(body.data.url).toContain('/auth/');
+		});
+
+		it('admin callback sets browser-session cookie and is_admin is true', async () => {
+			const tokenRes = await app.request(
+				'/api/auth/admin-token',
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
+				},
+				{ DB: db },
+			);
+			const { data } = await tokenRes.json();
+
+			const callbackRes = await app.request(`/api/auth/callback/${data.token}`, {}, { DB: db });
+			expect(callbackRes.status).toBe(302);
+
+			const setCookieHeader = callbackRes.headers.get('set-cookie');
+			expect(setCookieHeader).toContain('session_id=');
+			expect(setCookieHeader?.toLowerCase()).not.toContain('max-age');
+
+			const sessionId = setCookieHeader!.match(/session_id=([^;]+)/)![1];
+			const meRes = await app.request('/api/users/me', { headers: { Cookie: `session_id=${sessionId}` } }, { DB: db });
+			const me = await meRes.json();
+			expect(me.data.is_admin).toBe(true);
+		});
+
+		it('regular token callback sets persistent cookie and is_admin is false', async () => {
+			const tokenRes = await app.request(
+				'/api/auth/token',
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ discord_id: '789', discord_username: 'RegularUser' }),
+				},
+				{ DB: db },
+			);
+			const { data } = await tokenRes.json();
+
+			const callbackRes = await app.request(`/api/auth/callback/${data.token}`, {}, { DB: db });
+			const setCookieHeader = callbackRes.headers.get('set-cookie');
+			expect(setCookieHeader?.toLowerCase()).toContain('max-age');
+
+			const sessionId = setCookieHeader!.match(/session_id=([^;]+)/)![1];
+			const meRes = await app.request('/api/users/me', { headers: { Cookie: `session_id=${sessionId}` } }, { DB: db });
+			const me = await meRes.json();
+			expect(me.data.is_admin).toBe(false);
+		});
+	});
+
 	describe('POST /api/auth/logout', () => {
 		it('destroys session', async () => {
 			// Create user and session
