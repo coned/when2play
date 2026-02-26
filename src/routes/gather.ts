@@ -36,20 +36,45 @@ gather.post('/', requireAuth, async (c) => {
 		}
 	}
 
-	const body = await c.req.json<{ message?: string }>().catch(() => ({}));
+	const body = await c.req.json<{
+		message?: string;
+		is_anonymous?: boolean;
+		target_user_ids?: string[];
+	}>().catch(() => ({}));
 
 	if (body.message && body.message.length > 500) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Message must be 500 characters or less' } }, 400);
 	}
 
-	const ping = await createGatherPing(c.env.DB, user.id, body.message);
-	return c.json({ ok: true, data: { ...ping, delivered: Boolean(ping.delivered) } }, 201);
+	if (body.target_user_ids && (!Array.isArray(body.target_user_ids) || body.target_user_ids.length > 20)) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'target_user_ids must be an array of max 20 users' } }, 400);
+	}
+
+	const ping = await createGatherPing(c.env.DB, user.id, body.message, {
+		is_anonymous: body.is_anonymous,
+		target_user_ids: body.target_user_ids,
+	});
+
+	return c.json({
+		ok: true,
+		data: {
+			...ping,
+			delivered: Boolean(ping.delivered),
+			is_anonymous: Boolean(ping.is_anonymous),
+			target_user_ids: ping.target_user_ids ? JSON.parse(ping.target_user_ids) : null,
+		},
+	}, 201);
 });
 
 // GET /api/gather/pending — bot polls for undelivered pings
 gather.get('/pending', requireBotAuth, async (c) => {
 	const pings = await getPendingGatherPings(c.env.DB);
-	const data = pings.map((p) => ({ ...p, delivered: Boolean(p.delivered) }));
+	const data = pings.map((p) => ({
+		...p,
+		delivered: Boolean(p.delivered),
+		is_anonymous: Boolean(p.is_anonymous),
+		target_user_ids: p.target_user_ids ? JSON.parse(p.target_user_ids) : null,
+	}));
 	return c.json({ ok: true, data });
 });
 

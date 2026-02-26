@@ -50,6 +50,13 @@ export async function upsertUser(
 	};
 }
 
+export async function getAllUsers(db: D1Database): Promise<Array<{ id: string; discord_username: string; avatar_url: string | null }>> {
+	const result = await db
+		.prepare('SELECT id, discord_username, avatar_url FROM users ORDER BY discord_username ASC')
+		.all<{ id: string; discord_username: string; avatar_url: string | null }>();
+	return result.results;
+}
+
 export async function getUserById(db: D1Database, id: string): Promise<UserRow | null> {
 	return db.prepare('SELECT * FROM users WHERE id = ?').bind(id).first<UserRow>();
 }
