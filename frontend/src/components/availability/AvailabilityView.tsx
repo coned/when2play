@@ -39,9 +39,14 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 		fetchSlots();
 	}, [fetchSlots]);
 
+	// Auto-save from TimeGrid: persist to API then refresh overlap data
 	const handleSave = async (slots: Array<{ start_time: string; end_time: string }>) => {
-		await api.setAvailability({ date: selectedDate, slots });
-		fetchSlots();
+		const result = await api.setAvailability({ date: selectedDate, slots });
+		if (result.ok) {
+			// Refresh allSlots (other users' overlap) without resetting TimeGrid
+			const allResult = await api.getAvailability({ date: selectedDate });
+			if (allResult.ok) setAllSlots(allResult.data);
+		}
 	};
 
 	const today = todayStr();
@@ -75,6 +80,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 				<div class="spinner" style={{ margin: '20px auto' }} />
 			) : (
 				<TimeGrid
+					key={selectedDate}
 					date={selectedDate}
 					mySlots={mySlots}
 					allSlots={allSlots}
