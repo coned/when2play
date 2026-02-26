@@ -1,6 +1,6 @@
-import { useState, useMemo, useRef, useCallback } from 'preact/hooks';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'preact/hooks';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
-import { utcToLocal } from '../../lib/time';
+import { formatLocalTime } from '../../lib/time';
 
 interface TimeGridProps {
 	date: string;
@@ -10,33 +10,86 @@ interface TimeGridProps {
 	onSave: (slots: Array<{ start_time: string; end_time: string }>) => void;
 }
 
-function generateHourSlots(granularity: number = 15) {
+const GRANULARITY = 15;
+const SLOT_HEIGHT = 34; // px per row
+
+function generateSlots() {
 	const slots: Array<{ start_time: string; end_time: string }> = [];
 	for (let hour = 0; hour < 24; hour++) {
-		for (let min = 0; min < 60; min += granularity) {
-			const nextMin = min + granularity;
+		for (let min = 0; min < 60; min += GRANULARITY) {
+			const nextMin = min + GRANULARITY;
 			const nextHour = nextMin >= 60 ? hour + 1 : hour;
-			const endMin = nextMin % 60;
 			slots.push({
 				start_time: `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`,
-				end_time: `${String(nextHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`,
+				end_time: `${String(nextHour % 24).padStart(2, '0')}:${String(nextMin % 60).padStart(2, '0')}`,
 			});
 		}
 	}
 	return slots;
 }
 
+const ALL_SLOTS = generateSlots(); // 96 slots total
+
+function getNextDate(dateStr: string): string {
+	const d = new Date(dateStr + 'T12:00:00Z');
+	d.setUTCDate(d.getUTCDate() + 1);
+	return d.toISOString().split('T')[0];
+}
+
 export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridProps) {
-	const allTimeSlots = useMemo(() => generateHourSlots(), []);
-	const [selected, setSelected] = useState<Set<string>>(
-		new Set(mySlots.map((s) => s.start_time)),
-	);
+	const [selected, setSelected] = useState<Set<string>>(new Set(mySlots.map((s) => s.start_time)));
 	const [isDragging, setIsDragging] = useState(false);
 	const [dragValue, setDragValue] = useState(true);
 	const [touchMode, setTouchMode] = useState<'select' | 'scroll'>('scroll');
-	const gridRef = useRef<HTMLDivElement>(null);
+	const containerRef = useRef<HTMLDivElement>(null);
+	const [containerHeight, setContainerHeight] = useState(400);
 	const isMobile = useMediaQuery(768);
 
+	// Measure available height after mount
+	useEffect(() => {
+		if (containerRef.current) {
+			const rect = containerRef.current.getBoundingClientRect();
+			const bottomPad = isMobile ? 80 : 24;
+			const available = Math.max(200, window.innerHeight - rect.top - bottomPad);
+			setContainerHeight(available);
+		}
+	}, [isMobile]);
+
+	// Find start slot index = current UTC time, rounded down to slot boundary
+	const startIndex = useMemo(() => {
+		const now = new Date();
+		const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+		const slotMin = Math.floor(utcMin / GRANULARITY) * GRANULARITY;
+		const h = Math.floor(slotMin / 60);
+		const m = slotMin % 60;
+		const time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+		const idx = ALL_SLOTS.findIndex((s) => s.start_time === time);
+		return Math.max(0, idx);
+	}, []);
+
+	const nextDate = useMemo(() => getNextDate(date), [date]);
+	const numColumns = isMobile ? 2 : 3;
+	const slotsPerColumn = Math.max(4, Math.floor((containerHeight - 28) / SLOT_HEIGHT));
+	const totalSlots = numColumns * slotsPerColumn;
+
+	// Build visible slots, wrapping around 24h boundary into the next date
+	const visibleSlots = useMemo(() => {
+		const total = ALL_SLOTS.length;
+		return Array.from({ length: totalSlots }, (_, i) => {
+			const raw = startIndex + i;
+			const wrapped = raw % total;
+			const slotDate = raw >= total ? nextDate : date;
+			return { ...ALL_SLOTS[wrapped], slotDate };
+		});
+	}, [startIndex, totalSlots, date, nextDate]);
+
+	// Split into columns
+	const columns = useMemo(
+		() => Array.from({ length: numColumns }, (_, i) => visibleSlots.slice(i * slotsPerColumn, (i + 1) * slotsPerColumn)),
+		[visibleSlots, numColumns, slotsPerColumn],
+	);
+
+	// Other users' overlap counts per slot
 	const otherUsers = useMemo(() => {
 		const map = new Map<string, Set<string>>();
 		for (const slot of allSlots) {
@@ -58,15 +111,8 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 	}, []);
 
 	const handleSave = () => {
-		const slots = allTimeSlots.filter((s) => selected.has(s.start_time));
+		const slots = ALL_SLOTS.filter((s) => selected.has(s.start_time));
 		onSave(slots);
-	};
-
-	const handleTouchStart = (time: string, isSelected: boolean) => {
-		if (touchMode !== 'select') return;
-		setIsDragging(true);
-		setDragValue(!isSelected);
-		toggleSlot(time);
 	};
 
 	const handleTouchMove = (e: TouchEvent) => {
@@ -78,44 +124,17 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 		if (time) toggleSlot(time, dragValue);
 	};
 
-	const handleTouchEnd = () => {
-		setIsDragging(false);
+	const colTimeRange = (col: typeof visibleSlots) => {
+		if (col.length === 0) return '';
+		const first = formatLocalTime(col[0].start_time, col[0].slotDate);
+		const last = formatLocalTime(col[col.length - 1].start_time, col[col.length - 1].slotDate);
+		return `${first} – ${last}`;
 	};
-
-	// Show 6am-2am range
-	const displaySlots = allTimeSlots.filter((s) => {
-		const hour = parseInt(s.start_time.split(':')[0]);
-		return hour >= 6 || hour < 2;
-	});
-
-	// Group by hour
-	const hourGroups = useMemo(() => {
-		const groups: Array<{ hour: string; slots: typeof displaySlots }> = [];
-		let currentHour = '';
-		for (const slot of displaySlots) {
-			const hour = slot.start_time.split(':')[0];
-			if (hour !== currentHour) {
-				currentHour = hour;
-				groups.push({ hour: `${hour}:00`, slots: [] });
-			}
-			groups[groups.length - 1].slots.push(slot);
-		}
-		return groups;
-	}, [displaySlots]);
 
 	return (
 		<div>
-			<div style={{
-				display: 'flex',
-				justifyContent: 'space-between',
-				alignItems: 'center',
-				marginBottom: '12px',
-				position: 'sticky',
-				top: 0,
-				background: 'var(--bg-primary)',
-				padding: '8px 0',
-				zIndex: 10,
-			}}>
+			{/* Action bar */}
+			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
 				<div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
 					{isMobile && (
 						<button
@@ -123,44 +142,67 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 							style={{ fontSize: '12px', padding: '4px 10px' }}
 							onClick={() => setTouchMode(touchMode === 'select' ? 'scroll' : 'select')}
 						>
-							{touchMode === 'select' ? 'Select mode' : 'Scroll mode'}
+							{touchMode === 'select' ? '✓ Select' : 'Select'}
 						</button>
 					)}
+					<span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+						{isMobile ? 'Tap to toggle · drag to range' : 'Click or drag to select'}
+					</span>
 				</div>
-				<button class="btn btn-primary" onClick={handleSave}>
+				<button class="btn btn-primary" style={{ padding: '4px 16px' }} onClick={handleSave}>
 					Save
 				</button>
 			</div>
 
+			{/* Time columns */}
 			<div
-				ref={gridRef}
+				ref={containerRef}
 				onMouseUp={() => setIsDragging(false)}
 				onMouseLeave={() => setIsDragging(false)}
 				onTouchMove={handleTouchMove}
-				onTouchEnd={handleTouchEnd}
+				onTouchEnd={() => setIsDragging(false)}
 				style={{
-					display: 'flex',
-					flexDirection: 'column',
-					gap: '1px',
+					display: 'grid',
+					gridTemplateColumns: `repeat(${numColumns}, 1fr)`,
+					gap: '6px',
+					height: `${containerHeight}px`,
 					touchAction: touchMode === 'select' ? 'none' : 'auto',
+					overflow: 'hidden',
 				}}
 			>
-				{hourGroups.map((group) => (
-					<div key={group.hour}>
-						<div style={{
-							padding: '8px 0 4px',
-							fontSize: '13px',
-							fontWeight: 700,
-							color: 'var(--text-secondary)',
-							borderBottom: '1px solid var(--border)',
-							marginBottom: '2px',
-						}}>
-							{group.hour} UTC / {utcToLocal(group.hour, date)}
+				{columns.map((col, ci) => (
+					<div
+						key={ci}
+						style={{
+							display: 'flex',
+							flexDirection: 'column',
+							gap: '1px',
+							borderLeft: ci > 0 ? '1px solid var(--border)' : 'none',
+							paddingLeft: ci > 0 ? '6px' : 0,
+							overflow: 'hidden',
+						}}
+					>
+						{/* Column header: time range */}
+						<div
+							style={{
+								fontSize: '10px',
+								color: 'var(--text-muted)',
+								paddingBottom: '3px',
+								borderBottom: '1px solid var(--border)',
+								marginBottom: '2px',
+								whiteSpace: 'nowrap',
+								overflow: 'hidden',
+								textOverflow: 'ellipsis',
+								flexShrink: 0,
+							}}
+						>
+							{colTimeRange(col)}
 						</div>
-						{group.slots.map((slot) => {
+
+						{col.map((slot) => {
 							const isSelected = selected.has(slot.start_time);
-							const others = otherUsers.get(slot.start_time);
-							const overlapCount = others ? others.size : 0;
+							const overlapCount = otherUsers.get(slot.start_time)?.size ?? 0;
+							const isHourStart = slot.start_time.endsWith(':00');
 
 							return (
 								<div
@@ -174,43 +216,57 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 									onMouseEnter={() => {
 										if (isDragging) toggleSlot(slot.start_time, dragValue);
 									}}
-									onTouchStart={() => handleTouchStart(slot.start_time, isSelected)}
+									onTouchStart={() => {
+										if (touchMode !== 'select') return;
+										setIsDragging(true);
+										setDragValue(!isSelected);
+										toggleSlot(slot.start_time);
+									}}
 									style={{
 										display: 'flex',
 										alignItems: 'center',
-										gap: '12px',
-										padding: '6px 12px',
+										gap: '4px',
+										padding: '0 4px',
+										height: `${SLOT_HEIGHT}px`,
 										cursor: 'pointer',
 										userSelect: 'none',
-										borderRadius: '4px',
-										marginBottom: '1px',
+										borderRadius: '3px',
+										flexShrink: 0,
 										background: isSelected
 											? overlapCount > 0
 												? 'var(--success)'
 												: 'var(--accent)'
 											: overlapCount > 0
 												? 'rgba(34, 197, 94, 0.15)'
-												: 'var(--bg-tertiary)',
+												: isHourStart
+													? 'var(--bg-card)'
+													: 'var(--bg-tertiary)',
 										color: isSelected ? '#fff' : 'var(--text-secondary)',
+										borderTop: isHourStart ? '1px solid var(--border)' : 'none',
 									}}
 								>
-									<span style={{ minWidth: '120px', fontSize: '13px' }}>
-										{slot.start_time} / {utcToLocal(slot.start_time, date)}
-									</span>
-									<div style={{
-										flex: 1,
-										height: '8px',
-										borderRadius: '4px',
-										background: isSelected
-											? 'rgba(255,255,255,0.3)'
-											: 'var(--border)',
-									}} />
-									{overlapCount > 0 && (
-										<span style={{
+									<span
+										style={{
+											flex: 1,
 											fontSize: '12px',
-											fontWeight: 600,
-											color: isSelected ? '#fff' : 'var(--success)',
-										}}>
+											fontVariantNumeric: 'tabular-nums',
+											whiteSpace: 'nowrap',
+											overflow: 'hidden',
+											textOverflow: 'ellipsis',
+											fontWeight: isHourStart ? 600 : 400,
+										}}
+									>
+										{formatLocalTime(slot.start_time, slot.slotDate)}
+									</span>
+									{overlapCount > 0 && (
+										<span
+											style={{
+												fontSize: '10px',
+												fontWeight: 700,
+												color: isSelected ? '#fff' : 'var(--success)',
+												flexShrink: 0,
+											}}
+										>
 											+{overlapCount}
 										</span>
 									)}
@@ -220,12 +276,8 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 					</div>
 				))}
 			</div>
-
-			<p class="text-muted" style={{ fontSize: '12px', marginTop: '8px' }}>
-				{isMobile
-					? 'Toggle "Select mode" to tap/drag time slots. Green = overlap with others.'
-					: 'Click or drag to select time slots. Green = overlap with others.'
-				}
+			<p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+				Green = overlap with others
 			</p>
 		</div>
 	);
