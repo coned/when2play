@@ -8,6 +8,7 @@ type UsersEnv = {
 	Variables: {
 		user: UserRow;
 		sessionId: string;
+		isAdmin: boolean;
 	};
 };
 
@@ -24,7 +25,7 @@ users.get('/', async (c) => {
 // GET /api/users/me
 users.get('/me', (c) => {
 	const user = c.get('user');
-	return c.json({ ok: true, data: user });
+	return c.json({ ok: true, data: { ...user, is_admin: c.get('isAdmin') } });
 });
 
 // PATCH /api/users/me
