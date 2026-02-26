@@ -37,6 +37,9 @@ export const api = {
 		request<any>(`/games/${gameId}/vote`, { method: 'PUT', body: JSON.stringify(data) }),
 	deleteVote: (gameId: string) => request<null>(`/games/${gameId}/vote`, { method: 'DELETE' }),
 	getGameVotes: (gameId: string) => request<any[]>(`/games/${gameId}/votes`),
+	getMyVotes: () => request<any[]>('/games/my-votes'),
+	reorderVotes: (rankings: Array<{ game_id: string; rank: number }>) =>
+		request<null>('/games/reorder-votes', { method: 'PUT', body: JSON.stringify({ rankings }) }),
 
 	// Availability
 	getAvailability: (params?: { user_id?: string; date?: string }) => {

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
-import { setVote, deleteVote, getVotesForGame, getGameRanking } from '../db/queries/votes';
+import { setVote, deleteVote, getVotesForGame, getGameRanking, getUserVotesWithGames, bulkUpdateVoteRanks } from '../db/queries/votes';
 import { getGameById } from '../db/queries/games';
 import type { UserRow } from '../db/queries/users';
 
@@ -21,6 +21,27 @@ votes.use('/*', requireAuth);
 votes.get('/ranking', async (c) => {
 	const ranking = await getGameRanking(c.env.DB);
 	return c.json({ ok: true, data: ranking });
+});
+
+// GET /api/games/my-votes — user's votes with game data
+votes.get('/my-votes', async (c) => {
+	const user = c.get('user');
+	const myVotes = await getUserVotesWithGames(c.env.DB, user.id);
+	const data = myVotes.map((v) => ({ ...v, is_approved: Boolean(v.is_approved) }));
+	return c.json({ ok: true, data });
+});
+
+// PUT /api/games/reorder-votes — bulk rank update
+votes.put('/reorder-votes', async (c) => {
+	const user = c.get('user');
+	const body = await c.req.json<{ rankings: Array<{ game_id: string; rank: number }> }>();
+
+	if (!body.rankings || !Array.isArray(body.rankings) || body.rankings.length === 0) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'rankings array required' } }, 400);
+	}
+
+	await bulkUpdateVoteRanks(c.env.DB, user.id, body.rankings);
+	return c.json({ ok: true, data: null });
 });
 
 // PUT /api/games/:id/vote
