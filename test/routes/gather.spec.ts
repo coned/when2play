@@ -6,10 +6,11 @@ import { createAuthenticatedUser } from '../helpers';
 describe('Gather routes', () => {
 	let db: D1Database;
 	let cookie: string;
+	let userId: string;
 
 	beforeEach(async () => {
 		db = createTestDb();
-		({ cookie } = await createAuthenticatedUser(db, '123', 'TestUser'));
+		({ cookie, userId } = await createAuthenticatedUser(db, '123', 'TestUser'));
 	});
 
 	it('rings the gather bell', async () => {
@@ -62,5 +63,49 @@ describe('Gather routes', () => {
 		const pendingRes = await app.request('/api/gather/pending', { headers: { Cookie: cookie } }, { DB: db });
 		const pending = await pendingRes.json();
 		expect(pending.data).toHaveLength(0);
+	});
+
+	it('enforces per-ping cooldown', async () => {
+		// First ping succeeds
+		const res1 = await app.request(
+			'/api/gather',
+			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({}) },
+			{ DB: db },
+		);
+		expect(res1.status).toBe(201);
+
+		// Immediate second ping is blocked by 10s cooldown
+		const res2 = await app.request(
+			'/api/gather',
+			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({}) },
+			{ DB: db },
+		);
+		expect(res2.status).toBe(429);
+		const body = await res2.json();
+		expect(body.error.code).toBe('RATE_LIMITED');
+	});
+
+	it('enforces hourly limit', async () => {
+		// Insert 30 pings directly to bypass per-ping cooldown
+		const since = Date.now() - 3600000;
+		for (let i = 0; i < 30; i++) {
+			const id = crypto.randomUUID();
+			const created = new Date(since + (i + 1) * 1000).toISOString();
+			await db
+				.prepare('INSERT INTO gather_pings (id, user_id, message, delivered, is_anonymous, target_user_ids, created_at) VALUES (?, ?, null, 0, 0, null, ?)')
+				.bind(id, userId, created)
+				.run();
+		}
+
+		// 31st ping should be blocked by hourly limit
+		const res = await app.request(
+			'/api/gather',
+			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({}) },
+			{ DB: db },
+		);
+		expect(res.status).toBe(429);
+		const body = await res.json();
+		expect(body.error.code).toBe('RATE_LIMITED');
+		expect(body.error.message).toContain('Hourly limit');
 	});
 });
