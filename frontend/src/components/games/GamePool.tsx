@@ -50,7 +50,7 @@ export function GamePool({ userId }: GamePoolProps) {
 				</p>
 			) : (
 				<>
-					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px', marginBottom: '32px' }}>
 						{games.map((game) => (
 							<GameCard key={game.id} game={game} isOwner={game.proposed_by === userId} onArchive={fetchGames} />
 						))}

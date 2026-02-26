@@ -37,7 +37,7 @@ export function GatherBell() {
 		<div>
 			<h2 style={{ marginBottom: '20px' }}>Gather Bell</h2>
 
-			<div class="card" style={{ maxWidth: '480px' }}>
+			<div class="card" style={{ maxWidth: '480px', width: '100%' }}>
 				<p style={{ marginBottom: '12px', color: 'var(--text-secondary)' }}>
 					Ring the gather bell to notify everyone you're ready to play!
 				</p>

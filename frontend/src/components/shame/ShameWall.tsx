@@ -45,7 +45,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 					No one has been shamed yet. How noble.
 				</p>
 			) : (
-				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '480px' }}>
+				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '480px', width: '100%' }}>
 					{leaderboard.map((entry, i) => (
 						<div
 							key={entry.user_id}
