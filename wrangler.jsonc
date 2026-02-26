@@ -10,8 +10,9 @@
 	"observability": {
 		"enabled": true
 	},
-	"compatibility_flags": ["nodejs_compat"],
-
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	/**
 	 * D1 SQLite database binding
 	 * Create with: wrangler d1 create cone-quest-db
@@ -19,26 +20,22 @@
 	 */
 	"d1_databases": [
 		{
-			"binding": "DB",
+			"binding": "cone_quest_db",
 			"database_name": "cone-quest-db",
-			"database_id": "REPLACE_WITH_YOUR_DATABASE_ID",
-			"migrations_dir": "migrations"
+			"database_id": "6d07bf56-1e75-4cf6-a4b4-faee2557fba4"
 		}
 	],
-
 	/**
 	 * Non-secret config vars (visible in dashboard).
-	 * Secrets (DISCORD_BOT_TOKEN) are set via: wrangler secret put DISCORD_BOT_TOKEN
+	 * Secrets (DISCORD_APP_ID, DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN) are set via: wrangler secret put DISCORD_BOT_TOKEN
 	 */
-	"vars": {
-		"DISCORD_APP_ID": "REPLACE_WITH_YOUR_APP_ID",
-		"DISCORD_PUBLIC_KEY": "REPLACE_WITH_YOUR_PUBLIC_KEY"
-	},
-
+	"vars": {},
 	/**
 	 * Cron trigger: check for expired polls every 15 minutes
 	 */
 	"triggers": {
-		"crons": ["*/15 * * * *"]
+		"crons": [
+			"*/15 * * * *"
+		]
 	}
 }
