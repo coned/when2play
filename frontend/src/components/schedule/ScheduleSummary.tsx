@@ -1,15 +1,81 @@
 import { useState, useEffect } from 'preact/hooks';
 import { api } from '../../api/client';
-import { getTimezoneAbbreviation, formatLocalTime } from '../../lib/time';
+import { getTimezoneAbbreviation, formatLocalTimeRange } from '../../lib/time';
 
 interface ScheduleSummaryProps {
 	userId: string;
 }
 
+interface SlotGroup {
+	startTime: string;
+	endTime: string;
+	userIds: string[];
+}
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+	if (a.size !== b.size) return false;
+	for (const v of a) if (!b.has(v)) return false;
+	return true;
+}
+
+function addMinutes(hhmm: string, minutes: number): string {
+	const [h, m] = hhmm.split(':').map(Number);
+	const total = (h * 60 + m + minutes) % (24 * 60);
+	return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function groupAdjacentSlots(slots: Array<[string, Set<string>]>): SlotGroup[] {
+	if (slots.length === 0) return [];
+
+	const sorted = [...slots].sort(([a], [b]) => a.localeCompare(b));
+	const groups: SlotGroup[] = [];
+	let currentStart = sorted[0][0];
+	let currentEnd = addMinutes(sorted[0][0], 15);
+	let currentUsers = sorted[0][1];
+
+	for (let i = 1; i < sorted.length; i++) {
+		const [time, users] = sorted[i];
+		if (time === currentEnd && setsEqual(users, currentUsers)) {
+			currentEnd = addMinutes(time, 15);
+		} else {
+			groups.push({ startTime: currentStart, endTime: currentEnd, userIds: Array.from(currentUsers) });
+			currentStart = time;
+			currentEnd = addMinutes(time, 15);
+			currentUsers = users;
+		}
+	}
+	groups.push({ startTime: currentStart, endTime: currentEnd, userIds: Array.from(currentUsers) });
+
+	return groups;
+}
+
+function groupMySlots(slots: Array<{ start_time: string }>): Array<{ startTime: string; endTime: string }> {
+	if (slots.length === 0) return [];
+
+	const sorted = [...slots].sort((a, b) => a.start_time.localeCompare(b.start_time));
+	const groups: Array<{ startTime: string; endTime: string }> = [];
+	let currentStart = sorted[0].start_time;
+	let currentEnd = addMinutes(sorted[0].start_time, 15);
+
+	for (let i = 1; i < sorted.length; i++) {
+		const time = sorted[i].start_time;
+		if (time === currentEnd) {
+			currentEnd = addMinutes(time, 15);
+		} else {
+			groups.push({ startTime: currentStart, endTime: currentEnd });
+			currentStart = time;
+			currentEnd = addMinutes(time, 15);
+		}
+	}
+	groups.push({ startTime: currentStart, endTime: currentEnd });
+
+	return groups;
+}
+
 export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 	const [ranking, setRanking] = useState<any[]>([]);
 	const [availability, setAvailability] = useState<any[]>([]);
-	const [userMap, setUserMap] = useState<Map<string, { discord_username: string; avatar_url: string | null }>>(new Map());
+	const [userMap, setUserMap] = useState<Map<string, { discord_username: string; display_name: string | null; avatar_url: string | null }>>(new Map());
 	const [loading, setLoading] = useState(true);
 
 	const today = new Date().toISOString().split('T')[0];
@@ -25,7 +91,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 			if (rankResult.ok) setRanking(rankResult.data);
 			if (availResult.ok) setAvailability(availResult.data);
 			if (usersResult.ok) {
-				const map = new Map<string, { discord_username: string; avatar_url: string | null }>();
+				const map = new Map<string, { discord_username: string; display_name: string | null; avatar_url: string | null }>();
 				for (const u of usersResult.data) map.set(u.id, u);
 				setUserMap(map);
 			}
@@ -35,16 +101,15 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 
 	if (loading) return <div class="spinner" style={{ margin: '20px auto' }} />;
 
-	// Compute overlap windows: map start_time → Set of user_ids
+	// Compute overlap windows: map start_time -> Set of user_ids
 	const slotUsers = new Map<string, Set<string>>();
 	for (const slot of availability) {
 		if (!slotUsers.has(slot.start_time)) slotUsers.set(slot.start_time, new Set());
 		slotUsers.get(slot.start_time)!.add(slot.user_id);
 	}
 
-	const overlapSlots = Array.from(slotUsers.entries())
-		.filter(([, users]) => users.size >= 2)
-		.sort(([a], [b]) => a.localeCompare(b));
+	const overlapSlots = Array.from(slotUsers.entries()).filter(([, users]) => users.size >= 2);
+	const overlapGroups = groupAdjacentSlots(overlapSlots);
 
 	return (
 		<div>
@@ -78,18 +143,17 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 			{/* Overlap Windows */}
 			<div style={{ marginBottom: '24px' }}>
 				<h3 style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>Who's Around Today</h3>
-				{overlapSlots.length === 0 ? (
+				{overlapGroups.length === 0 ? (
 					<p class="text-muted">No overlapping availability yet.</p>
 				) : (
-					<div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-						{overlapSlots.map(([time, userIds]) => {
-							const ids = Array.from(userIds);
-							const shown = ids.slice(0, 4);
-							const overflow = ids.length - shown.length;
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+						{overlapGroups.map((group) => {
+							const shown = group.userIds.slice(0, 4);
+							const overflow = group.userIds.length - shown.length;
 
 							return (
 								<div
-									key={time}
+									key={`${group.startTime}-${group.endTime}`}
 									style={{
 										background: 'var(--bg-tertiary)',
 										border: '1px solid var(--success)',
@@ -98,10 +162,12 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 										fontSize: '12px',
 										display: 'flex',
 										alignItems: 'center',
-										gap: '6px',
+										gap: '8px',
 									}}
 								>
-									<span style={{ fontWeight: 600 }}>{formatLocalTime(time, today)}</span>
+									<span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+										{formatLocalTimeRange(group.startTime, group.endTime, today)}
+									</span>
 
 									{/* Avatar stack */}
 									<div style={{ display: 'flex', alignItems: 'center' }}>
@@ -111,8 +177,8 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 												<img
 													key={uid}
 													src={user.avatar_url}
-													alt={user.discord_username}
-													title={user.discord_username}
+													alt={user.display_name ?? user.discord_username}
+													title={user.display_name ?? user.discord_username}
 													style={{
 														width: '18px',
 														height: '18px',
@@ -125,7 +191,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 											) : (
 												<span
 													key={uid}
-													title={user?.discord_username ?? uid}
+													title={user?.display_name ?? user?.discord_username ?? uid}
 													style={{
 														width: '18px',
 														height: '18px',
@@ -141,7 +207,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 														flexShrink: 0,
 													}}
 												>
-													{(user?.discord_username ?? '?')[0].toUpperCase()}
+													{(user?.display_name ?? user?.discord_username ?? '?')[0].toUpperCase()}
 												</span>
 											);
 										})}
@@ -170,12 +236,13 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 				<h3 style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>My Availability Today</h3>
 				{(() => {
 					const mySlots = availability.filter((s) => s.user_id === userId);
-					if (mySlots.length === 0) return <p class="text-muted">You haven't set availability for today.</p>;
+					const myGroups = groupMySlots(mySlots);
+					if (myGroups.length === 0) return <p class="text-muted">You haven't set availability for today.</p>;
 					return (
 						<div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-							{mySlots.map((s) => (
+							{myGroups.map((g) => (
 								<span
-									key={s.id}
+									key={`${g.startTime}-${g.endTime}`}
 									style={{
 										background: 'var(--accent)',
 										color: '#fff',
@@ -184,7 +251,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 										fontSize: '12px',
 									}}
 								>
-									{formatLocalTime(s.start_time, today)}
+									{formatLocalTimeRange(g.startTime, g.endTime, today)}
 								</span>
 							))}
 						</div>
