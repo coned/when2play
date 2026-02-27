@@ -13,7 +13,7 @@ interface ActionItem {
 
 interface ActionFeedProps {
 	actions: ActionItem[];
-	users: Map<string, { discord_username: string; avatar_url: string | null }>;
+	users: Map<string, { discord_username: string; display_name: string | null; avatar_url: string | null }>;
 }
 
 const ACTION_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
@@ -32,7 +32,7 @@ function formatTime(iso: string): string {
 	return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
-function formatAction(action: ActionItem, users: Map<string, { discord_username: string; avatar_url: string | null }>): string {
+function formatAction(action: ActionItem, users: Map<string, { discord_username: string; display_name: string | null; avatar_url: string | null }>): string {
 	const config = ACTION_CONFIG[action.action_type];
 	if (!config) return action.action_type;
 
@@ -40,7 +40,7 @@ function formatAction(action: ActionItem, users: Map<string, { discord_username:
 
 	if (['ping', 'where'].includes(action.action_type) && action.target_user_ids) {
 		const targets = action.target_user_ids
-			.map((id) => users.get(id)?.discord_username ?? 'someone')
+			.map((id) => { const u = users.get(id); return u?.display_name ?? u?.discord_username ?? 'someone'; })
 			.join(', ');
 		text += ` ${targets}`;
 	}
@@ -78,7 +78,7 @@ export function ActionFeed({ actions, users }: ActionFeedProps) {
 	}
 
 	return (
-		<div style={{ maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+		<div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
 			{actions.map((action) => {
 				const config = ACTION_CONFIG[action.action_type] ?? { icon: '\u2022', color: '#888', label: action.action_type };
 				return (
