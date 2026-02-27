@@ -299,9 +299,10 @@ client.on('interactionCreate', async (interaction) => {
                     return;
                 }
                 const fmtNames = (w) => (w.user_names?.map(n => n.trim()).join(', ') ?? `${w.user_count} people`);
+                const fmt = (t) => fmtDiscordTime(t, meta.day_key);
                 const best = meta.windows[0];
-                let reply = `📅 **Best window:** ${best.start}–${best.end} UTC (${fmtNames(best)})`;
-                const allLines = meta.windows.slice(0, 8).map(w => `• ${w.start}–${w.end}: ${fmtNames(w)}`);
+                let reply = `📅 **Best window:** ${fmt(best.start)}–${fmt(best.end)} (${fmtNames(best)})`;
+                const allLines = meta.windows.slice(0, 8).map(w => `• ${fmt(w.start)}–${fmt(w.end)}: ${fmtNames(w)}`);
                 reply += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
                 await interaction.editReply(reply);
             }
@@ -351,6 +352,13 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// Convert a UTC HH:MM time + YYYY-MM-DD day_key to a Discord timestamp token
+// that renders in each viewer's local timezone automatically.
+function fmtDiscordTime(utcHHMM, dayKey) {
+    const ts = Math.floor(new Date(`${dayKey}T${utcHHMM}:00Z`).getTime() / 1000);
+    return `<t:${ts}:t>`;
+}
+
 // --- Rally action polling ---
 async function pollRallyActions() {
     try {
@@ -385,9 +393,10 @@ async function pollRallyActions() {
                     const meta = action.metadata;
                     if (meta?.windows?.length > 0) {
                         const fmtNames = (w) => (w.user_names?.map(n => n.trim()).join(', ') ?? `${w.user_count} people`);
+                        const fmt = (t) => fmtDiscordTime(t, meta.day_key);
                         const best = meta.windows[0];
-                        text = `📅 **Best window:** ${best.start}–${best.end} UTC (${fmtNames(best)})`;
-                        const allLines = meta.windows.slice(0, 8).map(w => `• ${w.start}–${w.end}: ${fmtNames(w)}`);
+                        text = `📅 **Best window:** ${fmt(best.start)}–${fmt(best.end)} (${fmtNames(best)})`;
+                        const allLines = meta.windows.slice(0, 8).map(w => `• ${fmt(w.start)}–${fmt(w.end)}: ${fmtNames(w)}`);
                         text += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
                         text += `\n_On behalf of ${action.actor_username}_`;
                     } else {
