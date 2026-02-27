@@ -337,7 +337,7 @@ export async function computeJudgeTime(
 			.bind(...allUserIds)
 			.all<{ id: string; discord_username: string; display_name: string | null }>();
 		for (const u of usersResult.results) {
-			userNames.set(u.id, u.display_name ?? u.discord_username);
+			userNames.set(u.id, (u.display_name ?? u.discord_username).trim().replace(/\r?\n/g, ' '));
 		}
 	}
 
