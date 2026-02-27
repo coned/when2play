@@ -4,16 +4,20 @@ This is the standalone Discord bot for [when2play](https://github.com/your-org/w
 
 - `/play` — generates a one-time login link and DMs it to the user
 - `/when2play-admin` — generates a one-time admin link (requires Discord `ADMINISTRATOR` permission)
-- **Rally commands** — 8 slash commands for game session coordination:
-  - `/call [when]` — call everyone to play (now or later)
+- `/help` — shows all available commands (ephemeral)
+- `/url` — returns the when2play website URL
+- **Core rally commands:**
+  - `/call [message]` — call everyone to play
   - `/in [message]` — join the rally
   - `/out [reason]` — bail from the rally
   - `/ping @user [message]` — ping someone to come play
-  - `/judge time` — ask the judge for best time slots
-  - `/judge avail @user` — nudge someone to set availability
   - `/brb [message]` — be right back
   - `/where @user` — ask where someone is
-  - `/tree` — post today's gaming tree to the channel
+- **Coordination commands:**
+  - `/call2select @user` — nudge someone to set their availability on when2play
+  - `/post schedule` — find and post the best overlapping time windows for today
+  - `/post gamerank` — post the current game rankings to the channel
+  - `/post gametree` — post today's gaming tree diagram to the channel
 - **Gather polling** — checks for pending gather bell pings every 15 seconds and posts them to a Discord channel
 - **Rally polling** — checks for pending rally actions every 15 seconds and posts formatted messages
 - **Tree share polling** — checks for pending gaming tree images and posts them as attachments
