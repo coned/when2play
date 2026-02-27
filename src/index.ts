@@ -13,6 +13,7 @@ import availability from './routes/availability';
 import gather from './routes/gather';
 import shame from './routes/shame';
 import settings from './routes/settings';
+import rally from './routes/rally';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -35,6 +36,7 @@ api.route('/availability', availability);
 api.route('/gather', gather);
 api.route('/shame', shame);
 api.route('/settings', settings);
+api.route('/rally', rally);
 
 app.route('/api', api);
 
