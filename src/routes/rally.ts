@@ -18,6 +18,7 @@ import {
 	markTreeShareDelivered,
 } from '../db/queries/rally';
 import type { ActionType } from '@when2play/shared';
+import { getGameRanking } from '../db/queries/votes';
 
 type RallyEnv = {
 	Bindings: Bindings;
@@ -34,16 +35,18 @@ const VALID_ACTION_TYPES: ActionType[] = ['in', 'out', 'ping', 'brb', 'where'];
 // POST /api/rally/call — create or get today's rally + record call action
 rally.post('/call', requireAuth, async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ timing?: 'now' | 'later' }>().catch(() => ({} as { timing?: 'now' | 'later' }));
+	const body = await c.req.json<{ timing?: 'now' | 'later'; is_anonymous?: boolean }>().catch(() => ({} as { timing?: 'now' | 'later'; is_anonymous?: boolean }));
 	const timing = body.timing === 'later' ? 'later' : 'now';
 
 	const dayKey = await getDayKey(c.env.DB);
 	const rallyRow = await createOrGetRally(c.env.DB, user.id, timing, dayKey);
 
+	const metadata = body.is_anonymous ? { is_anonymous: true } : undefined;
 	const action = await createRallyAction(c.env.DB, user.id, 'call', {
 		rallyId: rallyRow.id,
 		message: timing,
 		dayKey,
+		metadata,
 	});
 
 	return c.json({
@@ -158,6 +161,30 @@ rally.post('/judge/avail', requireAuth, async (c) => {
 			delivered: Boolean(action.delivered),
 			target_user_ids: body.target_user_ids,
 			metadata: null,
+		},
+	}, 201);
+});
+
+// POST /api/rally/share-ranking — broadcast current game ranking to Discord
+rally.post('/share-ranking', requireAuth, async (c) => {
+	const user = c.get('user');
+	const dayKey = await getDayKey(c.env.DB);
+	const ranking = await getGameRanking(c.env.DB);
+	const activeRally = await getActiveRally(c.env.DB, dayKey);
+
+	const action = await createRallyAction(c.env.DB, user.id, 'share_ranking', {
+		rallyId: activeRally?.id,
+		metadata: { ranking: ranking.slice(0, 10).map((r) => ({ name: r.name, total_score: r.total_score, vote_count: r.vote_count })) },
+		dayKey,
+	});
+
+	return c.json({
+		ok: true,
+		data: {
+			...action,
+			delivered: Boolean(action.delivered),
+			target_user_ids: null,
+			metadata: { ranking },
 		},
 	}, 201);
 });
