@@ -153,9 +153,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 	const startIndex = 0;
 
 	const nextDate = useMemo(() => getNextDate(date), [date]);
-	const numColumns = isMobile ? 2 : 3;
 	const slotsPerColumn = Math.max(4, Math.floor((containerHeight - 28) / SLOT_HEIGHT));
-	const totalSlots = Math.min(numColumns * slotsPerColumn, filteredSlots.length);
+	const totalSlots = filteredSlots.length;
+	const numColumns = Math.max(isMobile ? 2 : 2, Math.min(isMobile ? 2 : 5, Math.ceil(totalSlots / slotsPerColumn)));
 
 	// Current UTC time for past-slot detection
 	const nowUtcMin = useMemo(() => {
@@ -280,8 +280,6 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 							display: 'flex',
 							flexDirection: 'column',
 							gap: '1px',
-							borderLeft: ci > 0 ? '1px solid var(--border)' : 'none',
-							paddingLeft: ci > 0 ? '6px' : 0,
 							overflow: 'hidden',
 						}}
 					>
