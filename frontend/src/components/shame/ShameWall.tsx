@@ -7,7 +7,7 @@ interface ShameWallProps {
 
 export function ShameWall({ userId }: ShameWallProps) {
 	const [leaderboard, setLeaderboard] = useState<any[]>([]);
-	const [users, setUsers] = useState<Array<{ id: string; discord_username: string; avatar_url: string | null }>>([]);
+	const [users, setUsers] = useState<Array<{ id: string; discord_username: string; display_name: string | null; avatar_url: string | null }>>([]);
 	const [myVotes, setMyVotes] = useState<Set<string>>(new Set());
 	const [loading, setLoading] = useState(true);
 	const [expandedTarget, setExpandedTarget] = useState<string | null>(null);
@@ -70,18 +70,24 @@ export function ShameWall({ userId }: ShameWallProps) {
 	const shameMap = new Map(leaderboard.map((e: any) => [e.user_id, e]));
 	const allUsers = users.map((u) => ({
 		...u,
-		shame_count: shameMap.get(u.id)?.shame_count ?? 0,
+		shame_count_today: shameMap.get(u.id)?.shame_count_today ?? 0,
+		shame_count_week: shameMap.get(u.id)?.shame_count_week ?? 0,
 		recent_reasons: shameMap.get(u.id)?.recent_reasons ?? [],
 	}));
 
-	// Sort by shame count desc, then username
-	const sortedUsers = [...allUsers].sort((a, b) => b.shame_count - a.shame_count || a.discord_username.localeCompare(b.discord_username));
+	// Sort by shame_count_week desc (primary), shame_count_today desc (secondary), then username
+	const sortedUsers = [...allUsers].sort(
+		(a, b) =>
+			b.shame_count_week - a.shame_count_week ||
+			b.shame_count_today - a.shame_count_today ||
+			(a.display_name ?? a.discord_username).localeCompare(b.display_name ?? b.discord_username),
+	);
 
 	return (
 		<div>
 			<h2 style={{ marginBottom: '8px' }}>Shame Wall</h2>
 			<p style={{ marginBottom: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
-				Shame a friend (or yourself) who no-showed, went AFK, or dodged. Once per target per day.
+				Shame a friend (or yourself) who no-showed, went AFK, or dodged. Once per target per day. Data resets after 7 days.
 			</p>
 
 			{error && <p style={{ color: 'var(--danger)', fontSize: '13px', marginBottom: '12px' }}>{error}</p>}
@@ -96,6 +102,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 						const isMe = u.id === userId;
 						const alreadyShamed = myVotes.has(u.id);
 						const isExpanded = expandedTarget === u.id;
+						const hasShame = u.shame_count_week > 0;
 
 						return (
 							<div key={u.id}>
@@ -108,8 +115,8 @@ export function ShameWall({ userId }: ShameWallProps) {
 										padding: '12px 16px',
 									}}
 								>
-									{/* Rank badge for top 3 with shames */}
-									{u.shame_count > 0 && (
+									{/* Rank badge for users with shames */}
+									{hasShame && (
 										<span
 											style={{
 												fontSize: '18px',
@@ -125,14 +132,14 @@ export function ShameWall({ userId }: ShameWallProps) {
 									{u.avatar_url && (
 										<img
 											src={u.avatar_url}
-											alt={u.discord_username}
+											alt={u.display_name ?? u.discord_username}
 											style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0 }}
 										/>
 									)}
 
 									<div style={{ flex: 1, minWidth: 0 }}>
 										<span style={{ fontWeight: 500 }}>
-											{u.discord_username}
+											{u.display_name ?? u.discord_username}
 											{isMe && (
 												<span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '6px' }}>(you)</span>
 											)}
@@ -148,10 +155,22 @@ export function ShameWall({ userId }: ShameWallProps) {
 										)}
 									</div>
 
-									{u.shame_count > 0 && (
-										<span class="badge badge-danger" style={{ flexShrink: 0 }}>
-											{u.shame_count} {u.shame_count === 1 ? 'shame' : 'shames'}
-										</span>
+									{/* Two-column shame counts */}
+									{hasShame && (
+										<div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+											<div style={{ textAlign: 'center' }}>
+												<div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1 }}>Today</div>
+												<span class="badge badge-warning" style={{ marginTop: '2px', fontSize: '11px' }}>
+													{u.shame_count_today}
+												</span>
+											</div>
+											<div style={{ textAlign: 'center' }}>
+												<div style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1 }}>Week</div>
+												<span class="badge badge-danger" style={{ marginTop: '2px', fontSize: '11px' }}>
+													{u.shame_count_week}
+												</span>
+											</div>
+										</div>
 									)}
 
 									{alreadyShamed ? (
