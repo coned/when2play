@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'preact/hooks';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
-import { formatLocalTime } from '../../lib/time';
+import { formatLocalTimeClean } from '../../lib/time';
 
 interface TimeGridProps {
 	date: string;
@@ -218,12 +218,15 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 
 	const colTimeRange = (col: typeof visibleSlots) => {
 		if (col.length === 0) return null;
-		const firstDate = col[0].slotDate;
-		const lastDate = col[col.length - 1].slotDate;
-		const dateLabel = formatDateLabel(firstDate);
-		const first = formatLocalTime(col[0].start_time, col[0].slotDate);
-		const last = formatLocalTime(col[col.length - 1].start_time, col[col.length - 1].slotDate);
-		const crossesMidnight = lastDate !== firstDate;
+		const firstSlot = col[0];
+		const lastSlot = col[col.length - 1];
+		const dateLabel = formatDateLabel(firstSlot.slotDate);
+		const first = formatLocalTimeClean(firstSlot.start_time, firstSlot.slotDate);
+		const last = formatLocalTimeClean(lastSlot.start_time, lastSlot.slotDate);
+		// Check if range crosses local midnight (compare local dates, not UTC dates)
+		const firstLocalDate = new Date(`${firstSlot.slotDate}T${firstSlot.start_time}:00Z`).toLocaleDateString('en-CA');
+		const lastLocalDate = new Date(`${lastSlot.slotDate}T${lastSlot.start_time}:00Z`).toLocaleDateString('en-CA');
+		const crossesMidnight = firstLocalDate !== lastLocalDate;
 		return (
 			<>
 				{dateLabel}: {first} {'\u2013'} {last}
@@ -373,7 +376,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 											textDecoration: isPast ? 'line-through' : 'none',
 										}}
 									>
-										{formatLocalTime(slot.start_time, slot.slotDate)}
+										{formatLocalTimeClean(slot.start_time, slot.slotDate)}
 									</span>
 									{overlapCount > 0 && (
 										<span
