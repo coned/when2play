@@ -8,7 +8,6 @@ const BASE_TABS = [
 	{ id: 'schedule', label: 'Schedule' },
 	{ id: 'games', label: 'Games' },
 	{ id: 'availability', label: 'Availability' },
-	{ id: 'gather', label: 'Gather' },
 	{ id: 'rally', label: 'Rally' },
 	{ id: 'tree', label: 'Tree' },
 	{ id: 'shame', label: 'Shame Wall' },
