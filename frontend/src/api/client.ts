@@ -2,6 +2,26 @@ import type { ApiResult } from '@when2play/shared';
 
 const BASE = '/api';
 
+const _getCache = new Map<string, { promise: Promise<any>; result: any; at: number }>();
+const GET_TTL_MS = 20_000;
+
+function cachedGet<T>(path: string): Promise<ApiResult<T>> {
+	const now = Date.now();
+	const entry = _getCache.get(path);
+	if (entry) {
+		if (entry.result && now - entry.at < GET_TTL_MS) return Promise.resolve(entry.result);
+		if (entry.promise && !entry.result) return entry.promise;
+	}
+	const rec: { promise: Promise<any>; result: any; at: number } = { promise: null!, result: null, at: 0 };
+	rec.promise = request<T>(path).then(r => {
+		rec.result = r;
+		rec.at = Date.now();
+		return r;
+	});
+	_getCache.set(path, rec);
+	return rec.promise;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResult<T>> {
 	const res = await fetch(`${BASE}${path}`, {
 		credentials: 'include',
@@ -51,7 +71,7 @@ export const api = {
 	clearAvailability: (date: string) => request<null>(`/availability?date=${date}`, { method: 'DELETE' }),
 
 	// Users (all)
-	getUsers: () => request<Array<{ id: string; discord_username: string; avatar_url: string | null }>>('/users'),
+	getUsers: () => cachedGet<Array<{ id: string; discord_username: string; avatar_url: string | null }>>('/users'),
 
 	// Gather
 	ringGather: (options?: { message?: string; is_anonymous?: boolean; target_user_ids?: string[] }) =>
