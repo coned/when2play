@@ -15,6 +15,9 @@ for (const [path, url] of Object.entries(blogAssets)) {
 	imageMap.set(filename, url);
 }
 
+// Strip raw HTML blocks from markdown output — defense-in-depth
+marked.use({ renderer: { html: () => '' } });
+
 export function BlogPage() {
 	const html = useMemo(() => {
 		// Rewrite relative image paths to Vite-processed URLs
