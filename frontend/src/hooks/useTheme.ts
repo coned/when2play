@@ -6,12 +6,13 @@ export const THEMES = [
 	{ id: 'forest', label: 'Forest', accent: '#2ecc71' },
 	{ id: 'sakura', label: 'Sakura', accent: '#e891b9' },
 	{ id: 'amber', label: 'Amber', accent: '#f59e0b' },
-	{ id: 'daylight', label: 'Daylight', accent: '#2563eb' },
 ] as const;
 
 export type ThemeId = (typeof THEMES)[number]['id'];
+export type Mode = 'dark' | 'light';
 
-const STORAGE_KEY = 'w2p-theme';
+const THEME_KEY = 'w2p-theme';
+const MODE_KEY = 'w2p-mode';
 
 function applyTheme(id: ThemeId) {
 	if (id === 'midnight') {
@@ -21,28 +22,71 @@ function applyTheme(id: ThemeId) {
 	}
 }
 
+function applyMode(mode: Mode) {
+	document.documentElement.setAttribute('data-mode', mode);
+}
+
 export function useTheme() {
 	const [theme, setThemeState] = useState<ThemeId>(() => {
-		const saved = localStorage.getItem(STORAGE_KEY) as ThemeId | null;
+		const saved = localStorage.getItem(THEME_KEY) as ThemeId | null;
+		// Migrate old daylight theme to midnight + light mode
+		if (saved === 'daylight') {
+			localStorage.setItem(THEME_KEY, 'midnight');
+			localStorage.setItem(MODE_KEY, 'light');
+			return 'midnight';
+		}
 		return saved && THEMES.some((t) => t.id === saved) ? saved : 'midnight';
+	});
+
+	const [mode, setModeState] = useState<Mode>(() => {
+		const saved = localStorage.getItem(MODE_KEY) as Mode | null;
+		// Migrate old daylight theme
+		const oldTheme = localStorage.getItem(THEME_KEY);
+		if (oldTheme === 'daylight') return 'light';
+		return saved === 'light' || saved === 'dark' ? saved : 'dark';
 	});
 
 	useEffect(() => {
 		applyTheme(theme);
 	}, [theme]);
 
+	useEffect(() => {
+		applyMode(mode);
+	}, [mode]);
+
 	function setTheme(id: ThemeId) {
-		localStorage.setItem(STORAGE_KEY, id);
+		localStorage.setItem(THEME_KEY, id);
 		setThemeState(id);
 	}
 
-	return { theme, setTheme, themes: THEMES };
+	function setMode(m: Mode) {
+		localStorage.setItem(MODE_KEY, m);
+		setModeState(m);
+	}
+
+	return { theme, setTheme, mode, setMode, themes: THEMES };
 }
 
-/** Apply saved theme immediately (call before render to prevent flash) */
+/** Apply saved theme + mode immediately (call before render to prevent flash) */
 export function initTheme() {
-	const saved = localStorage.getItem(STORAGE_KEY) as ThemeId | null;
-	if (saved && saved !== 'midnight' && THEMES.some((t) => t.id === saved)) {
-		document.documentElement.setAttribute('data-theme', saved);
+	const savedTheme = localStorage.getItem(THEME_KEY) as ThemeId | null;
+	const savedMode = localStorage.getItem(MODE_KEY) as Mode | null;
+
+	// Migrate old daylight theme
+	if (savedTheme === 'daylight') {
+		localStorage.setItem(THEME_KEY, 'midnight');
+		localStorage.setItem(MODE_KEY, 'light');
+		document.documentElement.setAttribute('data-mode', 'light');
+		return;
+	}
+
+	if (savedTheme && savedTheme !== 'midnight' && THEMES.some((t) => t.id === savedTheme)) {
+		document.documentElement.setAttribute('data-theme', savedTheme);
+	}
+
+	if (savedMode === 'light' || savedMode === 'dark') {
+		document.documentElement.setAttribute('data-mode', savedMode);
+	} else {
+		document.documentElement.setAttribute('data-mode', 'dark');
 	}
 }

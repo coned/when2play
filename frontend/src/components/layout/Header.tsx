@@ -11,7 +11,7 @@ interface HeaderProps {
 }
 
 export function Header({ user, onLogout, onUserUpdate }: HeaderProps) {
-	const { theme, setTheme } = useTheme();
+	const { theme, setTheme, mode, setMode } = useTheme();
 	const isMobile = useMediaQuery(768);
 	const [showProfile, setShowProfile] = useState(false);
 	const [displayName, setDisplayName] = useState(user?.display_name ?? user?.discord_username ?? '');
@@ -51,6 +51,32 @@ export function Header({ user, onLogout, onUserUpdate }: HeaderProps) {
 
 			<div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px' }}>
 				<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+					{/* Mode toggle */}
+					<button
+						title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+						onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')}
+						style={{
+							width: '22px',
+							height: '22px',
+							borderRadius: '50%',
+							background: 'var(--bg-tertiary)',
+							border: '1px solid var(--border)',
+							cursor: 'pointer',
+							padding: 0,
+							display: 'flex',
+							alignItems: 'center',
+							justifyContent: 'center',
+							fontSize: '13px',
+							lineHeight: 1,
+						}}
+					>
+						{mode === 'dark' ? '\u263E' : '\u2600'}
+					</button>
+
+					{/* Divider */}
+					<div style={{ width: '1px', height: '16px', background: 'var(--border)', margin: '0 2px' }} />
+
+					{/* Color scheme circles */}
 					{THEMES.map((t) => (
 						<button
 							key={t.id}
@@ -61,13 +87,20 @@ export function Header({ user, onLogout, onUserUpdate }: HeaderProps) {
 								height: '16px',
 								borderRadius: '50%',
 								background: t.accent,
-								border: theme === t.id ? '2px solid var(--text-primary)' : '2px solid transparent',
+								border: '2px solid transparent',
 								cursor: 'pointer',
 								padding: 0,
-								outline: theme === t.id ? '2px solid var(--accent)' : 'none',
-								outlineOffset: '1px',
+								display: 'flex',
+								alignItems: 'center',
+								justifyContent: 'center',
+								fontSize: '10px',
+								fontWeight: 700,
+								color: '#fff',
+								lineHeight: 1,
 							}}
-						/>
+						>
+							{theme === t.id ? '\u2713' : ''}
+						</button>
 					))}
 				</div>
 
