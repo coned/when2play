@@ -62,6 +62,12 @@ const commands = [
     new SlashCommandBuilder()
         .setName('tree')
         .setDescription("Post today's gaming tree diagram to the channel"),
+    new SlashCommandBuilder()
+        .setName('url')
+        .setDescription('Get the when2play website URL'),
+    new SlashCommandBuilder()
+        .setName('ranking')
+        .setDescription('Post the current game rankings to the channel'),
 ];
 
 async function registerCommands() {
@@ -114,9 +120,6 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // --- Helper: resolve Discord user ID to when2play user ID via auth token flow ---
-// The bot uses auth tokens to find user IDs. For rally commands, we need to map
-// discord_id -> when2play user_id. We'll call the auth/token endpoint to ensure user exists,
-// then use the returned data.
 async function ensureUser(discordUser) {
     const res = await fetch(`${API_URL}/api/auth/token`, {
         method: 'POST',
@@ -129,8 +132,6 @@ async function ensureUser(discordUser) {
     });
     const json = await res.json();
     if (!json.ok) return null;
-    // The token response includes a URL like /auth/{token} — we can use the token
-    // to call the callback which creates a session and returns the user
     const token = json.data.token;
     const cbRes = await fetch(`${API_URL}/api/auth/callback/${token}`, { headers: botHeaders });
     const cbJson = await cbRes.json();
@@ -150,6 +151,49 @@ async function apiCallWithSession(sessionId, path, options = {}) {
     });
     return res.json();
 }
+
+// --- /url handler ---
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'url') return;
+    await interaction.deferReply({ flags: 64 });
+    await interaction.editReply(API_URL);
+});
+
+// --- /ranking handler ---
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'ranking') return;
+    await interaction.deferReply({ flags: 64 });
+
+    try {
+        const authData = await ensureUser(interaction.user);
+        if (!authData) {
+            await interaction.editReply('Could not authenticate. Try `/play` first.');
+            return;
+        }
+        const { session } = authData;
+
+        const json = await apiCallWithSession(session.session_id, '/api/games/ranking');
+        if (!json.ok || !json.data || json.data.length === 0) {
+            await interaction.editReply('No game rankings yet. Vote on games first!');
+            return;
+        }
+
+        let text = '🎮 **Game Rankings:**\n';
+        for (let i = 0; i < Math.min(json.data.length, 10); i++) {
+            const g = json.data[i];
+            text += `#${i + 1} ${g.name} — ${g.total_score} pts\n`;
+        }
+
+        const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
+        if (channel?.isTextBased()) {
+            await channel.send(text);
+        }
+        await interaction.editReply('Rankings posted to the channel!');
+    } catch (err) {
+        console.error('Error handling /ranking:', err);
+        await interaction.editReply('Something went wrong.');
+    }
+});
 
 // --- Rally command handlers ---
 client.on('interactionCreate', async (interaction) => {
@@ -212,7 +256,6 @@ client.on('interactionCreate', async (interaction) => {
         else if (commandName === 'ping') {
             const targetDiscordUser = interaction.options.getUser('user', true);
             const message = interaction.options.getString('message') ?? undefined;
-            // We need to resolve the target's when2play user ID
             const targetAuth = await ensureUser(targetDiscordUser);
             if (!targetAuth) {
                 await interaction.editReply('Could not find that user. They may need to use `/play` first.');
@@ -291,7 +334,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         else if (commandName === 'tree') {
-            // Fetch tree data via bot auth and post a text summary
             const res = await fetch(`${API_URL}/api/rally/active`, {
                 headers: { ...botHeaders, 'Cookie': `session=${session.session_id}` },
             });
@@ -310,7 +352,6 @@ client.on('interactionCreate', async (interaction) => {
                     summary += `${icon} **${a.actor_username}**: ${a.action_type}${a.message ? ` — ${a.message}` : ''}\n`;
                 }
             }
-            // Post to channel (not ephemeral)
             const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
             if (channel?.isTextBased()) {
                 await channel.send(summary);
@@ -335,7 +376,8 @@ async function pollRallyActions() {
         if (!channel?.isTextBased()) return;
 
         for (const action of json.data) {
-            const actor = `<@${action.actor_discord_id}>`;
+            // Use bold plaintext name instead of @mention to avoid pinging the sender
+            const actor = `**${action.actor_username}**`;
             let text = '';
 
             switch (action.action_type) {
@@ -438,12 +480,10 @@ async function pollGatherPings() {
         }
 
         for (const ping of json.data) {
-            // sender_discord_id is the numeric Discord ID (e.g. "123456789012345678")
             const sender = ping.is_anonymous ? 'Someone' : `<@${ping.sender_discord_id}>`;
             const msg = ping.message || 'Ready to play!';
             let text = `🔔 **Gather bell!** ${sender}: ${msg}`;
 
-            // target_discord_ids are numeric Discord IDs resolved server-side
             if (ping.target_discord_ids && ping.target_discord_ids.length > 0) {
                 const mentions = ping.target_discord_ids.map((id) => `<@${id}>`).join(' ');
                 text += ` → ${mentions}`;
