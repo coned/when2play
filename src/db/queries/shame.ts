@@ -13,7 +13,8 @@ export interface ShameLeaderboardRow {
 	user_id: string;
 	discord_username: string;
 	avatar_url: string | null;
-	shame_count: number;
+	shame_count_today: number;
+	shame_count_week: number;
 	recent_reasons: string[];
 }
 
@@ -57,20 +58,35 @@ export async function getMyShameVotesToday(db: D1Database, voterId: string): Pro
 	return result.results.map((r) => r.target_id);
 }
 
+/** Delete shame votes older than 7 days. */
+async function cleanupOldShameVotes(db: D1Database): Promise<void> {
+	const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+	await db.prepare('DELETE FROM shame_votes WHERE created_at < ?').bind(cutoff).run();
+}
+
 export async function getShameLeaderboard(db: D1Database): Promise<ShameLeaderboardRow[]> {
+	// Piggyback cleanup on reads
+	await cleanupOldShameVotes(db);
+
+	const today = now().split('T')[0];
+	const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
 	const result = await db
 		.prepare(
 			`SELECT
 				u.id as user_id,
 				u.discord_username,
 				u.avatar_url,
-				COUNT(sv.id) as shame_count
+				SUM(CASE WHEN sv.created_at >= ? THEN 1 ELSE 0 END) as shame_count_today,
+				COUNT(sv.id) as shame_count_week
 			FROM users u
 			LEFT JOIN shame_votes sv ON u.id = sv.target_id
+				AND sv.created_at >= ?
 			GROUP BY u.id
-			HAVING shame_count > 0
-			ORDER BY shame_count DESC`,
+			HAVING shame_count_week > 0
+			ORDER BY shame_count_week DESC`,
 		)
+		.bind(today, sevenDaysAgo)
 		.all<Omit<ShameLeaderboardRow, 'recent_reasons'>>();
 
 	// Fetch recent reasons for each user
