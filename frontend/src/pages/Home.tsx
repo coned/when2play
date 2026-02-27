@@ -7,6 +7,9 @@ import { GatherBell } from '../components/gather/GatherBell';
 import { ShameWall } from '../components/shame/ShameWall';
 import { ScheduleSummary } from '../components/schedule/ScheduleSummary';
 import { AdminPanel } from '../components/admin/AdminPanel';
+import { RallyPanel } from '../components/rally/RallyPanel';
+import { GamingTree } from '../components/tree/GamingTree';
+import { BlogPage } from '../components/blog/BlogPage';
 
 interface HomeProps {
 	user: User;
@@ -22,7 +25,10 @@ export function Home({ user, onLogout }: HomeProps) {
 			{activeTab === 'games' && <GamePool userId={user.id} />}
 			{activeTab === 'availability' && <AvailabilityView userId={user.id} />}
 			{activeTab === 'gather' && <GatherBell />}
+			{activeTab === 'rally' && <RallyPanel userId={user.id} />}
+			{activeTab === 'tree' && <GamingTree />}
 			{activeTab === 'shame' && <ShameWall userId={user.id} />}
+			{activeTab === 'blog' && <BlogPage />}
 			{activeTab === 'admin' && user.is_admin && <AdminPanel />}
 		</Shell>
 	);

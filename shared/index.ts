@@ -6,3 +6,4 @@ export type { AvailabilitySlot, SetAvailabilityRequest, OverlapWindow } from './
 export type { GatherPing, CreateGatherRequest } from './types/gather';
 export type { ShameVote, CreateShameRequest, ShameLeaderboardEntry } from './types/shame';
 export type { Setting, SettingsMap, UpdateSettingsRequest } from './types/settings';
+export type { ActionType, Rally, RallyAction, RallyTreeNode, RallyTreeData, JudgeTimeResult, CreateRallyRequest, CreateActionRequest, ShareTreeRequest } from './types/rally';

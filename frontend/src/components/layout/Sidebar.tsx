@@ -9,7 +9,10 @@ const BASE_TABS = [
 	{ id: 'games', label: 'Games' },
 	{ id: 'availability', label: 'Availability' },
 	{ id: 'gather', label: 'Gather' },
+	{ id: 'rally', label: 'Rally' },
+	{ id: 'tree', label: 'Tree' },
 	{ id: 'shame', label: 'Shame Wall' },
+	{ id: 'blog', label: 'Blog' },
 ];
 
 const ADMIN_TAB = { id: 'admin', label: 'Settings' };

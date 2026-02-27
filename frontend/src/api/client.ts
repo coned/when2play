@@ -93,4 +93,17 @@ export const api = {
 	// Steam
 	lookupSteam: (appId: string) => request<{ name: string; header_image: string }>(`/steam/lookup/${appId}`),
 	searchSteam: (query: string) => request<Array<{ app_id: string; name: string; image_url: string }>>(`/steam/search?q=${encodeURIComponent(query)}`),
+
+	// Rally
+	createRally: (data?: { timing?: 'now' | 'later' }) =>
+		request<any>('/rally/call', { method: 'POST', body: JSON.stringify(data ?? {}) }),
+	rallyAction: (data: { action_type: string; target_user_ids?: string[]; message?: string }) =>
+		request<any>('/rally/action', { method: 'POST', body: JSON.stringify(data) }),
+	judgeTime: () => request<any>('/rally/judge/time', { method: 'POST' }),
+	judgeAvail: (data: { target_user_ids: string[] }) =>
+		request<any>('/rally/judge/avail', { method: 'POST', body: JSON.stringify(data) }),
+	getActiveRally: () => request<any>('/rally/active'),
+	getTreeData: (dayKey?: string) => request<any>(`/rally/tree${dayKey ? `?day_key=${dayKey}` : ''}`),
+	shareTree: (data: { image_data: string }) =>
+		request<any>('/rally/tree/share', { method: 'POST', body: JSON.stringify(data) }),
 };
