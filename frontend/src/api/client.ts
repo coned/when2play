@@ -95,7 +95,7 @@ export const api = {
 	searchSteam: (query: string) => request<Array<{ app_id: string; name: string; image_url: string }>>(`/steam/search?q=${encodeURIComponent(query)}`),
 
 	// Rally
-	createRally: (data?: { timing?: 'now' | 'later'; is_anonymous?: boolean }) =>
+	createRally: (data?: { message?: string; is_anonymous?: boolean }) =>
 		request<any>('/rally/call', { method: 'POST', body: JSON.stringify(data ?? {}) }),
 	shareRanking: () => request<any>('/rally/share-ranking', { method: 'POST' }),
 	rallyAction: (data: { action_type: string; target_user_ids?: string[]; message?: string }) =>

@@ -55,7 +55,6 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 	const [error, setError] = useState('');
 	const [success, setSuccess] = useState('');
 	const [expandedButton, setExpandedButton] = useState<ExpandedButton>(null);
-	const [callTiming, setCallTiming] = useState<'now' | 'later'>('now');
 	const [callAnonymous, setCallAnonymous] = useState(false);
 	const [composeMessage, setComposeMessage] = useState('');
 	const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
@@ -104,7 +103,9 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 			setSelectedUserIds(new Set());
 		} else {
 			setExpandedButton(btn);
-			setComposeMessage('');
+			// Auto-select first phrase if available
+			const btnPhrases = btn ? getSuggestedPhrases(btn) : [];
+			setComposeMessage(btnPhrases.length > 0 ? btnPhrases[0] : '');
 			setSelectedUserIds(new Set());
 		}
 	};
@@ -122,9 +123,9 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 
 		try {
 			if (expandedButton === 'call') {
-				const result = await api.createRally({ timing: callTiming, is_anonymous: callAnonymous || undefined });
+				const result = await api.createRally({ message: composeMessage || undefined, is_anonymous: callAnonymous || undefined });
 				if (result.ok) {
-					setSuccess(`Rally started (${callTiming})!`);
+					setSuccess('Rally started!');
 					setExpandedButton(null);
 					setComposeMessage('');
 					setCallAnonymous(false);
@@ -226,7 +227,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 
 	const otherUsers = users.filter((u) => u.id !== userId);
 	const needsUserSelect = expandedButton === 'ping' || expandedButton === 'where' || expandedButton === 'judge_avail';
-	const needsTimingSelect = expandedButton === 'call';
+	const needsCallOptions = expandedButton === 'call';
 	const phrases = expandedButton ? getSuggestedPhrases(expandedButton) : [];
 
 	const btnStyle = (actionType: string): Record<string, string> => ({
@@ -281,17 +282,9 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 				{/* Compose area */}
 				{expandedButton && (
 					<div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-						{/* Timing selector for Call */}
-						{needsTimingSelect && (
+						{/* Call options */}
+						{needsCallOptions && (
 							<div style={{ marginBottom: '8px' }}>
-								<div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
-									<button class={`btn ${callTiming === 'now' ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '4px 12px', fontSize: '12px' }} onClick={() => setCallTiming('now')}>
-										Now
-									</button>
-									<button class={`btn ${callTiming === 'later' ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '4px 12px', fontSize: '12px' }} onClick={() => setCallTiming('later')}>
-										Later
-									</button>
-								</div>
 								<label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
 									<input
 										type="checkbox"
@@ -335,9 +328,9 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 								{phrases.map((phrase) => (
 									<button
 										key={phrase}
-										class="btn btn-secondary"
+										class={`btn ${composeMessage === phrase ? 'btn-primary' : 'btn-secondary'}`}
 										style={{ padding: '2px 8px', fontSize: '11px' }}
-										onClick={() => setComposeMessage(phrase)}
+										onClick={() => setComposeMessage(composeMessage === phrase ? '' : phrase)}
 									>
 										{phrase}
 									</button>

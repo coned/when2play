@@ -35,16 +35,15 @@ const VALID_ACTION_TYPES: ActionType[] = ['in', 'out', 'ping', 'brb', 'where'];
 // POST /api/rally/call — create or get today's rally + record call action
 rally.post('/call', requireAuth, async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ timing?: 'now' | 'later'; is_anonymous?: boolean }>().catch(() => ({} as { timing?: 'now' | 'later'; is_anonymous?: boolean }));
-	const timing = body.timing === 'later' ? 'later' : 'now';
+	const body = await c.req.json<{ message?: string; is_anonymous?: boolean }>().catch(() => ({} as { message?: string; is_anonymous?: boolean }));
 
 	const dayKey = await getDayKey(c.env.DB);
-	const rallyRow = await createOrGetRally(c.env.DB, user.id, timing, dayKey);
+	const rallyRow = await createOrGetRally(c.env.DB, user.id, 'now', dayKey);
 
 	const metadata = body.is_anonymous ? { is_anonymous: true } : undefined;
 	const action = await createRallyAction(c.env.DB, user.id, 'call', {
 		rallyId: rallyRow.id,
-		message: timing,
+		message: body.message || undefined,
 		dayKey,
 		metadata,
 	});
