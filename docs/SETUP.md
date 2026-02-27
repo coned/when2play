@@ -200,7 +200,12 @@ Discord ←→ Bot (your code, hosted anywhere) ←→ when2play API (Cloudflare
 
 1. **`/play` command** — creates a one-time auth link and DMs it to the user
 2. **`/when2play-admin` command** — creates a one-time admin link (requires ADMINISTRATOR)
-3. **Rally commands** — 8 slash commands for session coordination (`/call`, `/in`, `/out`, `/ping`, `/judge`, `/brb`, `/where`, `/tree`)
+3. **Rally commands** — slash commands for session coordination:
+   - `/call`, `/in`, `/out`, `/ping`, `/brb`, `/where` — core rally actions
+   - `/call2select @user` — nudge someone to set their availability
+   - `/post schedule` — find and post best overlapping time windows
+   - `/post gamerank` — post current game rankings to the channel
+   - `/post gametree` — post today's gaming tree diagram
 4. **Gather polling** — periodically checks for gather pings and posts them in a Discord channel
 5. **Rally polling** — periodically checks for rally actions and posts formatted messages
 6. **Tree share polling** — periodically checks for tree share images and posts as attachments

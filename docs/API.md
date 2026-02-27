@@ -106,10 +106,14 @@ Updates the current user's profile.
 ```json
 {
   "discord_username": "NewName",
+  "display_name": "Dave",
+  "sync_name_from_discord": true,
   "timezone": "America/New_York",
   "time_granularity_minutes": 30
 }
 ```
+
+`display_name` overrides the Discord username for display purposes (max 50 chars). `sync_name_from_discord` controls whether the name auto-updates on next login (default `true`).
 
 ---
 
@@ -308,11 +312,20 @@ Shames another user. One shame per voter-target pair per day.
 
 **Body:**
 ```json
-{ "reason": "No-showed last night" }  // optional, max 200 chars
+{
+  "reason": "No-showed last night",  // optional, max 200 chars
+  "is_anonymous": false              // optional, default false
+}
 ```
 
+### `DELETE /api/shame/:targetId`
+Withdraws today's shame vote against a user.
+
+### `GET /api/shame/my-votes`
+Returns an array of target user IDs the current user has shamed today.
+
 ### `GET /api/shame/leaderboard`
-Returns the shame leaderboard sorted by shame count. Includes latest 3 reasons per user.
+Returns the shame leaderboard sorted by all-time shame count. Each entry includes the latest 5 reasons and today's voters.
 
 **Response:**
 ```json
@@ -322,13 +335,28 @@ Returns the shame leaderboard sorted by shame count. Includes latest 3 reasons p
     {
       "user_id": "uuid",
       "discord_username": "GamerDave",
+      "display_name": "Dave",
       "avatar_url": "https://...",
       "shame_count": 5,
-      "recent_reasons": ["No-showed", "AFK", "Dodged"]
+      "shame_count_today": 1,
+      "shame_count_week": 3,
+      "recent_reasons": [
+        {
+          "reason": "No-showed last night",
+          "voter_id": "uuid-or-null",
+          "voter_name": "Alice-or-null",
+          "voter_avatar": "url-or-null"
+        }
+      ],
+      "today_voters": [
+        { "voter_id": "uuid-or-null", "voter_name": "Alice-or-null", "voter_avatar": "url-or-null", "is_anonymous": false }
+      ]
     }
   ]
 }
 ```
+
+`voter_id`, `voter_name`, and `voter_avatar` are `null` for anonymous votes.
 
 ---
 
@@ -368,7 +396,7 @@ Requires session cookie. Records an action (in/out/ping/brb/where). Auto-attache
 ```
 
 ### `POST /api/rally/judge/time`
-Requires session cookie. Computes optimal time slots from availability of users who said `/in`.
+Requires session cookie. Computes all overlapping availability windows for today where 2+ users are available simultaneously.
 
 **Response (201):**
 ```json
@@ -376,12 +404,16 @@ Requires session cookie. Computes optimal time slots from availability of users 
   "ok": true,
   "data": {
     "metadata": {
-      "windows": [{ "start": "19:00", "end": "21:00", "user_count": 3, "user_ids": ["..."] }],
+      "windows": [
+        { "start": "19:00", "end": "21:00", "user_count": 3, "user_ids": ["..."], "user_names": ["Alice", "Bob", "Dave"] }
+      ],
       "day_key": "2026-02-26"
     }
   }
 }
 ```
+
+`start`/`end` are UTC `HH:MM` strings. Windows are sorted by `user_count` descending, then `start` ascending. Adjacent windows with the same user set are merged.
 
 ### `POST /api/rally/judge/avail`
 Requires session cookie. Nudges a user to set availability.
@@ -390,6 +422,9 @@ Requires session cookie. Nudges a user to set availability.
 ```json
 { "target_user_ids": ["uuid"] }
 ```
+
+### `POST /api/rally/share-ranking`
+Requires session cookie. Broadcasts the current game ranking to Discord via a `share_ranking` rally action. The top 10 games (by Borda score) are stored in `metadata.ranking`.
 
 ### `GET /api/rally/active`
 Requires session cookie. Returns today's active rally and all actions. Optional `?day_key=YYYY-MM-DD`.
@@ -449,10 +484,18 @@ Returns all settings as a key-value map.
 ### `PATCH /api/settings`
 Updates settings. **Admin only** — session must have been created via `POST /api/auth/admin-token` (Discord-gated: requires `ADMINISTRATOR` guild permission).
 
-**Body:**
+**Body (all fields optional):**
 ```json
 {
-  "time_granularity_minutes": 30,
-  "game_pool_lifespan_days": 14
+  "time_granularity_minutes": 15,
+  "game_pool_lifespan_days": 7,
+  "gather_cooldown_seconds": 10,
+  "gather_hourly_limit": 30,
+  "avail_start_hour_et": 17,
+  "avail_end_hour_et": 3,
+  "day_reset_hour_et": 8,
+  "rally_button_labels": { "call": "Call", "in": "In" },
+  "rally_suggested_phrases": { "call": ["anyone?", "hop on!"] },
+  "rally_show_discord_command": true
 }
 ```
