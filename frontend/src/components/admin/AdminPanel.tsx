@@ -92,6 +92,144 @@ function TextField({
 	);
 }
 
+function PhrasesEditor({
+	phrases,
+	onChange,
+}: {
+	phrases: string[];
+	onChange: (phrases: string[]) => void;
+}) {
+	const [newPhrase, setNewPhrase] = useState('');
+	const [dragIdx, setDragIdx] = useState<number | null>(null);
+	const [dropIdx, setDropIdx] = useState<number | null>(null);
+
+	const addPhrase = () => {
+		const trimmed = newPhrase.trim();
+		if (!trimmed || phrases.includes(trimmed)) return;
+		onChange([...phrases, trimmed]);
+		setNewPhrase('');
+	};
+
+	const removePhrase = (index: number) => {
+		onChange(phrases.filter((_, i) => i !== index));
+	};
+
+	const handleDragStart = (e: DragEvent, index: number) => {
+		setDragIdx(index);
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('text/plain', String(index));
+		}
+	};
+
+	const handleDragOver = (e: DragEvent, index: number) => {
+		e.preventDefault();
+		setDropIdx(index);
+	};
+
+	const handleDrop = (e: DragEvent, index: number) => {
+		e.preventDefault();
+		if (dragIdx === null || dragIdx === index) {
+			setDragIdx(null);
+			setDropIdx(null);
+			return;
+		}
+		const reordered = [...phrases];
+		const [moved] = reordered.splice(dragIdx, 1);
+		reordered.splice(index, 0, moved);
+		onChange(reordered);
+		setDragIdx(null);
+		setDropIdx(null);
+	};
+
+	const handleDragEnd = () => {
+		setDragIdx(null);
+		setDropIdx(null);
+	};
+
+	return (
+		<div style={{ marginBottom: '16px' }}>
+			<label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', color: 'var(--text-primary)' }}>
+				Suggested phrases
+			</label>
+			{phrases.length > 0 && (
+				<div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+					{phrases.map((phrase, i) => (
+						<div
+							key={`${i}-${phrase}`}
+							draggable
+							onDragStart={(e) => handleDragStart(e as DragEvent, i)}
+							onDragOver={(e) => handleDragOver(e as DragEvent, i)}
+							onDrop={(e) => handleDrop(e as DragEvent, i)}
+							onDragEnd={handleDragEnd}
+							style={{
+								display: 'flex',
+								alignItems: 'center',
+								gap: '6px',
+								padding: '4px 8px',
+								background: dropIdx === i ? 'var(--accent-hover)' : 'var(--bg-tertiary)',
+								borderRadius: '4px',
+								fontSize: '13px',
+								cursor: 'grab',
+								opacity: dragIdx === i ? 0.5 : 1,
+								border: dropIdx === i ? '1px dashed var(--accent)' : '1px solid transparent',
+							}}
+						>
+							<span style={{ color: 'var(--text-muted)', fontSize: '11px', cursor: 'grab', flexShrink: 0 }}>
+								&#x2630;
+							</span>
+							<span style={{ flex: 1 }}>{phrase}</span>
+							<button
+								onClick={() => removePhrase(i)}
+								style={{
+									background: 'none',
+									border: 'none',
+									color: 'var(--text-muted)',
+									cursor: 'pointer',
+									fontSize: '14px',
+									padding: '0 2px',
+									lineHeight: 1,
+									flexShrink: 0,
+								}}
+								title="Remove phrase"
+							>
+								&times;
+							</button>
+						</div>
+					))}
+				</div>
+			)}
+			<div style={{ display: 'flex', gap: '6px' }}>
+				<input
+					type="text"
+					value={newPhrase}
+					placeholder="Type a phrase..."
+					onInput={(e) => setNewPhrase((e.target as HTMLInputElement).value)}
+					onKeyDown={(e) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							addPhrase();
+						}
+					}}
+					style={{ flex: 1, fontSize: '13px', padding: '4px 8px' }}
+					maxLength={100}
+				/>
+				<button
+					class="btn btn-secondary"
+					style={{ padding: '4px 10px', fontSize: '12px', flexShrink: 0 }}
+					onClick={addPhrase}
+					disabled={!newPhrase.trim()}
+				>
+					Add
+				</button>
+			</div>
+			<p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+				Drag to reorder. Press Enter or click Add.
+			</p>
+		</div>
+	);
+}
+
 function SectionCard({ title, children }: { title: string; children: preact.ComponentChildren }) {
 	return (
 		<div
@@ -162,8 +300,7 @@ export function AdminPanel() {
 		}));
 	};
 
-	const setRallyPhrases = (actionType: string, value: string) => {
-		const phrases = value.split(',').map((p) => p.trim()).filter(Boolean);
+	const setRallyPhrases = (actionType: string, phrases: string[]) => {
 		setSettings((s) => ({
 			...s,
 			rally_suggested_phrases: { ...s.rally_suggested_phrases, [actionType]: phrases },
@@ -254,12 +391,9 @@ export function AdminPanel() {
 							value={settings.rally_button_labels[actionType] || ''}
 							onChange={(v) => setRallyLabel(actionType, v)}
 						/>
-						<TextField
-							label={`Suggested phrases`}
-							hint="Comma-separated list of quick-reply phrases."
-							placeholder="e.g. On my way, 5 mins, After this game"
-							value={(settings.rally_suggested_phrases[actionType] ?? []).join(', ')}
-							onChange={(v) => setRallyPhrases(actionType, v)}
+						<PhrasesEditor
+							phrases={settings.rally_suggested_phrases[actionType] ?? []}
+							onChange={(phrases) => setRallyPhrases(actionType, phrases)}
 						/>
 					</div>
 				))}
