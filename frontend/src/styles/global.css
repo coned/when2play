@@ -182,27 +182,27 @@ textarea:focus {
 }
 
 /* Daylight theme overrides for badges and buttons */
-:root[data-theme="daylight"] .badge-accent {
+:root[data-mode="light"] .badge-accent {
 	background: #dbeafe;
 	color: #1e40af;
 }
 
-:root[data-theme="daylight"] .badge-warning {
+:root[data-mode="light"] .badge-warning {
 	background: #fef3c7;
 	color: #854d0e;
 }
 
-:root[data-theme="daylight"] .badge-danger {
+:root[data-mode="light"] .badge-danger {
 	background: #fee2e2;
 	color: #991b1b;
 }
 
-:root[data-theme="daylight"] .btn-secondary {
+:root[data-mode="light"] .btn-secondary {
 	background: #e9ecef;
 	border-color: #ced4da;
 }
 
-:root[data-theme="daylight"] .btn-secondary:hover {
+:root[data-mode="light"] .btn-secondary:hover {
 	border-color: #adb5bd;
 }
 
