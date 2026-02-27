@@ -76,6 +76,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 		shame_count_today: shameMap.get(u.id)?.shame_count_today ?? 0,
 		shame_count_week: shameMap.get(u.id)?.shame_count_week ?? 0,
 		recent_reasons: shameMap.get(u.id)?.recent_reasons ?? [],
+		today_voters: (shameMap.get(u.id)?.today_voters ?? []) as Array<{ voter_id: string | null; voter_name: string | null; voter_avatar: string | null; is_anonymous: boolean }>,
 	}));
 
 	// Sort by shame_count_week desc (primary), shame_count_today desc (secondary), then username
@@ -165,6 +166,72 @@ export function ShameWall({ userId }: ShameWallProps) {
 											</div>
 										)}
 									</div>
+
+									{/* Today's voter avatars */}
+									{u.today_voters.length > 0 && (
+										<div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+											{u.today_voters.map((v, vi) =>
+												v.is_anonymous ? (
+													<span
+														key={vi}
+														title="Anonymous"
+														style={{
+															width: '22px',
+															height: '22px',
+															borderRadius: '50%',
+															background: 'var(--bg-tertiary)',
+															border: '1px solid var(--border)',
+															marginLeft: vi > 0 ? '-6px' : 0,
+															display: 'flex',
+															alignItems: 'center',
+															justifyContent: 'center',
+															fontSize: '11px',
+															color: 'var(--text-muted)',
+															flexShrink: 0,
+														}}
+													>
+														?
+													</span>
+												) : v.voter_avatar ? (
+													<img
+														key={vi}
+														src={v.voter_avatar}
+														alt={v.voter_name ?? ''}
+														title={v.voter_name ?? ''}
+														style={{
+															width: '22px',
+															height: '22px',
+															borderRadius: '50%',
+															border: '1px solid var(--bg-secondary)',
+															marginLeft: vi > 0 ? '-6px' : 0,
+															flexShrink: 0,
+														}}
+													/>
+												) : (
+													<span
+														key={vi}
+														title={v.voter_name ?? ''}
+														style={{
+															width: '22px',
+															height: '22px',
+															borderRadius: '50%',
+															background: 'var(--accent)',
+															border: '1px solid var(--bg-secondary)',
+															marginLeft: vi > 0 ? '-6px' : 0,
+															display: 'flex',
+															alignItems: 'center',
+															justifyContent: 'center',
+															fontSize: '10px',
+															color: '#fff',
+															flexShrink: 0,
+														}}
+													>
+														{(v.voter_name ?? '?')[0].toUpperCase()}
+													</span>
+												),
+											)}
+										</div>
+									)}
 
 									{/* Two-column shame counts */}
 									{hasShame && (

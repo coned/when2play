@@ -17,6 +17,13 @@ export interface ShameReasonRow {
 	voter_avatar: string | null;
 }
 
+export interface ShameVoterRow {
+	voter_id: string | null;
+	voter_name: string | null;
+	voter_avatar: string | null;
+	is_anonymous: boolean;
+}
+
 export interface ShameLeaderboardRow {
 	user_id: string;
 	discord_username: string;
@@ -24,6 +31,7 @@ export interface ShameLeaderboardRow {
 	shame_count_today: number;
 	shame_count_week: number;
 	recent_reasons: ShameReasonRow[];
+	today_voters: ShameVoterRow[];
 }
 
 export async function createShameVote(db: D1Database, voterId: string, targetId: string, reason?: string, isAnonymous = false): Promise<ShameVoteRow> {
@@ -97,7 +105,7 @@ export async function getShameLeaderboard(db: D1Database): Promise<ShameLeaderbo
 		.bind(today, sevenDaysAgo)
 		.all<Omit<ShameLeaderboardRow, 'recent_reasons'>>();
 
-	// Fetch recent reasons for each user with voter info
+	// Fetch recent reasons and today's voters for each user
 	const entries: ShameLeaderboardRow[] = [];
 	for (const row of result.results) {
 		const reasons = await db
@@ -115,6 +123,20 @@ export async function getShameLeaderboard(db: D1Database): Promise<ShameLeaderbo
 			.bind(row.user_id)
 			.all<{ reason: string; is_anonymous: number; voter_id: string; voter_display_name: string | null; voter_discord_username: string; voter_avatar: string | null }>();
 
+		const voters = await db
+			.prepare(
+				`SELECT sv.is_anonymous, sv.voter_id,
+					v.display_name as voter_display_name,
+					v.discord_username as voter_discord_username,
+					v.avatar_url as voter_avatar
+				FROM shame_votes sv
+				LEFT JOIN users v ON sv.voter_id = v.id
+				WHERE sv.target_id = ? AND sv.created_at >= ?
+				ORDER BY sv.created_at DESC`,
+			)
+			.bind(row.user_id, today)
+			.all<{ is_anonymous: number; voter_id: string; voter_display_name: string | null; voter_discord_username: string; voter_avatar: string | null }>();
+
 		entries.push({
 			...row,
 			recent_reasons: reasons.results.map((r) => ({
@@ -122,6 +144,12 @@ export async function getShameLeaderboard(db: D1Database): Promise<ShameLeaderbo
 				voter_id: r.is_anonymous ? null : r.voter_id,
 				voter_name: r.is_anonymous ? null : (r.voter_display_name ?? r.voter_discord_username),
 				voter_avatar: r.is_anonymous ? null : r.voter_avatar,
+			})),
+			today_voters: voters.results.map((v) => ({
+				voter_id: v.is_anonymous ? null : v.voter_id,
+				voter_name: v.is_anonymous ? null : (v.voter_display_name ?? v.voter_discord_username),
+				voter_avatar: v.is_anonymous ? null : v.voter_avatar,
+				is_anonymous: Boolean(v.is_anonymous),
 			})),
 		});
 	}
