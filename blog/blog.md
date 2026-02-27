@@ -4,93 +4,130 @@
 
 ## The Problem
 
-If you've ever tried to get 4-5 friends online at the same time, you know the drill. Someone drops a "play tonight?" in Discord at 2 PM. Three hours pass. Someone says "maybe." Two more hours. Another person says "I'm in after dinner." By 9 PM you've got three people ready, one who went AFK, and one who forgot they said yes.
+If you've ever tried to get 4–5 friends online at the same time, you know the drill. Someone drops a *"play tonight?"* in Discord at 2 PM. Three hours pass. Someone says *"maybe."* Two more hours. Another person says *"I'm in after dinner."* By 9 PM you've got three people ready, one who went AFK, and one who forgot they said yes.
 
-This is a coordination problem, and it turns out it looks a lot like something computer scientists already solved in the 1970s.
+This is a coordination problem. And it turns out it looks *uncannily* like something computer scientists formalized in the 1970s.
 
 ![](assets/handshake.png)
 
 ## TCP: The Original "Let's Play"
 
-When two computers want to talk to each other, they do a three-way handshake:
+When two computers want to talk reliably, they don't just start sending payloads. They first establish a connection with a **three-way handshake**:
 
-```
-Client  ──SYN──>  Server     "Hey, wanna connect?"
-Client  <─SYN-ACK─ Server     "Yeah, I'm here!"
-Client  ──ACK──>   Server     "Great, let's go."
+```bash
+Client  ──SYN────>  Server     "Hey, can we connect?"
+Client  <─SYN-ACK── Server     "Yes, I'm here."
+Client  ──ACK────>  Server     "Great, let's begin."
          ═══ CONNECTION ESTABLISHED ═══
 ```
 
-Now look at how a typical gaming session gets organized:
+The handshake is small but profound: each step confirms liveness, intent, and readiness -- before anyone commits to the real conversation.
+
+Now compare it to organizing a gaming session:
+
+```bash
+Player A ──CALL──> Group      "play tonight?"
+Player B ──IN────> Group      "I'm in."
+Player C ──IN────> Group      "same."
+System  ──LOCK───> Group      "9 PM confirmed."
+         ═══ SESSION ESTABLISHED ═══
+```
+
+The parallel is not perfect (humans are a bit more… lossy), but it's close enough to be suspicious.
+
+## The Real Picture: Two Lifelines, Red/Blue Arrows, and Very Human Packets
+
+In practice, coordination doesn't look like a tidy textbook handshake. It looks like the trace in the figure above:
+
+- Two vertical **lifelines** (one per participant).
+- **Red arrows** for outbound proposals (our "SYN" moments).
+- **Blue arrows** for confirmations (our "ACK-ish" moments).
+- Margin annotations like "receives SYN," "sends ACK," etc., almost as if Discord were a network stack with feelings.
+
+One technical clarification (before the networking purists object):
+
+> In standard TCP, the server replies with a single **SYN+ACK** segment, not separate "SYN" and "ACK" packets.  
+> Our diagram is a stylized social trace: a human reply often both acknowledges the call and signals readiness, so we label it conceptually as "SYN-ACK."
+
+## When Things Go Wrong: Human Packet Loss
+
+TCP assumes packets will be dropped. So it builds in timeouts, retransmissions, and resets.
+
+Gaming coordination exhibits the same patterns, just with better excuses.
 
 ```
-Player1 ──CALL──> Group      "let's play!"
-Player2 ──IN────> Group      "I'm in!"
-Player3 ──IN────> Group      "me too!"
-          ═══ SESSION ESTABLISHED ═══
-```
-
-The parallel is uncanny. A `/call` is a SYN packet. Each `/in` is a SYN-ACK. When enough people respond, the session is established.
-
-## When Things Go Wrong: Packet Loss
-
-In TCP, packets get lost. You get retransmissions, timeouts, RST packets. Gaming coordination has its own version:
-
-```
-Player1 ──CALL──> Group      2:00 PM
+Player A ──CALL──> Group      2:00 PM
           ... silence ...       (packet loss)
-Player1 ──PING──> Player2    4:30 PM  (retransmission)
-Player2 ──BRB───> Group      4:45 PM  (partial ACK)
-Player1 ──WHERE─> Player2    6:00 PM  (keepalive probe)
-Player2 ──IN────> Group      6:15 PM  (delayed ACK)
-Player3 ──OUT───> Group      6:20 PM  (RST / connection refused)
+Player A ──PING──> Player B    4:30 PM  (retransmission)
+Player B ──BRB───> Group       4:45 PM  (window temporarily closed)
+Player A ──WHERE─> Player B    6:00 PM  (keepalive probe)
+Player B ──IN────> Group       6:15 PM  (delayed ACK)
+Player D ──OUT───> Group       6:20 PM  (RST / connection refused)
 ```
 
-Some days look like clean three-way handshakes. Others look like packet loss with retransmissions scattered everywhere. The `/ping` command is literally a retransmission — "I sent you a SYN, where's my ACK?"
+Some evenings resemble clean handshakes. Others resemble congested networks with jitter and unreliable peers.
 
-## The Rally System
+The `/ping` is effectively a retransmission:  
+"I sent you a SYN. I'm still waiting for your ACK."
 
-The rally system standardizes these ad-hoc chat patterns into formal "moves" in a game tree. Eight actions cover the full vocabulary of session coordination:
+## The Rally System: Turning Chat Into Explicit Moves
+
+Rally formalizes these coordination patterns into a small set of explicit actions:
 
 ```
-/call   SYN        Initiate a session
-/in     SYN-ACK    Accept the invitation
-/out    RST        Refuse / disconnect
-/ping   Retransmit Resend to specific user
-/brb    Window=0   Temporarily unavailable
-/where  Keepalive  Check if peer is still there
-/judge  DNS        System resolves best timing
-/tree   Wireshark  Visualize the whole exchange
+/call    ≈ SYN          Initiate session proposal
+/in      ≈ SYN+ACK      Acknowledge + signal availability
+/lock    ≈ ACK          Confirm chosen time (explicit or system-triggered)
+/out     ≈ RST          Refuse / disconnect
+/ping    ≈ Retransmit   Direct reminder
+/brb     ≈ Window=0     Temporarily unavailable
+/where   ≈ Keepalive    Check liveness
+/judge   ≈ Scheduler    Suggest optimal time
+/tree    ≈ Wireshark    Visualize full exchange
 ```
+
+Two subtle but important notes:
+
+- `/in` functions like a SYN-ACK socially, even though humans don't set packet flags.
+- The final ACK often appears as a system confirmation ("locked at 9") once quorum is reached.
 
 ## The Gaming Tree
 
-The Gaming Tree takes these interactions and renders them as a directed acyclic graph — like an extensive-form game tree from game theory. Each node is an action, each edge is a causal relationship. Calls branch into responses. Pings create targeted edges. The judge adds system nodes.
+The Gaming Tree renders coordination as a **time-ordered directed graph**:
 
-It's part network diagram, part game tree, part social graph. And at the end of the day, you can look back and see exactly how your group went from "anyone around?" to "GG."
+- Each node is an action (`/call`, `/in`, `/ping`, etc.).
+- Each edge represents a causal relationship.
+- Edges always point forward in time, so the structure forms a **DAG**.
+
+It is part network trace, part extensive-form game tree, part social coordination map.
+
+Instead of scrolling through fragmented chat history, you see the structure of agreement.
 
 ## A Day in the Life
 
-Here's what a typical evening coordination looks like, visualized:
+A typical evening trace might look like this:
 
 ```
-                                ┌─ ✅ Player2: in ──┐
-   📢 Player1: call (later) ───┤                    ├─── 🎮 Session!
-                                ├─ ⏳ Player3: brb  ─┤
-                                │        │           │
-                                │   ❓ Player1       │
-                                │   → Player3: where │
-                                │        │           │
-                                │   ✅ Player3: in ──┘
-                                │
-                                └─ ❌ Player4: out
-                                   "gotta study"
+📢 Player A: /call
+│
+├── ✅ Player B: /in
+│
+├── ⏳ Player C: /brb
+│     └── ❓ Player A: /where
+│           └── ✅ Player C: /in
+│
+└── ❌ Player D: /out
+      "gotta study"
+
+🎮 Session Locked (A, B, C)
 ```
 
-Three-way handshake established between Players 1, 2, and 3. Player 3 had a partial failure (BRB) requiring a keepalive probe (WHERE), but eventually ACK'd. Player 4 sent a RST with reason.
+Three-way handshake established among A, B, and C after a temporary pause and a keepalive probe. Player D sends a polite RST.
 
----
+## Why Structure Matters
 
-The gaming tree won't solve the fundamental coordination problem — people are still going to be busy, forget, or get distracted. But it gives structure to the chaos, and turns an evening of "u there?" messages into something you can actually look back at and laugh about.
+The gaming tree won't solve the fundamental coordination problem; people are still going to be busy, forget, or get distracted.
 
-Try `/call` in Discord or hit the Rally tab to get started.
+But it gives structure to the chaos, and turns an evening of "u there?" messages into something you can actually look back at and laugh about.
+
+Try `/call` in Discord or open the Rally tab to see your own handshake unfold.
