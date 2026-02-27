@@ -153,9 +153,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 	const startIndex = 0;
 
 	const nextDate = useMemo(() => getNextDate(date), [date]);
-	const slotsPerColumn = Math.max(4, Math.floor((containerHeight - 28) / SLOT_HEIGHT));
 	const totalSlots = filteredSlots.length;
-	const numColumns = Math.max(isMobile ? 2 : 2, Math.min(isMobile ? 2 : 5, Math.ceil(totalSlots / slotsPerColumn)));
+	const numColumns = isMobile ? 2 : 3;
+	const slotsPerColumn = Math.ceil(totalSlots / numColumns);
 
 	// Base local date for detecting +1 day slots
 	const baseLocalDate = useMemo(() => new Date(`${date}T12:00:00Z`).toLocaleDateString('en-CA'), [date]);
@@ -257,7 +257,13 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 	return (
 		<div>
 			{/* Action bar */}
-			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+			<div style={{
+				display: 'flex',
+				justifyContent: 'space-between',
+				alignItems: 'center',
+				marginBottom: '6px',
+				...(isMobile ? { position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-primary)', paddingTop: '4px', paddingBottom: '4px' } : {}),
+			}}>
 				<div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
 					{isMobile && (
 						<button
@@ -287,10 +293,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 				style={{
 					display: 'grid',
 					gridTemplateColumns: `repeat(${numColumns}, 1fr)`,
-					gap: '6px',
-					height: `${containerHeight}px`,
+					gap: isMobile ? '8px' : '0 12px',
 					touchAction: touchMode === 'select' ? 'none' : 'auto',
-					overflow: 'hidden',
+					...(isMobile ? {} : { height: `${containerHeight}px`, overflowX: 'hidden', overflowY: 'auto' }),
 				}}
 			>
 				{columns.map((col, ci) => (
@@ -301,6 +306,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 							flexDirection: 'column',
 							gap: '1px',
 							overflow: 'hidden',
+							...(!isMobile && ci < numColumns - 1 ? { borderRight: '1px solid var(--border)', paddingRight: '12px' } : {}),
 						}}
 					>
 						<div
