@@ -206,6 +206,73 @@ textarea:focus {
 	border-color: #adb5bd;
 }
 
+/* Blog content */
+.blog-content h1 {
+	font-size: 20px;
+	margin-bottom: 4px;
+	color: var(--accent);
+}
+
+.blog-content h2 {
+	font-size: 16px;
+	margin-top: 28px;
+	margin-bottom: 8px;
+}
+
+.blog-content h3 {
+	font-size: 14px;
+	margin-top: 20px;
+	margin-bottom: 6px;
+}
+
+.blog-content p {
+	line-height: 1.6;
+	color: var(--text-secondary);
+	margin-bottom: 8px;
+}
+
+.blog-content em {
+	color: var(--text-muted);
+	font-size: 12px;
+}
+
+.blog-content code {
+	background: var(--bg-tertiary);
+	padding: 1px 4px;
+	border-radius: 3px;
+	font-size: 13px;
+}
+
+.blog-content pre {
+	background: var(--bg-tertiary);
+	padding: 12px 16px;
+	border-radius: 6px;
+	font-size: 13px;
+	overflow-x: auto;
+	white-space: pre;
+	line-height: 1.5;
+	color: var(--text-secondary);
+	margin: 12px 0;
+}
+
+.blog-content pre code {
+	background: none;
+	padding: 0;
+	font-size: inherit;
+}
+
+.blog-content hr {
+	border: none;
+	border-top: 1px solid var(--border);
+	margin: 16px 0;
+}
+
+.blog-content img {
+	max-width: 100%;
+	border-radius: 6px;
+	margin: 12px 0;
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
 	.btn {
