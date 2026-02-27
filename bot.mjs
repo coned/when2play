@@ -44,12 +44,6 @@ const commands = [
         .addUserOption(o => o.setName('user').setDescription('Who to ping').setRequired(true))
         .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
     new SlashCommandBuilder()
-        .setName('judge')
-        .setDescription('Ask the judge')
-        .addSubcommand(sub => sub.setName('time').setDescription('Suggest best time slots'))
-        .addSubcommand(sub => sub.setName('avail').setDescription('Nudge someone to set availability')
-            .addUserOption(o => o.setName('user').setDescription('Who to nudge').setRequired(true))),
-    new SlashCommandBuilder()
         .setName('brb')
         .setDescription('Be right back, joining shortly')
         .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
@@ -58,14 +52,18 @@ const commands = [
         .setDescription("Where are you? You didn't show up!")
         .addUserOption(o => o.setName('user').setDescription('Who to ask').setRequired(true)),
     new SlashCommandBuilder()
-        .setName('tree')
-        .setDescription("Post today's gaming tree diagram to the channel"),
+        .setName('call2select')
+        .setDescription('Nudge someone to set their availability on when2play')
+        .addUserOption(o => o.setName('user').setDescription('Who to nudge').setRequired(true)),
+    new SlashCommandBuilder()
+        .setName('post')
+        .setDescription('Post information to the channel')
+        .addSubcommand(sub => sub.setName('schedule').setDescription('Find and post the best overlapping time windows for today'))
+        .addSubcommand(sub => sub.setName('gamerank').setDescription('Post the current game rankings to the channel'))
+        .addSubcommand(sub => sub.setName('gametree').setDescription("Post today's gaming tree diagram to the channel")),
     new SlashCommandBuilder()
         .setName('url')
         .setDescription('Get the when2play website URL'),
-    new SlashCommandBuilder()
-        .setName('ranking')
-        .setDescription('Post the current game rankings to the channel'),
     new SlashCommandBuilder()
         .setName('help')
         .setDescription('Show all when2play commands'),
@@ -160,54 +158,16 @@ client.on('interactionCreate', async (interaction) => {
     await interaction.editReply(API_URL);
 });
 
-// --- /ranking handler ---
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'ranking') return;
-    await interaction.deferReply({ flags: 64 });
-
-    try {
-        const authData = await ensureUser(interaction.user, interaction.member);
-        if (!authData) {
-            await interaction.editReply('Could not authenticate. Try `/play` first.');
-            return;
-        }
-        const { session } = authData;
-
-        const json = await apiCallWithSession(session.session_id, '/api/games/ranking');
-        if (!json.ok || !json.data || json.data.length === 0) {
-            await interaction.editReply('No game rankings yet. Vote on games first!');
-            return;
-        }
-
-        let text = '🎮 **Game Rankings:**\n';
-        for (let i = 0; i < Math.min(json.data.length, 10); i++) {
-            const g = json.data[i];
-            text += `#${i + 1} ${g.name} — ${g.total_score} pts\n`;
-        }
-
-        const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
-        if (channel?.isTextBased()) {
-            await channel.send(text);
-        }
-        await interaction.editReply('Rankings posted to the channel!');
-    } catch (err) {
-        console.error('Error handling /ranking:', err);
-        await interaction.editReply('Something went wrong.');
-    }
-});
-
 // --- Rally command handlers ---
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
     const { commandName } = interaction;
 
-    // Rally commands
-    if (!['call', 'in', 'out', 'ping', 'judge', 'brb', 'where', 'tree'].includes(commandName)) return;
+    if (!['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'].includes(commandName)) return;
 
     await interaction.deferReply({ flags: 64 });
 
     try {
-        // Ensure the user exists and get a session
         const authData = await ensureUser(interaction.user, interaction.member);
         if (!authData) {
             await interaction.editReply('Could not authenticate. Try `/play` first to set up your account.');
@@ -273,36 +233,6 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.editReply(`Pinged ${targetDiscordUser.displayName}!`);
         }
 
-        else if (commandName === 'judge') {
-            const sub = interaction.options.getSubcommand();
-            if (sub === 'time') {
-                const json = await apiCallWithSession(session.session_id, '/api/rally/judge/time', {
-                    method: 'POST',
-                });
-                if (!json.ok) {
-                    await interaction.editReply(`Failed: ${json.error.message}`);
-                    return;
-                }
-                await interaction.editReply('Judge is computing best time slots...');
-            } else if (sub === 'avail') {
-                const targetDiscordUser = interaction.options.getUser('user', true);
-                const targetAuth = await ensureUser(targetDiscordUser);
-                if (!targetAuth) {
-                    await interaction.editReply('Could not find that user.');
-                    return;
-                }
-                const json = await apiCallWithSession(session.session_id, '/api/rally/judge/avail', {
-                    method: 'POST',
-                    body: JSON.stringify({ target_user_ids: [targetAuth.user.id] }),
-                });
-                if (!json.ok) {
-                    await interaction.editReply(`Failed: ${json.error.message}`);
-                    return;
-                }
-                await interaction.editReply(`Nudged ${targetDiscordUser.displayName} to set availability.`);
-            }
-        }
-
         else if (commandName === 'brb') {
             const message = interaction.options.getString('message') ?? undefined;
             const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
@@ -334,30 +264,89 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.editReply(`Asked where ${targetDiscordUser.displayName} is.`);
         }
 
-        else if (commandName === 'tree') {
-            const res = await fetch(`${API_URL}/api/rally/active`, {
-                headers: { ...botHeaders, 'Cookie': `session_id=${session.session_id}` },
-            });
-            const json = await res.json();
-            if (!json.ok || !json.data.rally) {
-                await interaction.editReply('No active rally today. Use `/call` to start one!');
+        else if (commandName === 'call2select') {
+            const targetDiscordUser = interaction.options.getUser('user', true);
+            const targetAuth = await ensureUser(targetDiscordUser);
+            if (!targetAuth) {
+                await interaction.editReply('Could not find that user. They may need to use `/play` first.');
                 return;
             }
-            const { rally, actions } = json.data;
-            let summary = `**Gaming Tree** — ${rally.day_key}\n`;
-            if (actions.length === 0) {
-                summary += 'No actions yet.';
-            } else {
-                for (const a of actions) {
-                    const icon = { call: '📢', in: '✅', out: '❌', ping: '👋', judge_time: '🤖', judge_avail: '🤖', brb: '⏳', where: '❓' }[a.action_type] ?? '•';
-                    summary += `${icon} **${a.actor_username}**: ${a.action_type}${a.message ? ` — ${a.message}` : ''}\n`;
+            const json = await apiCallWithSession(session.session_id, '/api/rally/judge/avail', {
+                method: 'POST',
+                body: JSON.stringify({ target_user_ids: [targetAuth.user.id] }),
+            });
+            if (!json.ok) {
+                await interaction.editReply(`Failed: ${json.error.message}`);
+                return;
+            }
+            await interaction.editReply(`Nudged ${targetDiscordUser.displayName} to set their availability.`);
+        }
+
+        else if (commandName === 'post') {
+            const sub = interaction.options.getSubcommand();
+
+            if (sub === 'schedule') {
+                const json = await apiCallWithSession(session.session_id, '/api/rally/judge/time', {
+                    method: 'POST',
+                });
+                if (!json.ok) {
+                    await interaction.editReply(`Failed: ${json.error.message}`);
+                    return;
                 }
+                const meta = json.data?.metadata;
+                if (!meta?.windows?.length) {
+                    await interaction.editReply('No overlapping availability windows found today. Ask everyone to set their times!');
+                    return;
+                }
+                const best = meta.windows[0];
+                const bestNames = best.user_names?.join(', ') ?? `${best.user_count} people`;
+                let reply = `📅 **Best window:** ${best.start}–${best.end} UTC (${bestNames})`;
+                if (meta.windows.length > 1) {
+                    const allLines = meta.windows.slice(0, 8).map((w, i) => {
+                        const names = w.user_names?.join(', ') ?? `${w.user_count} people`;
+                        return `${i + 1}. ${w.start}–${w.end}: ${names}`;
+                    });
+                    reply += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
+                }
+                await interaction.editReply(reply);
             }
-            const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
-            if (channel?.isTextBased()) {
-                await channel.send(summary);
+
+            else if (sub === 'gamerank') {
+                const json = await apiCallWithSession(session.session_id, '/api/rally/share-ranking', {
+                    method: 'POST',
+                });
+                if (!json.ok) {
+                    await interaction.editReply(`Failed: ${json.error.message}`);
+                    return;
+                }
+                await interaction.editReply('Game rankings posted to the channel!');
             }
-            await interaction.editReply('Tree posted to the channel!');
+
+            else if (sub === 'gametree') {
+                const res = await fetch(`${API_URL}/api/rally/active`, {
+                    headers: { ...botHeaders, 'Cookie': `session_id=${session.session_id}` },
+                });
+                const json = await res.json();
+                if (!json.ok || !json.data.rally) {
+                    await interaction.editReply('No active rally today. Use `/call` to start one!');
+                    return;
+                }
+                const { rally, actions } = json.data;
+                let summary = `**Gaming Tree** — ${rally.day_key}\n`;
+                if (actions.length === 0) {
+                    summary += 'No actions yet.';
+                } else {
+                    for (const a of actions) {
+                        const icon = { call: '📢', in: '✅', out: '❌', ping: '👋', judge_time: '🤖', judge_avail: '🤖', brb: '⏳', where: '❓' }[a.action_type] ?? '•';
+                        summary += `${icon} **${a.actor_username}**: ${a.action_type}${a.message ? ` — ${a.message}` : ''}\n`;
+                    }
+                }
+                const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
+                if (channel?.isTextBased()) {
+                    await channel.send(summary);
+                }
+                await interaction.editReply('Gaming tree posted to the channel!');
+            }
         }
 
     } catch (err) {
@@ -399,18 +388,24 @@ async function pollRallyActions() {
                 case 'judge_time': {
                     const meta = action.metadata;
                     if (meta?.windows?.length > 0) {
-                        const windowStrs = meta.windows.slice(0, 3).map(w =>
-                            `${w.start}-${w.end} (${w.user_count} ${w.user_count === 1 ? 'person' : 'people'})`
-                        );
-                        text = `🤖 Judge says: Best windows — ${windowStrs.join(', ')}`;
+                        const best = meta.windows[0];
+                        const bestNames = best.user_names?.join(', ') ?? `${best.user_count} people`;
+                        text = `📅 **Best window:** ${best.start}–${best.end} UTC (${bestNames})`;
+                        if (meta.windows.length > 1) {
+                            const allLines = meta.windows.slice(0, 8).map((w, i) => {
+                                const names = w.user_names?.join(', ') ?? `${w.user_count} people`;
+                                return `${i + 1}. ${w.start}–${w.end}: ${names}`;
+                            });
+                            text += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
+                        }
                     } else {
-                        text = `🤖 Judge says: No overlapping availability found. Set your times!`;
+                        text = `🤖 No overlapping availability found today. Ask everyone to set their times!`;
                     }
                     break;
                 }
                 case 'judge_avail': {
                     const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
-                    text = `🤖 Judge → ${targets}: Please set your availability!`;
+                    text = `🤖 ${actor} → ${targets}: Please set your availability!`;
                     break;
                 }
                 case 'brb':
@@ -533,12 +528,12 @@ client.on('interactionCreate', async (interaction) => {
         '`/brb [message]` — Mark yourself as away briefly',
         '`/ping @user [message]` — Ping someone to come play',
         '`/where @user` — Ask where someone is\n',
-        '**Judge — Smart Scheduling**',
-        '`/judge time` — Find the best overlapping time slots',
-        '`/judge avail @user` — Nudge someone to set their availability\n',
-        '**Sharing**',
-        '`/tree` — Post today\'s gaming tree to the channel',
-        '`/ranking` — Post the current game rankings to the channel\n',
+        '**Scheduling**',
+        '`/call2select @user` — Nudge someone to set their availability',
+        '`/post schedule` — Find and post the best overlapping time windows today\n',
+        '**Post to Channel**',
+        '`/post gamerank` — Post the current game rankings',
+        '`/post gametree` — Post today\'s gaming tree diagram\n',
         '**Dashboard Features**',
         'The web dashboard at the `/play` link also includes:',
         '- Schedule — Set your daily availability grid',
