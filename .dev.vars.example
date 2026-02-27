@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars for local development.
+# .dev.vars is gitignored; this file is committed as a reference.
+
+# Shared secret between the Worker and the Discord bot.
+# Must match BOT_API_KEY in the bot's environment (.env in when2play_discordbot).
+BOT_API_KEY=dev-bot-key
