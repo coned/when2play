@@ -332,6 +332,113 @@ Returns the shame leaderboard sorted by shame count. Includes latest 3 reasons p
 
 ---
 
+## Rally
+
+### `POST /api/rally/call`
+Requires session cookie. Creates or gets today's rally and records a `call` action.
+
+**Body (all fields optional):**
+```json
+{
+  "timing": "now"  // "now" or "later", defaults to "now"
+}
+```
+
+**Response (201):**
+```json
+{
+  "ok": true,
+  "data": {
+    "rally": { "id": "uuid", "creator_id": "uuid", "timing": "now", "day_key": "2026-02-26", "status": "open", "created_at": "..." },
+    "action": { "id": "uuid", "rally_id": "uuid", "actor_id": "uuid", "action_type": "call", ... }
+  }
+}
+```
+
+### `POST /api/rally/action`
+Requires session cookie. Records an action (in/out/ping/brb/where). Auto-attaches to today's active rally.
+
+**Body:**
+```json
+{
+  "action_type": "in",               // required: "in", "out", "ping", "brb", "where"
+  "target_user_ids": ["uuid"],       // required for ping/where
+  "message": "on my way"             // optional, max 500 chars
+}
+```
+
+### `POST /api/rally/judge/time`
+Requires session cookie. Computes optimal time slots from availability of users who said `/in`.
+
+**Response (201):**
+```json
+{
+  "ok": true,
+  "data": {
+    "metadata": {
+      "windows": [{ "start": "19:00", "end": "21:00", "user_count": 3, "user_ids": ["..."] }],
+      "day_key": "2026-02-26"
+    }
+  }
+}
+```
+
+### `POST /api/rally/judge/avail`
+Requires session cookie. Nudges a user to set availability.
+
+**Body:**
+```json
+{ "target_user_ids": ["uuid"] }
+```
+
+### `GET /api/rally/active`
+Requires session cookie. Returns today's active rally and all actions. Optional `?day_key=YYYY-MM-DD`.
+
+### `GET /api/rally/tree`
+Requires session cookie. Returns tree DAG data (nodes, edges, rallies) for visualization. Optional `?day_key=YYYY-MM-DD`.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": {
+    "nodes": [{ "id": "...", "action_type": "call", "actor_username": "Dave", ... }],
+    "edges": [{ "source": "id1", "target": "id2", "type": "response" }],
+    "rallies": [{ "id": "...", "day_key": "2026-02-26", "status": "open" }]
+  }
+}
+```
+
+### `GET /api/rally/pending`
+Returns undelivered rally actions with resolved Discord IDs.
+
+**Auth:** `X-Bot-Token` header
+
+### `PATCH /api/rally/:id/delivered`
+Marks a rally action as delivered.
+
+**Auth:** `X-Bot-Token` header
+
+### `POST /api/rally/tree/share`
+Requires session cookie. Uploads a base64 PNG for Discord sharing.
+
+**Body:**
+```json
+{ "image_data": "base64-png-data..." }
+```
+
+### `GET /api/rally/tree/share/pending`
+Returns undelivered tree share images.
+
+**Auth:** `X-Bot-Token` header
+
+### `PATCH /api/rally/tree/share/:id/delivered`
+Marks a tree share as delivered.
+
+**Auth:** `X-Bot-Token` header
+
+---
+
 ## Settings
 
 All endpoints require session cookie.

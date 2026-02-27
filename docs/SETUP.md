@@ -199,7 +199,11 @@ Discord ←→ Bot (your code, hosted anywhere) ←→ when2play API (Cloudflare
 ### Bot Responsibilities
 
 1. **`/play` command** — creates a one-time auth link and DMs it to the user
-2. **Gather polling** — periodically checks for gather pings and posts them in a Discord channel
+2. **`/when2play-admin` command** — creates a one-time admin link (requires ADMINISTRATOR)
+3. **Rally commands** — 8 slash commands for session coordination (`/call`, `/in`, `/out`, `/ping`, `/judge`, `/brb`, `/where`, `/tree`)
+4. **Gather polling** — periodically checks for gather pings and posts them in a Discord channel
+5. **Rally polling** — periodically checks for rally actions and posts formatted messages
+6. **Tree share polling** — periodically checks for tree share images and posts as attachments
 
 ### Bot Authentication
 
@@ -212,7 +216,11 @@ X-Bot-Token: <your-bot-api-key>
 Protected endpoints:
 - `POST /api/auth/token` — create login tokens for Discord users
 - `GET /api/gather/pending` — poll for undelivered gather pings
-- `PATCH /api/gather/:id/delivered` — mark ping as delivered
+- `PATCH /api/gather/:id/delivered` — mark gather ping as delivered
+- `GET /api/rally/pending` — poll for undelivered rally actions
+- `PATCH /api/rally/:id/delivered` — mark rally action as delivered
+- `GET /api/rally/tree/share/pending` — poll for pending tree images
+- `PATCH /api/rally/tree/share/:id/delivered` — mark tree share as delivered
 
 ### Create a Discord Application
 

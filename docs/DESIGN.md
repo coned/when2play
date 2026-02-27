@@ -13,7 +13,10 @@
    - **Rank-vote** on proposed games (drag-to-reorder ranking)
    - **Set availability** (15-min time slots for today/tomorrow, vertical layout with dual timezone)
    - **Ring the gather bell** (notify others, with anonymous + targeted options)
+   - **Rally** (call/in/out/ping/brb/where — structured session coordination)
+   - **Gaming tree** (visualize the day's rally interactions as a DAG)
    - **Shame no-shows** (any user, with reasons)
+   - **Blog** (articles about the system)
 4. The dashboard shows a schedule summary: top-ranked games + overlap windows (with UTC + local times) + who's around
 
 ---
@@ -37,11 +40,11 @@
 when2play/
 ├── Makefile        # Project commands (make help)
 ├── docs/           # Documentation
-├── migrations/     # D1 SQL migrations (0000-0010)
+├── migrations/     # D1 SQL migrations (0000-0012)
 ├── shared/         # Shared TypeScript types (npm workspace)
 ├── src/            # Backend (Hono API)
 │   ├── middleware/  # error, cors, auth, bot-auth, security-headers, fk
-│   ├── routes/     # auth, users, games, votes, steam, availability, gather, shame, settings
+│   ├── routes/     # auth, users, games, votes, steam, availability, gather, shame, settings, rally
 │   ├── db/queries/ # Database query functions
 │   └── lib/        # crypto, time, steam utilities
 ├── frontend/       # Preact + Vite SPA (npm workspace)
@@ -49,7 +52,7 @@ when2play/
 │       ├── hooks/      # useAuth, useTheme, useMediaQuery
 │       ├── lib/        # time (dual timezone formatting)
 │       ├── styles/     # global.css, themes.css
-│       └── components/ # layout, games, availability, gather, shame, schedule, ui
+│       └── components/ # layout, games, availability, gather, shame, schedule, rally, tree, blog, ui
 ├── scripts/        # Dev/seed/simulate scripts
 └── test/           # Backend tests (vitest)
 ```
@@ -174,7 +177,46 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | value | TEXT NOT NULL | JSON-encoded value |
 | updated_at | TEXT NOT NULL | |
 
-Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `gather_cooldown_seconds=10`, `gather_hourly_limit=30`.
+Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `gather_cooldown_seconds=10`, `gather_hourly_limit=30`, `day_reset_hour_et=8`.
+
+### rallies
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | TEXT PK | UUID |
+| creator_id | TEXT NOT NULL FK→users | Who started the rally |
+| timing | TEXT DEFAULT 'now' | 'now' or 'later' |
+| day_key | TEXT UNIQUE NOT NULL | YYYY-MM-DD based on ET day boundary |
+| status | TEXT DEFAULT 'open' | 'open' or 'closed' |
+| created_at | TEXT NOT NULL | |
+
+One rally per day. Day boundary: 8:01 AM ET → 8:00 AM next day ET (configurable via `day_reset_hour_et` setting).
+
+### rally_actions
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | TEXT PK | UUID |
+| rally_id | TEXT FK→rallies | Nullable for orphan actions |
+| actor_id | TEXT NOT NULL FK→users | Who performed the action |
+| action_type | TEXT NOT NULL | call, in, out, ping, judge_time, judge_avail, brb, where |
+| target_user_ids | TEXT | JSON array for ping/where/judge_avail |
+| message | TEXT | Optional text |
+| metadata | TEXT | JSON: judge results, timing info |
+| delivered | INTEGER DEFAULT 0 | Whether bot has posted to Discord |
+| day_key | TEXT NOT NULL | YYYY-MM-DD |
+| created_at | TEXT NOT NULL | |
+
+### rally_tree_shares
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | TEXT PK | UUID |
+| requested_by | TEXT NOT NULL FK→users | |
+| day_key | TEXT NOT NULL | |
+| image_data | TEXT | base64 PNG from frontend |
+| delivered | INTEGER DEFAULT 0 | |
+| created_at | TEXT NOT NULL | |
 
 ---
 
@@ -246,6 +288,22 @@ Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `g
 |--------|------|------|-------------|
 | POST | /api/shame/:targetId | Session | Shame a user (reason max 200 chars) |
 | GET | /api/shame/leaderboard | Session | Get leaderboard with recent reasons |
+
+### Rally
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /api/rally/call | Session | Create rally + call action. Body: `{ timing?: "now"\|"later" }` |
+| POST | /api/rally/action | Session | Record action. Body: `{ action_type, target_user_ids?, message? }` |
+| POST | /api/rally/judge/time | Session | Compute optimal time slots from /in users' availability |
+| POST | /api/rally/judge/avail | Session | Nudge user to set availability. Body: `{ target_user_ids }` |
+| GET | /api/rally/active | Session | Get today's rally + actions (?day_key optional) |
+| GET | /api/rally/tree | Session | Get tree DAG data (?day_key optional) |
+| GET | /api/rally/pending | Bot (`X-Bot-Token`) | Poll undelivered rally actions |
+| PATCH | /api/rally/:id/delivered | Bot (`X-Bot-Token`) | Mark rally action delivered |
+| POST | /api/rally/tree/share | Session | Upload base64 PNG for Discord sharing |
+| GET | /api/rally/tree/share/pending | Bot (`X-Bot-Token`) | Poll pending tree images |
+| PATCH | /api/rally/tree/share/:id/delivered | Bot (`X-Bot-Token`) | Mark tree share delivered |
 
 ### Settings
 
@@ -321,7 +379,10 @@ Error messages are redacted in production (HTTPS) for unhandled errors.
 │ - Games  │                                   │
 │ - Avail  │                                   │
 │ - Gather │                                   │
+│ - Rally  │                                   │
+│ - Tree   │                                   │
 │ - Shame  │                                   │
+│ - Blog   │                                   │
 └──────────┴───────────────────────────────────┘
 ```
 
@@ -336,7 +397,7 @@ Error messages are redacted in production (HTTPS) for unhandled errors.
 │  (full width, 16px padding)  │
 │                              │
 ├──────────────────────────────┤
-│ BottomNav: 5 tabs with icons │
+│ BottomNav: 8 tabs with icons │
 └──────────────────────────────┘
 ```
 
@@ -374,6 +435,11 @@ All time displays show both UTC and local time:
 - **VoteRanking**: Drag-to-reorder ranking list. Add games from unranked pool, remove from ranking. Auto-saves order.
 - **GatherBell**: Anonymous checkbox, Everyone/Specific user toggle, multi-select user picker with avatars.
 - **ShameWall**: Shows all users (not just those with shames). Per-target expand/collapse with inline reason input. Leaderboard shows latest 3 reasons.
+- **RallyPanel**: Action buttons grid (call/in/out/ping/brb/where/judge). User selector for targeted actions. Live action feed with auto-refresh.
+- **GamingTree**: Day selector, dagre-based SVG DAG renderer with pan/zoom, SVG→PNG export for Discord sharing.
+- **TreeVisualization**: Left-to-right DAG layout via `@dagrejs/dagre`. Color-coded nodes by action type, cubic bezier edges (solid = response, dashed = ping).
+- **ActionFeed**: Scrollable, color-coded list of today's rally actions with auto-scroll to latest.
+- **BlogPage**: Static blog post about the TCP handshake parallel in gaming coordination.
 
 ---
 
@@ -396,6 +462,8 @@ All time displays show both UTC and local time:
 - Gather message: max 500 chars
 - Gather target_user_ids: max 20 entries
 - Shame reason: max 200 chars
+- Rally action message: max 500 chars
+- Rally action target_user_ids: required for ping/where
 - Steam search query: 2-100 chars
 
 ### Access Control
@@ -418,8 +486,12 @@ All require `X-Bot-Token` header (matching `BOT_API_KEY` Cloudflare secret):
 |----------|-------------|
 | `POST /api/auth/token` | Create regular auth link. Body: `{ discord_id, discord_username, avatar_url? }` |
 | `POST /api/auth/admin-token` | Create admin auth link (same body). Bot must verify `ADMINISTRATOR` permission before calling. |
-| `GET /api/gather/pending` | Poll for undelivered pings |
-| `PATCH /api/gather/:id/delivered` | Mark ping as delivered |
+| `GET /api/gather/pending` | Poll for undelivered gather pings |
+| `PATCH /api/gather/:id/delivered` | Mark gather ping as delivered |
+| `GET /api/rally/pending` | Poll for undelivered rally actions |
+| `PATCH /api/rally/:id/delivered` | Mark rally action as delivered |
+| `GET /api/rally/tree/share/pending` | Poll for pending tree share images |
+| `PATCH /api/rally/tree/share/:id/delivered` | Mark tree share as delivered |
 
 ### Gather Ping Fields
 
