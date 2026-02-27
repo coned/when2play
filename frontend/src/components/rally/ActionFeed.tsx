@@ -25,6 +25,7 @@ const ACTION_CONFIG: Record<string, { icon: string; color: string; label: string
 	judge_avail: { icon: '\u{1F916}', color: '#26a69a', label: 'judge: avail' },
 	brb: { icon: '\u23F3', color: '#ffc107', label: 'brb' },
 	where: { icon: '\u2753', color: '#9c27b0', label: 'asked where' },
+	share_ranking: { icon: '\u{1F3C6}', color: '#f59e0b', label: 'shared ranking' },
 };
 
 function formatTime(iso: string): string {
@@ -56,6 +57,14 @@ function formatAction(action: ActionItem, users: Map<string, { discord_username:
 			text = `Best windows: ${windowStrs.join(', ')}`;
 		} else {
 			text = 'No overlapping availability found';
+		}
+	}
+
+	if (action.action_type === 'share_ranking' && action.metadata) {
+		const meta = action.metadata as { ranking?: Array<{ name: string; total_score: number; vote_count: number }> };
+		if (meta.ranking && meta.ranking.length > 0) {
+			const lines = meta.ranking.slice(0, 5).map((r, i) => `#${i + 1} ${r.name} (${r.total_score} pts)`);
+			text = `— ${lines.join(', ')}`;
 		}
 	}
 

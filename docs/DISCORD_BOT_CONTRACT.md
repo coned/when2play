@@ -182,7 +182,7 @@ For each pending action, format a Discord message based on `action_type`:
 
 | action_type | Format |
 |-------------|--------|
-| `call` | `📢 @User: let's play! (now\|later)` |
+| `call` | `📢 @User: {message \|\| "let's play!"}` |
 | `in` | `✅ @User is in! {message}` |
 | `out` | `❌ @User is out. "{reason}"` |
 | `ping` | `👋 @User1 → @User2: {message \|\| "come play!"}` |
@@ -190,6 +190,23 @@ For each pending action, format a Discord message based on `action_type`:
 | `judge_avail` | `🤖 Judge → @User: Please set your availability!` |
 | `brb` | `⏳ @User: brb{, message}` |
 | `where` | `❓ @User1 → @User2: where are you?` |
+| `share_ranking` | `🏆 Game Rankings:\n{metadata.ranking as numbered list: "#1 Name (X pts)"}` |
+
+**`share_ranking` metadata format:**
+```json
+{
+  "ranking": [
+    { "name": "Counter-Strike 2", "total_score": 15, "vote_count": 4 },
+    { "name": "Valorant", "total_score": 12, "vote_count": 3 }
+  ]
+}
+```
+The bot should format this as a numbered list, e.g.:
+```
+🏆 Game Rankings:
+#1 Counter-Strike 2 (15 pts, 4 votes)
+#2 Valorant (12 pts, 3 votes)
+```
 
 ### 6. Mark Rally Action Delivered
 
@@ -220,7 +237,7 @@ The bot registers 8 rally slash commands:
 
 | Command | Description | Options |
 |---------|-------------|---------|
-| `/call` | Call everyone to play | `when` (choice: now/later, optional) |
+| `/call` | Call everyone to play | `message` (string, optional) |
 | `/in` | Join the rally | `message` (string, optional) |
 | `/out` | Bail from rally | `reason` (string, optional) |
 | `/ping` | Ping someone to come play | `user` (required), `message` (optional) |
