@@ -29,9 +29,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName('call')
         .setDescription('Call everyone to play!')
-        .addStringOption(o => o.setName('when').setDescription('Now or later?')
-            .addChoices({ name: 'Now', value: 'now' }, { name: 'Later', value: 'later' })
-            .setRequired(false)),
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
     new SlashCommandBuilder()
         .setName('in')
         .setDescription("I'm in! Join the rally")
@@ -96,7 +94,7 @@ client.on('interactionCreate', async (interaction) => {
             headers: botHeaders,
             body: JSON.stringify({
                 discord_id: interaction.user.id,
-                discord_username: interaction.user.displayName,
+                discord_username: interaction.member?.displayName ?? interaction.user.displayName,
                 avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
             }),
         });
@@ -120,13 +118,13 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // --- Helper: resolve Discord user ID to when2play user ID via auth token flow ---
-async function ensureUser(discordUser) {
+async function ensureUser(discordUser, guildMember) {
     const res = await fetch(`${API_URL}/api/auth/token`, {
         method: 'POST',
         headers: botHeaders,
         body: JSON.stringify({
             discord_id: discordUser.id,
-            discord_username: discordUser.displayName ?? discordUser.username,
+            discord_username: guildMember?.displayName ?? discordUser.displayName ?? discordUser.username,
             avatar_url: discordUser.displayAvatarURL?.({ size: 128 }) ?? null,
         }),
     });
@@ -165,7 +163,7 @@ client.on('interactionCreate', async (interaction) => {
     await interaction.deferReply({ flags: 64 });
 
     try {
-        const authData = await ensureUser(interaction.user);
+        const authData = await ensureUser(interaction.user, interaction.member);
         if (!authData) {
             await interaction.editReply('Could not authenticate. Try `/play` first.');
             return;
@@ -207,7 +205,7 @@ client.on('interactionCreate', async (interaction) => {
 
     try {
         // Ensure the user exists and get a session
-        const authData = await ensureUser(interaction.user);
+        const authData = await ensureUser(interaction.user, interaction.member);
         if (!authData) {
             await interaction.editReply('Could not authenticate. Try `/play` first to set up your account.');
             return;
@@ -215,16 +213,16 @@ client.on('interactionCreate', async (interaction) => {
         const { session } = authData;
 
         if (commandName === 'call') {
-            const timing = interaction.options.getString('when') ?? 'now';
+            const message = interaction.options.getString('message') ?? undefined;
             const json = await apiCallWithSession(session.session_id, '/api/rally/call', {
                 method: 'POST',
-                body: JSON.stringify({ timing }),
+                body: JSON.stringify({ message }),
             });
             if (!json.ok) {
                 await interaction.editReply(`Failed: ${json.error.message}`);
                 return;
             }
-            await interaction.editReply(`Rally started! (${timing})`);
+            await interaction.editReply('Rally started!');
         }
 
         else if (commandName === 'in') {
@@ -382,7 +380,7 @@ async function pollRallyActions() {
 
             switch (action.action_type) {
                 case 'call':
-                    text = `📢 ${actor}: let's play! (${action.message || 'now'})`;
+                    text = `📢 ${actor} called${action.message ? ` — "${action.message}"` : ''}`;
                     break;
                 case 'in':
                     text = `✅ ${actor} is in!${action.message ? ` ${action.message}` : ''}`;
@@ -418,6 +416,18 @@ async function pollRallyActions() {
                 case 'where': {
                     const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
                     text = `❓ ${actor} → ${targets}: where are you?`;
+                    break;
+                }
+                case 'share_ranking': {
+                    const meta = action.metadata;
+                    if (meta?.ranking?.length > 0) {
+                        const lines = meta.ranking.map((r, i) =>
+                            `#${i + 1} ${r.name} (${r.total_score} pts, ${r.vote_count} votes)`
+                        );
+                        text = `🏆 **Game Rankings:**\n${lines.join('\n')}`;
+                    } else {
+                        text = `🏆 ${actor} shared rankings — no games ranked yet`;
+                    }
                     break;
                 }
                 default:
@@ -543,7 +553,7 @@ client.on('interactionCreate', async (interaction) => {
             headers: botHeaders,
             body: JSON.stringify({
                 discord_id: interaction.user.id,
-                discord_username: interaction.user.displayName,
+                discord_username: interaction.member?.displayName ?? interaction.user.displayName,
                 avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
             }),
         });
