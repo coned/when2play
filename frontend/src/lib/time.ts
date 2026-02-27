@@ -67,6 +67,33 @@ export function formatLocalTimeRange(startUTC: string, endUTC: string, dateStr: 
 	return `${startLocal}${startSuffix} – ${endLocal}${endSuffix} ${getTimezoneAbbreviation()}`;
 }
 
+export interface TimeRangeParts {
+	startTime: string;
+	startNextDay: boolean;
+	endTime: string;
+	endNextDay: boolean;
+	tz: string;
+}
+
+/**
+ * Format a UTC time range into structured parts for custom rendering.
+ * Allows callers to render +1 indicators separately (e.g. as colored superscripts).
+ */
+export function formatLocalTimeRangeStructured(startUTC: string, endUTC: string, dateStr: string): TimeRangeParts {
+	const startDate = new Date(`${dateStr}T${startUTC}:00Z`);
+	const endDate = new Date(`${dateStr}T${endUTC}:00Z`);
+	const fallback = { startTime: startUTC, startNextDay: false, endTime: endUTC, endNextDay: false, tz: '' };
+	if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return fallback;
+
+	return {
+		startTime: startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
+		startNextDay: isNextDay(startUTC, dateStr),
+		endTime: endDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
+		endNextDay: isNextDay(endUTC, dateStr),
+		tz: getTimezoneAbbreviation(),
+	};
+}
+
 /**
  * @deprecated Use formatLocalTime instead.
  */
