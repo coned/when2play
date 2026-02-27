@@ -22,16 +22,24 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 	const [mySlots, setMySlots] = useState<any[]>([]);
 	const [allSlots, setAllSlots] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [availStartHourET, setAvailStartHourET] = useState<number | undefined>(undefined);
+	const [availEndHourET, setAvailEndHourET] = useState<number | undefined>(undefined);
 
 	const fetchSlots = useCallback(async () => {
 		setLoading(true);
-		const [myResult, allResult] = await Promise.all([
+		const [myResult, allResult, settingsResult] = await Promise.all([
 			api.getAvailability({ user_id: userId, date: selectedDate }),
 			api.getAvailability({ date: selectedDate }),
+			api.getSettings(),
 		]);
 
 		if (myResult.ok) setMySlots(myResult.data);
 		if (allResult.ok) setAllSlots(allResult.data);
+		if (settingsResult.ok) {
+			const s = settingsResult.data as Record<string, unknown>;
+			if (s.avail_start_hour_et !== undefined) setAvailStartHourET(s.avail_start_hour_et as number);
+			if (s.avail_end_hour_et !== undefined) setAvailEndHourET(s.avail_end_hour_et as number);
+		}
 		setLoading(false);
 	}, [userId, selectedDate]);
 
@@ -51,6 +59,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 
 	const today = todayStr();
 	const tomorrow = tomorrowStr();
+	const isToday = selectedDate === today;
 
 	return (
 		<div>
@@ -86,6 +95,9 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 					allSlots={allSlots}
 					userId={userId}
 					onSave={handleSave}
+					isToday={isToday}
+					availStartHourET={availStartHourET}
+					availEndHourET={availEndHourET}
 				/>
 			)}
 		</div>
