@@ -157,6 +157,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 	const totalSlots = filteredSlots.length;
 	const numColumns = Math.max(isMobile ? 2 : 2, Math.min(isMobile ? 2 : 5, Math.ceil(totalSlots / slotsPerColumn)));
 
+	// Base local date for detecting +1 day slots
+	const baseLocalDate = useMemo(() => new Date(`${date}T12:00:00Z`).toLocaleDateString('en-CA'), [date]);
+
 	// Current UTC time for past-slot detection
 	const nowUtcMin = useMemo(() => {
 		const now = new Date();
@@ -321,6 +324,8 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 							const overlapCount = otherUsers.get(slot.start_time)?.size ?? 0;
 							const isHourStart = slot.start_time.endsWith(':00');
 							const isPast = isSlotPast(slot.start_time, slot.slotDate);
+							const slotLocalDate = new Date(`${slot.slotDate}T${slot.start_time}:00Z`).toLocaleDateString('en-CA');
+							const isNextLocalDay = slotLocalDate !== baseLocalDate;
 
 							return (
 								<div
@@ -377,6 +382,11 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 										}}
 									>
 										{formatLocalTimeClean(slot.start_time, slot.slotDate)}
+										{isNextLocalDay && (
+											<span style={{ color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--warning)', fontSize: '0.85em', verticalAlign: 'super', fontWeight: 600, marginLeft: '2px' }}>
+												+1
+											</span>
+										)}
 									</span>
 									{overlapCount > 0 && (
 										<span
