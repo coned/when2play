@@ -5,6 +5,8 @@ export interface UserRow {
 	id: string;
 	discord_id: string;
 	discord_username: string;
+	display_name: string | null;
+	sync_name_from_discord: number;
 	avatar_url: string | null;
 	timezone: string;
 	time_granularity_minutes: number;
@@ -22,26 +24,36 @@ export async function upsertUser(
 
 	if (existing) {
 		const timestamp = now();
+		// If sync_name_from_discord is enabled, update display_name to match discord_username
+		const syncDisplay = existing.sync_name_from_discord ? discordUsername : existing.display_name;
 		await db
-			.prepare('UPDATE users SET discord_username = ?, avatar_url = COALESCE(?, avatar_url), updated_at = ? WHERE id = ?')
-			.bind(discordUsername, avatarUrl ?? null, timestamp, existing.id)
+			.prepare('UPDATE users SET discord_username = ?, display_name = ?, avatar_url = COALESCE(?, avatar_url), updated_at = ? WHERE id = ?')
+			.bind(discordUsername, syncDisplay, avatarUrl ?? null, timestamp, existing.id)
 			.run();
-		return { ...existing, discord_username: discordUsername, avatar_url: avatarUrl ?? existing.avatar_url, updated_at: timestamp };
+		return {
+			...existing,
+			discord_username: discordUsername,
+			display_name: syncDisplay,
+			avatar_url: avatarUrl ?? existing.avatar_url,
+			updated_at: timestamp,
+		};
 	}
 
 	const id = uuid();
 	const timestamp = now();
 	await db
 		.prepare(
-			'INSERT INTO users (id, discord_id, discord_username, avatar_url, timezone, time_granularity_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			'INSERT INTO users (id, discord_id, discord_username, display_name, sync_name_from_discord, avatar_url, timezone, time_granularity_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		)
-		.bind(id, discordId, discordUsername, avatarUrl ?? null, 'UTC', 15, timestamp, timestamp)
+		.bind(id, discordId, discordUsername, discordUsername, 1, avatarUrl ?? null, 'UTC', 15, timestamp, timestamp)
 		.run();
 
 	return {
 		id,
 		discord_id: discordId,
 		discord_username: discordUsername,
+		display_name: discordUsername,
+		sync_name_from_discord: 1,
 		avatar_url: avatarUrl ?? null,
 		timezone: 'UTC',
 		time_granularity_minutes: 15,
@@ -50,10 +62,10 @@ export async function upsertUser(
 	};
 }
 
-export async function getAllUsers(db: D1Database): Promise<Array<{ id: string; discord_username: string; avatar_url: string | null }>> {
+export async function getAllUsers(db: D1Database): Promise<Array<{ id: string; discord_username: string; display_name: string | null; avatar_url: string | null }>> {
 	const result = await db
-		.prepare('SELECT id, discord_username, avatar_url FROM users ORDER BY discord_username ASC')
-		.all<{ id: string; discord_username: string; avatar_url: string | null }>();
+		.prepare('SELECT id, discord_username, display_name, avatar_url FROM users ORDER BY discord_username ASC')
+		.all<{ id: string; discord_username: string; display_name: string | null; avatar_url: string | null }>();
 	return result.results;
 }
 
@@ -64,7 +76,7 @@ export async function getUserById(db: D1Database, id: string): Promise<UserRow |
 export async function updateUser(
 	db: D1Database,
 	id: string,
-	updates: { discord_username?: string; timezone?: string; time_granularity_minutes?: number },
+	updates: { discord_username?: string; display_name?: string; sync_name_from_discord?: number; timezone?: string; time_granularity_minutes?: number },
 ): Promise<UserRow | null> {
 	const setClauses: string[] = [];
 	const values: unknown[] = [];
@@ -72,6 +84,14 @@ export async function updateUser(
 	if (updates.discord_username !== undefined) {
 		setClauses.push('discord_username = ?');
 		values.push(updates.discord_username);
+	}
+	if (updates.display_name !== undefined) {
+		setClauses.push('display_name = ?');
+		values.push(updates.display_name);
+	}
+	if (updates.sync_name_from_discord !== undefined) {
+		setClauses.push('sync_name_from_discord = ?');
+		values.push(updates.sync_name_from_discord);
 	}
 	if (updates.timezone !== undefined) {
 		setClauses.push('timezone = ?');
