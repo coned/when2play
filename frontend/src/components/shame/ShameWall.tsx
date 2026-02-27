@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { api } from '../../api/client';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 
 interface ShameWallProps {
 	userId: string;
@@ -14,6 +15,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 	const [reasons, setReasons] = useState<Record<string, string>>({});
 	const [anonymous, setAnonymous] = useState<Record<string, boolean>>({});
 	const [error, setError] = useState('');
+	const isMobile = useMediaQuery(768);
 
 	useEffect(() => {
 		fetchData();
@@ -117,6 +119,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 										alignItems: 'center',
 										gap: '12px',
 										padding: '12px 16px',
+										flexWrap: 'wrap',
 									}}
 								>
 									{/* Rank badge for users with shames */}
@@ -169,7 +172,15 @@ export function ShameWall({ userId }: ShameWallProps) {
 
 									{/* Today's voter avatars */}
 									{u.today_voters.length > 0 && (
-										<div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+										<div style={{
+											display: 'flex',
+											alignItems: 'center',
+											flexShrink: 0,
+											...(isMobile ? { flexBasis: '100%', order: 99, paddingTop: '6px', borderTop: '1px solid var(--border)', gap: '4px' } : {}),
+										}}>
+											{isMobile && (
+												<span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0, marginRight: '2px' }}>Voted by:</span>
+											)}
 											{u.today_voters.map((v, vi) =>
 												v.is_anonymous ? (
 													<span

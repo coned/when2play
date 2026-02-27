@@ -217,12 +217,26 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 	};
 
 	const colTimeRange = (col: typeof visibleSlots) => {
-		if (col.length === 0) return '';
+		if (col.length === 0) return null;
 		const firstDate = col[0].slotDate;
+		const lastDate = col[col.length - 1].slotDate;
 		const dateLabel = formatDateLabel(firstDate);
 		const first = formatLocalTime(col[0].start_time, col[0].slotDate);
 		const last = formatLocalTime(col[col.length - 1].start_time, col[col.length - 1].slotDate);
-		return `${dateLabel}: ${first} – ${last}`;
+		const crossesMidnight = lastDate !== firstDate;
+		return (
+			<>
+				{dateLabel}: {first} {'\u2013'} {last}
+				{crossesMidnight && (
+					<>
+						{' '}
+						<span style={{ color: 'var(--warning)', fontSize: '0.75em', verticalAlign: 'super', fontWeight: 600 }}>
+							+1
+						</span>
+					</>
+				)}
+			</>
+		);
 	};
 
 	const isSlotPast = (slotTime: string, slotDate: string): boolean => {
