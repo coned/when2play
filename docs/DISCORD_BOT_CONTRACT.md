@@ -8,6 +8,9 @@ The Discord bot is responsible for:
 1. **Authentication** — Creating one-time auth links for users
 2. **Admin access** — Creating one-time admin links for Discord server administrators
 3. **Gather notifications** — Polling for and delivering gather bell pings
+4. **Rally actions** — 8 slash commands for session coordination (call/in/out/ping/judge/brb/where/tree)
+5. **Rally delivery** — Polling for and delivering rally action messages to Discord
+6. **Tree sharing** — Polling for and posting gaming tree images to Discord
 
 ## Authentication
 
@@ -139,6 +142,93 @@ X-Bot-Token: <BOT_API_KEY>
 ```json
 { "ok": true, "data": null }
 ```
+
+### 5. Poll for Rally Actions
+
+Periodically (every 15 seconds, alongside gather polling):
+
+```bash
+GET /api/rally/pending
+X-Bot-Token: <BOT_API_KEY>
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "action-uuid",
+      "rally_id": "rally-uuid",
+      "actor_id": "user-uuid",
+      "actor_discord_id": "123456789012345678",
+      "actor_username": "GamerDave",
+      "action_type": "call",
+      "target_user_ids": null,
+      "target_discord_ids": null,
+      "message": "now",
+      "metadata": null,
+      "delivered": false,
+      "day_key": "2026-02-26",
+      "created_at": "2026-02-26T19:00:00.000Z"
+    }
+  ]
+}
+```
+
+For each pending action, format a Discord message based on `action_type`:
+
+| action_type | Format |
+|-------------|--------|
+| `call` | `📢 @User: let's play! (now\|later)` |
+| `in` | `✅ @User is in! {message}` |
+| `out` | `❌ @User is out. "{reason}"` |
+| `ping` | `👋 @User1 → @User2: {message \|\| "come play!"}` |
+| `judge_time` | `🤖 Judge says: Best windows — {windows}` |
+| `judge_avail` | `🤖 Judge → @User: Please set your availability!` |
+| `brb` | `⏳ @User: brb{, message}` |
+| `where` | `❓ @User1 → @User2: where are you?` |
+
+### 6. Mark Rally Action Delivered
+
+```bash
+PATCH /api/rally/:id/delivered
+X-Bot-Token: <BOT_API_KEY>
+```
+
+### 7. Poll for Tree Share Images
+
+```bash
+GET /api/rally/tree/share/pending
+X-Bot-Token: <BOT_API_KEY>
+```
+
+Returns pending tree images with `image_data` (base64 PNG). The bot should decode and send as a Discord attachment.
+
+### 8. Mark Tree Share Delivered
+
+```bash
+PATCH /api/rally/tree/share/:id/delivered
+X-Bot-Token: <BOT_API_KEY>
+```
+
+## Rally Slash Commands
+
+The bot registers 8 rally slash commands:
+
+| Command | Description | Options |
+|---------|-------------|---------|
+| `/call` | Call everyone to play | `when` (choice: now/later, optional) |
+| `/in` | Join the rally | `message` (string, optional) |
+| `/out` | Bail from rally | `reason` (string, optional) |
+| `/ping` | Ping someone to come play | `user` (required), `message` (optional) |
+| `/judge time` | Suggest best time slots | — |
+| `/judge avail` | Nudge someone to set availability | `user` (required) |
+| `/brb` | Be right back | `message` (optional) |
+| `/where` | Ask where someone is | `user` (required) |
+| `/tree` | Post today's gaming tree | — |
+
+Each command authenticates the user via the auth token flow, then calls the appropriate rally API endpoint.
 
 ## Discord ID Resolution
 
