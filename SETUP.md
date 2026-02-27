@@ -4,7 +4,19 @@ This is the standalone Discord bot for [when2play](https://github.com/your-org/w
 
 - `/play` — generates a one-time login link and DMs it to the user
 - `/when2play-admin` — generates a one-time admin link (requires Discord `ADMINISTRATOR` permission)
+- **Rally commands** — 8 slash commands for game session coordination:
+  - `/call [when]` — call everyone to play (now or later)
+  - `/in [message]` — join the rally
+  - `/out [reason]` — bail from the rally
+  - `/ping @user [message]` — ping someone to come play
+  - `/judge time` — ask the judge for best time slots
+  - `/judge avail @user` — nudge someone to set availability
+  - `/brb [message]` — be right back
+  - `/where @user` — ask where someone is
+  - `/tree` — post today's gaming tree to the channel
 - **Gather polling** — checks for pending gather bell pings every 15 seconds and posts them to a Discord channel
+- **Rally polling** — checks for pending rally actions every 15 seconds and posts formatted messages
+- **Tree share polling** — checks for pending gaming tree images and posts them as attachments
 
 The bot connects to the when2play Cloudflare Worker backend via HTTP.
 
@@ -79,7 +91,7 @@ Expected output on success:
 ```
 Logged in as when2play#1234
 Slash commands registered.
-Polling for gather pings every 15s
+Polling for gather pings, rally actions, and tree shares every 15s (with exponential backoff on errors)
 ```
 
 ---
@@ -174,10 +186,17 @@ The Worker returned an error from `POST /api/auth/token`. Common causes:
 Discord Gateway (WebSocket)
         ↕
   bot.mjs (this service)
-        ↕  HTTPS + X-Bot-Token header
+        ↕  HTTPS + X-Bot-Token header + session cookies
   when2play Cloudflare Worker
         ↕
   Cloudflare D1 (SQLite)
 ```
+
+**Polling loops** (all run in parallel every 15s with exponential backoff):
+1. Gather pings: `GET /api/gather/pending` → format → send → `PATCH /api/gather/:id/delivered`
+2. Rally actions: `GET /api/rally/pending` → format by action_type → send → `PATCH /api/rally/:id/delivered`
+3. Tree shares: `GET /api/rally/tree/share/pending` → decode base64 → send as attachment → `PATCH /api/rally/tree/share/:id/delivered`
+
+**Rally commands** authenticate users via the auth token flow (`POST /api/auth/token` → `GET /api/auth/callback/:token`) to get a session, then call rally API endpoints on behalf of the user.
 
 For an alternative architecture with no separate bot process, see `docs/CLOUDFLARE_NATIVE_BOT.md` in the main when2play repo.
