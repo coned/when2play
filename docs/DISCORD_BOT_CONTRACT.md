@@ -178,19 +178,19 @@ X-Bot-Token: <BOT_API_KEY>
 }
 ```
 
-For each pending action, format a Discord message based on `action_type`:
+For each pending action, format a Discord message using the universal `label — "message"` pattern. When a message is present, it appears after the action label as ` — "message"`. When absent, only the label shows (with any default punctuation).
 
-| action_type | Format |
-|-------------|--------|
-| `call` | `📢 @User: {message \|\| "let's play!"}` |
-| `in` | `✅ @User is in! {message}` |
-| `out` | `❌ @User is out. "{reason}"` |
-| `ping` | `👋 @User1 → @User2: {message \|\| "come play!"}` |
-| `judge_time` | `🤖 Judge says: Best windows — {windows}` |
-| `judge_avail` | `🤖 Judge → @User: Please set your availability!` |
-| `brb` | `⏳ @User: brb{, message}` |
-| `where` | `❓ @User1 → @User2: where are you?` |
-| `share_ranking` | `🏆 Game Rankings:\n{metadata.ranking as numbered list: "#1 Name (X pts)"}` |
+| action_type | No message | With message |
+|-------------|------------|--------------|
+| `call` | `📢 **User** called` | `📢 **User** called — "message"` |
+| `in` | `✅ **User** is in!` | `✅ **User** is in — "message"` |
+| `out` | `❌ **User** is out` | `❌ **User** is out — "message"` |
+| `ping` | `👋 **User** → @Target` | `👋 **User** → @Target — "message"` |
+| `judge_time` | `🤖 Judge says: Best windows — {windows}` | *(metadata-driven)* |
+| `judge_avail` | `🤖 Judge → @Target: Please set your availability!` | *(metadata-driven)* |
+| `brb` | `⏳ **User** brb` | `⏳ **User** brb — "message"` |
+| `where` | `❓ **User** → @Target` | `❓ **User** → @Target — "message"` |
+| `share_ranking` | `🏆 **Game Rankings:**\n#1 Name (X pts, Y votes)` | *(metadata-driven)* |
 
 **`share_ranking` metadata format:**
 ```json
@@ -233,10 +233,13 @@ X-Bot-Token: <BOT_API_KEY>
 
 ## Rally Slash Commands
 
-The bot registers 8 rally slash commands:
+The bot registers the following slash commands:
 
 | Command | Description | Options |
 |---------|-------------|---------|
+| `/play` | Get a login link for the dashboard | — |
+| `/when2play-admin` | Get an admin link (requires ADMINISTRATOR) | — |
+| `/help` | Show all commands (ephemeral) | — |
 | `/call` | Call everyone to play | `message` (string, optional) |
 | `/in` | Join the rally | `message` (string, optional) |
 | `/out` | Bail from rally | `reason` (string, optional) |
@@ -246,6 +249,8 @@ The bot registers 8 rally slash commands:
 | `/brb` | Be right back | `message` (optional) |
 | `/where` | Ask where someone is | `user` (required) |
 | `/tree` | Post today's gaming tree | — |
+| `/url` | Get the website URL | — |
+| `/ranking` | Post game rankings to channel | — |
 
 Each command authenticates the user via the auth token flow, then calls the appropriate rally API endpoint.
 
