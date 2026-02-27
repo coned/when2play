@@ -4,6 +4,7 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const API_URL = process.env.WHEN2PLAY_API_URL;
 const BOT_API_KEY = process.env.BOT_API_KEY;
 const GAMING_CHANNEL_ID = process.env.GAMING_CHANNEL_ID;
+const GUILD_ID = process.env.GUILD_ID;
 const BASE_POLL_MS = 15_000;
 const MAX_POLL_MS = 2 * 60 * 1000;
 let consecutiveErrors = 0;
@@ -65,10 +66,17 @@ const commands = [
 
 async function registerCommands() {
     const rest = new REST().setToken(DISCORD_TOKEN);
-    await rest.put(Routes.applicationCommands(client.user.id), {
-        body: commands.map(c => c.toJSON()),
-    });
-    console.log('Slash commands registered.');
+    if (GUILD_ID) {
+        await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), {
+            body: commands.map(c => c.toJSON()),
+        });
+        console.log(`Slash commands registered (guild: ${GUILD_ID}).`);
+    } else {
+        await rest.put(Routes.applicationCommands(client.user.id), {
+            body: commands.map(c => c.toJSON()),
+        });
+        console.log('Slash commands registered (global — may take up to 1h to propagate).');
+    }
 }
 
 // /play handler
