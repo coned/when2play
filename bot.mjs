@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } from 'discord.js';
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const API_URL = process.env.WHEN2PLAY_API_URL;
@@ -23,8 +23,44 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const commands = [
     new SlashCommandBuilder().setName('play').setDescription('Get a login link for when2play'),
     new SlashCommandBuilder()
-    .setName('when2play-admin')
-    .setDescription('Get a one-time admin link for when2play (requires ADMINISTRATOR)'),
+        .setName('when2play-admin')
+        .setDescription('Get a one-time admin link for when2play (requires ADMINISTRATOR)'),
+    new SlashCommandBuilder()
+        .setName('call')
+        .setDescription('Call everyone to play!')
+        .addStringOption(o => o.setName('when').setDescription('Now or later?')
+            .addChoices({ name: 'Now', value: 'now' }, { name: 'Later', value: 'later' })
+            .setRequired(false)),
+    new SlashCommandBuilder()
+        .setName('in')
+        .setDescription("I'm in! Join the rally")
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
+    new SlashCommandBuilder()
+        .setName('out')
+        .setDescription("I'm out / bail from rally")
+        .addStringOption(o => o.setName('reason').setDescription('Why?').setRequired(false)),
+    new SlashCommandBuilder()
+        .setName('ping')
+        .setDescription('Ping someone to come play')
+        .addUserOption(o => o.setName('user').setDescription('Who to ping').setRequired(true))
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
+    new SlashCommandBuilder()
+        .setName('judge')
+        .setDescription('Ask the judge')
+        .addSubcommand(sub => sub.setName('time').setDescription('Suggest best time slots'))
+        .addSubcommand(sub => sub.setName('avail').setDescription('Nudge someone to set availability')
+            .addUserOption(o => o.setName('user').setDescription('Who to nudge').setRequired(true))),
+    new SlashCommandBuilder()
+        .setName('brb')
+        .setDescription('Be right back, joining shortly')
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
+    new SlashCommandBuilder()
+        .setName('where')
+        .setDescription("Where are you? You didn't show up!")
+        .addUserOption(o => o.setName('user').setDescription('Who to ask').setRequired(true)),
+    new SlashCommandBuilder()
+        .setName('tree')
+        .setDescription("Post today's gaming tree diagram to the channel"),
 ];
 
 async function registerCommands() {
@@ -68,6 +104,314 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.editReply('Something went wrong. Is the when2play server running?');
     }
 });
+
+// --- Helper: resolve Discord user ID to when2play user ID via auth token flow ---
+// The bot uses auth tokens to find user IDs. For rally commands, we need to map
+// discord_id -> when2play user_id. We'll call the auth/token endpoint to ensure user exists,
+// then use the returned data.
+async function ensureUser(discordUser) {
+    const res = await fetch(`${API_URL}/api/auth/token`, {
+        method: 'POST',
+        headers: botHeaders,
+        body: JSON.stringify({
+            discord_id: discordUser.id,
+            discord_username: discordUser.displayName ?? discordUser.username,
+            avatar_url: discordUser.displayAvatarURL?.({ size: 128 }) ?? null,
+        }),
+    });
+    const json = await res.json();
+    if (!json.ok) return null;
+    // The token response includes a URL like /auth/{token} — we can use the token
+    // to call the callback which creates a session and returns the user
+    const token = json.data.token;
+    const cbRes = await fetch(`${API_URL}/api/auth/callback/${token}`, { headers: botHeaders });
+    const cbJson = await cbRes.json();
+    if (!cbJson.ok) return null;
+    return cbJson.data; // { user, session }
+}
+
+// --- Helper: make an authenticated API call on behalf of a user session ---
+async function apiCallWithSession(sessionId, path, options = {}) {
+    const res = await fetch(`${API_URL}${path}`, {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            'Cookie': `session=${sessionId}`,
+            ...(options.headers || {}),
+        },
+    });
+    return res.json();
+}
+
+// --- Rally command handlers ---
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    const { commandName } = interaction;
+
+    // Rally commands
+    if (!['call', 'in', 'out', 'ping', 'judge', 'brb', 'where', 'tree'].includes(commandName)) return;
+
+    await interaction.deferReply({ flags: 64 });
+
+    try {
+        // Ensure the user exists and get a session
+        const authData = await ensureUser(interaction.user);
+        if (!authData) {
+            await interaction.editReply('Could not authenticate. Try `/play` first to set up your account.');
+            return;
+        }
+        const { session } = authData;
+
+        if (commandName === 'call') {
+            const timing = interaction.options.getString('when') ?? 'now';
+            const json = await apiCallWithSession(session.session_id, '/api/rally/call', {
+                method: 'POST',
+                body: JSON.stringify({ timing }),
+            });
+            if (!json.ok) {
+                await interaction.editReply(`Failed: ${json.error.message}`);
+                return;
+            }
+            await interaction.editReply(`Rally started! (${timing})`);
+        }
+
+        else if (commandName === 'in') {
+            const message = interaction.options.getString('message') ?? undefined;
+            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+                method: 'POST',
+                body: JSON.stringify({ action_type: 'in', message }),
+            });
+            if (!json.ok) {
+                await interaction.editReply(`Failed: ${json.error.message}`);
+                return;
+            }
+            await interaction.editReply("You're in!");
+        }
+
+        else if (commandName === 'out') {
+            const reason = interaction.options.getString('reason') ?? undefined;
+            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+                method: 'POST',
+                body: JSON.stringify({ action_type: 'out', message: reason }),
+            });
+            if (!json.ok) {
+                await interaction.editReply(`Failed: ${json.error.message}`);
+                return;
+            }
+            await interaction.editReply("You're out.");
+        }
+
+        else if (commandName === 'ping') {
+            const targetDiscordUser = interaction.options.getUser('user', true);
+            const message = interaction.options.getString('message') ?? undefined;
+            // We need to resolve the target's when2play user ID
+            const targetAuth = await ensureUser(targetDiscordUser);
+            if (!targetAuth) {
+                await interaction.editReply('Could not find that user. They may need to use `/play` first.');
+                return;
+            }
+            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+                method: 'POST',
+                body: JSON.stringify({ action_type: 'ping', target_user_ids: [targetAuth.user.id], message }),
+            });
+            if (!json.ok) {
+                await interaction.editReply(`Failed: ${json.error.message}`);
+                return;
+            }
+            await interaction.editReply(`Pinged ${targetDiscordUser.displayName}!`);
+        }
+
+        else if (commandName === 'judge') {
+            const sub = interaction.options.getSubcommand();
+            if (sub === 'time') {
+                const json = await apiCallWithSession(session.session_id, '/api/rally/judge/time', {
+                    method: 'POST',
+                });
+                if (!json.ok) {
+                    await interaction.editReply(`Failed: ${json.error.message}`);
+                    return;
+                }
+                await interaction.editReply('Judge is computing best time slots...');
+            } else if (sub === 'avail') {
+                const targetDiscordUser = interaction.options.getUser('user', true);
+                const targetAuth = await ensureUser(targetDiscordUser);
+                if (!targetAuth) {
+                    await interaction.editReply('Could not find that user.');
+                    return;
+                }
+                const json = await apiCallWithSession(session.session_id, '/api/rally/judge/avail', {
+                    method: 'POST',
+                    body: JSON.stringify({ target_user_ids: [targetAuth.user.id] }),
+                });
+                if (!json.ok) {
+                    await interaction.editReply(`Failed: ${json.error.message}`);
+                    return;
+                }
+                await interaction.editReply(`Nudged ${targetDiscordUser.displayName} to set availability.`);
+            }
+        }
+
+        else if (commandName === 'brb') {
+            const message = interaction.options.getString('message') ?? undefined;
+            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+                method: 'POST',
+                body: JSON.stringify({ action_type: 'brb', message }),
+            });
+            if (!json.ok) {
+                await interaction.editReply(`Failed: ${json.error.message}`);
+                return;
+            }
+            await interaction.editReply('Marked as BRB.');
+        }
+
+        else if (commandName === 'where') {
+            const targetDiscordUser = interaction.options.getUser('user', true);
+            const targetAuth = await ensureUser(targetDiscordUser);
+            if (!targetAuth) {
+                await interaction.editReply('Could not find that user.');
+                return;
+            }
+            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+                method: 'POST',
+                body: JSON.stringify({ action_type: 'where', target_user_ids: [targetAuth.user.id] }),
+            });
+            if (!json.ok) {
+                await interaction.editReply(`Failed: ${json.error.message}`);
+                return;
+            }
+            await interaction.editReply(`Asked where ${targetDiscordUser.displayName} is.`);
+        }
+
+        else if (commandName === 'tree') {
+            // Fetch tree data via bot auth and post a text summary
+            const res = await fetch(`${API_URL}/api/rally/active`, {
+                headers: { ...botHeaders, 'Cookie': `session=${session.session_id}` },
+            });
+            const json = await res.json();
+            if (!json.ok || !json.data.rally) {
+                await interaction.editReply('No active rally today. Use `/call` to start one!');
+                return;
+            }
+            const { rally, actions } = json.data;
+            let summary = `**Gaming Tree** — ${rally.day_key}\n`;
+            if (actions.length === 0) {
+                summary += 'No actions yet.';
+            } else {
+                for (const a of actions) {
+                    const icon = { call: '📢', in: '✅', out: '❌', ping: '👋', judge_time: '🤖', judge_avail: '🤖', brb: '⏳', where: '❓' }[a.action_type] ?? '•';
+                    summary += `${icon} **${a.actor_username}**: ${a.action_type}${a.message ? ` — ${a.message}` : ''}\n`;
+                }
+            }
+            // Post to channel (not ephemeral)
+            const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
+            if (channel?.isTextBased()) {
+                await channel.send(summary);
+            }
+            await interaction.editReply('Tree posted to the channel!');
+        }
+
+    } catch (err) {
+        console.error(`Error handling /${commandName}:`, err);
+        await interaction.editReply('Something went wrong. Is the when2play server running?');
+    }
+});
+
+// --- Rally action polling ---
+async function pollRallyActions() {
+    try {
+        const res = await fetch(`${API_URL}/api/rally/pending`, { headers: botHeaders });
+        const json = await res.json();
+        if (!json.ok || json.data.length === 0) return;
+
+        const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
+        if (!channel?.isTextBased()) return;
+
+        for (const action of json.data) {
+            const actor = `<@${action.actor_discord_id}>`;
+            let text = '';
+
+            switch (action.action_type) {
+                case 'call':
+                    text = `📢 ${actor}: let's play! (${action.message || 'now'})`;
+                    break;
+                case 'in':
+                    text = `✅ ${actor} is in!${action.message ? ` ${action.message}` : ''}`;
+                    break;
+                case 'out':
+                    text = `❌ ${actor} is out.${action.message ? ` "${action.message}"` : ''}`;
+                    break;
+                case 'ping': {
+                    const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
+                    text = `👋 ${actor} → ${targets}: ${action.message || 'come play!'}`;
+                    break;
+                }
+                case 'judge_time': {
+                    const meta = action.metadata;
+                    if (meta?.windows?.length > 0) {
+                        const windowStrs = meta.windows.slice(0, 3).map(w =>
+                            `${w.start}-${w.end} (${w.user_count} ${w.user_count === 1 ? 'person' : 'people'})`
+                        );
+                        text = `🤖 Judge says: Best windows — ${windowStrs.join(', ')}`;
+                    } else {
+                        text = `🤖 Judge says: No overlapping availability found. Set your times!`;
+                    }
+                    break;
+                }
+                case 'judge_avail': {
+                    const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
+                    text = `🤖 Judge → ${targets}: Please set your availability!`;
+                    break;
+                }
+                case 'brb':
+                    text = `⏳ ${actor}: brb${action.message ? ', ' + action.message : ''}`;
+                    break;
+                case 'where': {
+                    const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
+                    text = `❓ ${actor} → ${targets}: where are you?`;
+                    break;
+                }
+                default:
+                    text = `${actor}: ${action.action_type}`;
+            }
+
+            if (text) await channel.send(text);
+
+            await fetch(`${API_URL}/api/rally/${action.id}/delivered`, {
+                method: 'PATCH',
+                headers: botHeaders,
+            });
+        }
+    } catch (err) {
+        console.error('Error polling rally actions:', err);
+    }
+}
+
+// --- Tree share polling ---
+async function pollTreeShares() {
+    try {
+        const res = await fetch(`${API_URL}/api/rally/tree/share/pending`, { headers: botHeaders });
+        const json = await res.json();
+        if (!json.ok || json.data.length === 0) return;
+
+        const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
+        if (!channel?.isTextBased()) return;
+
+        for (const share of json.data) {
+            if (share.image_data) {
+                const buffer = Buffer.from(share.image_data, 'base64');
+                const attachment = new AttachmentBuilder(buffer, { name: `gaming-tree-${share.day_key}.png` });
+                await channel.send({ content: `📊 **Gaming Tree** — ${share.day_key}`, files: [attachment] });
+            }
+
+            await fetch(`${API_URL}/api/rally/tree/share/${share.id}/delivered`, {
+                method: 'PATCH',
+                headers: botHeaders,
+            });
+        }
+    } catch (err) {
+        console.error('Error polling tree shares:', err);
+    }
+}
 
 // Gather ping polling
 async function pollGatherPings() {
@@ -115,7 +459,11 @@ function scheduleNextPoll() {
         ? BASE_POLL_MS
         : Math.min(BASE_POLL_MS * Math.pow(2, consecutiveErrors - 1), MAX_POLL_MS);
     setTimeout(async () => {
-        await pollGatherPings();
+        await Promise.all([
+            pollGatherPings(),
+            pollRallyActions(),
+            pollTreeShares(),
+        ]);
         scheduleNextPoll();
     }, delay);
 }
@@ -124,7 +472,7 @@ client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
     await registerCommands();
     scheduleNextPoll();
-    console.log(`Polling for gather pings every ${BASE_POLL_MS / 1000}s (with exponential backoff on errors)`);
+    console.log(`Polling for gather pings, rally actions, and tree shares every ${BASE_POLL_MS / 1000}s (with exponential backoff on errors)`);
 });
 
 client.login(DISCORD_TOKEN);
