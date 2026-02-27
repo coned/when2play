@@ -11,17 +11,17 @@
 	--border-hover: #4a2a6e;
 }
 
-/* Forest — earthy greens */
-:root[data-theme="forest"] {
-	--bg-primary: #0b1a0b;
-	--bg-secondary: #132a13;
-	--bg-tertiary: #1a3a1a;
-	--bg-card: #163016;
-	--accent: #2ecc71;
-	--accent-hover: #27ae60;
-	--accent-dim: #1e8449;
-	--border: #1e3e1e;
-	--border-hover: #2e4e2e;
+/* Ocean — teal on deep sea */
+:root[data-theme="ocean"] {
+	--bg-primary: #0a1628;
+	--bg-secondary: #0f2035;
+	--bg-tertiary: #152a42;
+	--bg-card: #12243b;
+	--accent: #06b6d4;
+	--accent-hover: #0891b2;
+	--accent-dim: #0e7490;
+	--border: #1a3550;
+	--border-hover: #254560;
 }
 
 /* Sakura — lavender and soft pink */
