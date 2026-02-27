@@ -1,4 +1,4 @@
-export type ActionType = 'call' | 'in' | 'out' | 'ping' | 'judge_time' | 'judge_avail' | 'brb' | 'where';
+export type ActionType = 'call' | 'in' | 'out' | 'ping' | 'judge_time' | 'judge_avail' | 'brb' | 'where' | 'share_ranking';
 
 export interface Rally {
   id: string;

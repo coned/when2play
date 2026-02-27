@@ -28,21 +28,24 @@ interface RallySettings {
 	rally_show_discord_command: boolean;
 }
 
-type ExpandedButton = null | 'call' | 'in' | 'out' | 'brb' | 'ping' | 'where' | 'judge_time' | 'judge_avail';
+type ExpandedButton = null | 'call' | 'in' | 'out' | 'brb' | 'ping' | 'where' | 'judge_time' | 'judge_avail' | 'share_ranking';
 
 const DEFAULT_LABELS: Record<string, string> = {
 	call: 'Call', in: 'In', out: 'Out', brb: 'BRB',
 	ping: 'Ping', where: 'Where', judge_time: 'Judge Time', judge_avail: 'Judge Avail',
+	share_ranking: 'Share Ranking',
 };
 
 const BUTTON_EMOJIS: Record<string, string> = {
 	call: '\u{1F4E2}', in: '\u2705', out: '\u274C', brb: '\u23F3',
 	ping: '\u{1F44B}', where: '\u2753', judge_time: '\u{1F916}', judge_avail: '\u{1F916}',
+	share_ranking: '\u{1F3C6}',
 };
 
 const DISCORD_COMMANDS: Record<string, string> = {
 	call: '/call', in: '/in', out: '/out', brb: '/brb',
 	ping: '/ping', where: '/where', judge_time: '/judge time', judge_avail: '/judge avail',
+	share_ranking: '',
 };
 
 export function RallyPanel({ userId }: RallyPanelProps) {
@@ -53,6 +56,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 	const [success, setSuccess] = useState('');
 	const [expandedButton, setExpandedButton] = useState<ExpandedButton>(null);
 	const [callTiming, setCallTiming] = useState<'now' | 'later'>('now');
+	const [callAnonymous, setCallAnonymous] = useState(false);
 	const [composeMessage, setComposeMessage] = useState('');
 	const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
 	const [rallySettings, setRallySettings] = useState<RallySettings>({
@@ -118,11 +122,21 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 
 		try {
 			if (expandedButton === 'call') {
-				const result = await api.createRally({ timing: callTiming });
+				const result = await api.createRally({ timing: callTiming, is_anonymous: callAnonymous || undefined });
 				if (result.ok) {
 					setSuccess(`Rally started (${callTiming})!`);
 					setExpandedButton(null);
 					setComposeMessage('');
+					setCallAnonymous(false);
+					await fetchData();
+				} else {
+					setError(result.error.message);
+				}
+			} else if (expandedButton === 'share_ranking') {
+				const result = await api.shareRanking();
+				if (result.ok) {
+					setSuccess('Game ranking shared to Discord!');
+					setExpandedButton(null);
 					await fetchData();
 				} else {
 					setError(result.error.message);
@@ -227,7 +241,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 		textAlign: 'center',
 	});
 
-	const actionTypes: ExpandedButton[] = ['call', 'in', 'out', 'brb', 'ping', 'where', 'judge_time', 'judge_avail'];
+	const actionTypes: ExpandedButton[] = ['call', 'in', 'out', 'brb', 'ping', 'where', 'judge_time', 'judge_avail', 'share_ranking'];
 
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -269,13 +283,24 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 					<div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
 						{/* Timing selector for Call */}
 						{needsTimingSelect && (
-							<div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-								<button class={`btn ${callTiming === 'now' ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '4px 12px', fontSize: '12px' }} onClick={() => setCallTiming('now')}>
-									Now
-								</button>
-								<button class={`btn ${callTiming === 'later' ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '4px 12px', fontSize: '12px' }} onClick={() => setCallTiming('later')}>
-									Later
-								</button>
+							<div style={{ marginBottom: '8px' }}>
+								<div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
+									<button class={`btn ${callTiming === 'now' ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '4px 12px', fontSize: '12px' }} onClick={() => setCallTiming('now')}>
+										Now
+									</button>
+									<button class={`btn ${callTiming === 'later' ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '4px 12px', fontSize: '12px' }} onClick={() => setCallTiming('later')}>
+										Later
+									</button>
+								</div>
+								<label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+									<input
+										type="checkbox"
+										checked={callAnonymous}
+										onChange={(e) => setCallAnonymous((e.target as HTMLInputElement).checked)}
+										style={{ width: 'auto' }}
+									/>
+									Anonymous (hide my name)
+								</label>
 							</div>
 						)}
 
