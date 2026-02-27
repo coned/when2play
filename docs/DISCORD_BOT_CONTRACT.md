@@ -186,7 +186,7 @@ For each pending action, format a Discord message using the universal `label —
 | `in` | `✅ **User** is in!` | `✅ **User** is in — "message"` |
 | `out` | `❌ **User** is out` | `❌ **User** is out — "message"` |
 | `ping` | `👋 **User** → @Target` | `👋 **User** → @Target — "message"` |
-| `judge_time` | Two-line: `📅 **Best window:** HH:MM–HH:MM UTC (Alice, Bob)` + `📋 **All windows today (N):**\n1. ...` | *(metadata-driven)* |
+| `judge_time` | Two-line: `📅 **Best window:** <t:TS:t>–<t:TS:t> (Alice, Bob)` + `📋 **All windows today (N):**\n• ...` + `_On behalf of User_` | *(metadata-driven, times as Discord timestamps)* |
 | `judge_avail` | `🤖 **User** → @Target: Please set your availability!` | *(metadata-driven)* |
 | `brb` | `⏳ **User** brb` | `⏳ **User** brb — "message"` |
 | `where` | `❓ **User** → @Target` | `❓ **User** → @Target — "message"` |

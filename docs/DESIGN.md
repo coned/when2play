@@ -40,7 +40,7 @@
 when2play/
 ├── Makefile        # Project commands (make help)
 ├── docs/           # Documentation
-├── migrations/     # D1 SQL migrations (0000-0012)
+├── migrations/     # D1 SQL migrations (0000-0016)
 ├── shared/         # Shared TypeScript types (npm workspace)
 ├── src/            # Backend (Hono API)
 │   ├── middleware/  # error, cors, auth, bot-auth, security-headers, fk
@@ -79,7 +79,9 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 |--------|------|-------|
 | id | TEXT PK | UUID |
 | discord_id | TEXT UNIQUE NOT NULL | Discord user ID |
-| discord_username | TEXT NOT NULL | Display name |
+| discord_username | TEXT NOT NULL | Server nickname from Discord |
+| display_name | TEXT | Optional override name shown in the app (max 50 chars) |
+| sync_name_from_discord | INTEGER DEFAULT 1 | If 1, `discord_username` auto-updates on next login |
 | avatar_url | TEXT | Discord avatar |
 | timezone | TEXT DEFAULT 'UTC' | IANA timezone |
 | time_granularity_minutes | INTEGER DEFAULT 15 | User-adjustable slot size |
@@ -166,8 +168,9 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | voter_id | TEXT NOT NULL FK→users | Who shames |
 | target_id | TEXT NOT NULL FK→users | Who is shamed |
 | reason | TEXT | Optional reason (max 200 chars) |
+| is_anonymous | INTEGER DEFAULT 0 | If 1, voter identity is hidden |
 | created_at | TEXT NOT NULL | |
-| UNIQUE(voter_id, target_id, date) | | One shame per pair per day |
+| UNIQUE(voter_id, target_id, created_at) | | One shame per pair per day (enforced in query layer) |
 
 ### settings
 
@@ -177,7 +180,20 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | value | TEXT NOT NULL | JSON-encoded value |
 | updated_at | TEXT NOT NULL | |
 
-Default settings: `time_granularity_minutes=15`, `game_pool_lifespan_days=7`, `gather_cooldown_seconds=10`, `gather_hourly_limit=30`, `day_reset_hour_et=8`.
+Default settings:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `time_granularity_minutes` | `15` | Availability slot resolution (admin + user configurable) |
+| `game_pool_lifespan_days` | `7` | Games older than this are auto-archived |
+| `gather_cooldown_seconds` | `10` | Minimum seconds between a user's gather pings (0 = off) |
+| `gather_hourly_limit` | `30` | Max pings per user per rolling 60-minute window (0 = off) |
+| `day_reset_hour_et` | `8` | Hour (ET) at which the rally day resets (8 = 8 AM ET) |
+| `avail_start_hour_et` | `17` | First hour shown in the availability grid (5 PM ET) |
+| `avail_end_hour_et` | `3` | Last hour shown in the availability grid (3 AM ET next day) |
+| `rally_button_labels` | `{}` | Admin-overridable labels for each rally button |
+| `rally_suggested_phrases` | `{}` | Quick-pick phrases per rally action type |
+| `rally_show_discord_command` | `true` | Show the Discord slash command name under each rally button |
 
 ### rallies
 
@@ -199,7 +215,7 @@ One rally per day. Day boundary: 8:01 AM ET → 8:00 AM next day ET (configurabl
 | id | TEXT PK | UUID |
 | rally_id | TEXT FK→rallies | Nullable for orphan actions |
 | actor_id | TEXT NOT NULL FK→users | Who performed the action |
-| action_type | TEXT NOT NULL | call, in, out, ping, judge_time, judge_avail, brb, where |
+| action_type | TEXT NOT NULL | call, in, out, ping, judge_time, judge_avail, brb, where, share_ranking |
 | target_user_ids | TEXT | JSON array for ping/where/judge_avail |
 | message | TEXT | Optional text |
 | metadata | TEXT | JSON: judge results, timing info |
@@ -295,7 +311,8 @@ One rally per day. Day boundary: 8:01 AM ET → 8:00 AM next day ET (configurabl
 |--------|------|------|-------------|
 | POST | /api/rally/call | Session | Create rally + call action. Body: `{ timing?: "now"\|"later" }` |
 | POST | /api/rally/action | Session | Record action. Body: `{ action_type, target_user_ids?, message? }` |
-| POST | /api/rally/judge/time | Session | Compute optimal time slots from /in users' availability |
+| POST | /api/rally/judge/time | Session | Compute overlapping availability windows for today (all users with availability, 2+ overlap) |
+| POST | /api/rally/share-ranking | Session | Broadcast current game ranking to Discord |
 | POST | /api/rally/judge/avail | Session | Nudge user to set availability. Body: `{ target_user_ids }` |
 | GET | /api/rally/active | Session | Get today's rally + actions (?day_key optional) |
 | GET | /api/rally/tree | Session | Get tree DAG data (?day_key optional) |
@@ -408,17 +425,21 @@ Error messages are redacted in production (HTTPS) for unhandled errors.
 
 ### Themes
 
-5 color themes, switchable from the header. Persisted in `localStorage('w2p-theme')`.
+The theme system has two independent dimensions:
 
-| Theme | Background | Accent | Vibe |
-|-------|-----------|--------|------|
-| **Midnight** (default) | #0f0f0f / #1a1a2e | #3b82f6 (blue) | Dark blue |
-| **Cyberpunk** | #0d0221 / #1a0a3e | #ff2a6d (neon pink) | Neon on purple |
-| **Forest** | #0b1a0b / #132a13 | #2ecc71 (emerald) | Earthy greens |
-| **Sakura** | #0f0f1a / #1a1a2e | #e891b9 (soft pink) | Lavender pink |
-| **Amber** | #121212 / #1e1e1e | #f59e0b (gold) | Warm on charcoal |
+**Mode** (light / dark): toggled via ☀/☾ buttons in the header. Persisted in `localStorage('w2p-mode')`. Applied via `data-mode="light"` attribute on `<html>`. Light mode overrides background, text, and border CSS variables.
 
-Themes override CSS variables via `[data-theme]` selectors. The default Midnight theme uses `:root` variables. `initTheme()` runs before first render to prevent flash.
+**Color scheme** (5 accents): selected via colored circles in the header. Persisted in `localStorage('w2p-theme')`. Applied via `data-theme` attribute. A checkmark (✓) appears on the active circle.
+
+| Scheme | Accent | Vibe |
+|--------|--------|------|
+| **Midnight** (default) | #3b82f6 (blue) | Dark blue |
+| **Cyberpunk** | #ff2a6d (neon pink) | Neon on purple |
+| **Forest** | #2ecc71 (emerald) | Earthy greens |
+| **Sakura** | #e891b9 (soft pink) | Lavender pink |
+| **Amber** | #f59e0b (gold) | Warm on charcoal |
+
+Both settings are independent and compose: any accent works in both light and dark mode. `initTheme()` runs before first render to prevent flash.
 
 ### Dual Timezone Display
 
@@ -435,7 +456,7 @@ All time displays show both UTC and local time:
 - **VoteRanking**: Drag-to-reorder ranking list. Add games from unranked pool, remove from ranking. Auto-saves order.
 - **GatherBell**: Anonymous checkbox, Everyone/Specific user toggle, multi-select user picker with avatars.
 - **ShameWall**: Shows all users (not just those with shames). Per-target expand/collapse with inline reason input. Leaderboard shows latest 3 reasons.
-- **RallyPanel**: Action buttons grid (call/in/out/ping/brb/where/judge). User selector for targeted actions. Live action feed with auto-refresh.
+- **RallyPanel**: Action buttons grid (call/in/out/ping/brb/where/call2select/post schedule/post gamerank). User selector for targeted actions. Live action feed with auto-refresh. Admin-configurable button labels and suggested phrases.
 - **GamingTree**: Day selector, dagre-based SVG DAG renderer with pan/zoom, SVG→PNG export for Discord sharing.
 - **TreeVisualization**: Left-to-right DAG layout via `@dagrejs/dagre`. Color-coded nodes by action type, cubic bezier edges (solid = response, dashed = ping).
 - **ActionFeed**: Scrollable, color-coded list of today's rally actions with auto-scroll to latest.
@@ -512,6 +533,6 @@ When polling `GET /api/gather/pending`, each ping includes:
 - **CORS**: Production = same-origin. Dev = `localhost:5173` + `localhost:8787`.
 - **Bot auth**: `X-Bot-Token` header validated against `BOT_API_KEY` secret. Skipped when secret is unset (local dev).
 - **Error redaction**: Production returns generic error messages. Dev returns full error details.
-- **Theme persistence**: `localStorage('w2p-theme')` with `initTheme()` before render to prevent flash.
+- **Theme persistence**: `localStorage('w2p-theme')` (color scheme) and `localStorage('w2p-mode')` (light/dark) with `initTheme()` before render to prevent flash.
 - **Responsive breakpoint**: 768px. Below = BottomNav + mobile padding. Above = Sidebar + desktop layout.
 - **Steam search**: Fetches `store.steampowered.com/search/suggest` HTML, parses with regex for app IDs, names, and images.

@@ -76,7 +76,6 @@ export const api = {
 	// Gather
 	ringGather: (options?: { message?: string; is_anonymous?: boolean; target_user_ids?: string[] }) =>
 		request<any>('/gather', { method: 'POST', body: JSON.stringify(options ?? {}) }),
-	getPendingGather: () => request<any[]>('/gather/pending'),
 
 	// Shame
 	shameUser: (targetId: string, reason?: string, isAnonymous = false) =>
