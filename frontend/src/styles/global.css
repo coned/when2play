@@ -226,9 +226,10 @@ textarea:focus {
 }
 
 .blog-content p {
-	line-height: 1.6;
+	font-size: 15px;
+	line-height: 1.75;
 	color: var(--text-secondary);
-	margin-bottom: 8px;
+	margin-bottom: 12px;
 }
 
 .blog-content em {
