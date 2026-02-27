@@ -298,16 +298,11 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.editReply('No overlapping availability windows found today. Ask everyone to set their times!');
                     return;
                 }
+                const fmtNames = (w) => (w.user_names?.map(n => n.trim()).join(', ') ?? `${w.user_count} people`);
                 const best = meta.windows[0];
-                const bestNames = best.user_names?.join(', ') ?? `${best.user_count} people`;
-                let reply = `📅 **Best window:** ${best.start}–${best.end} UTC (${bestNames})`;
-                if (meta.windows.length > 1) {
-                    const allLines = meta.windows.slice(0, 8).map((w, i) => {
-                        const names = w.user_names?.join(', ') ?? `${w.user_count} people`;
-                        return `${i + 1}. ${w.start}–${w.end}: ${names}`;
-                    });
-                    reply += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
-                }
+                let reply = `📅 **Best window:** ${best.start}–${best.end} UTC (${fmtNames(best)})`;
+                const allLines = meta.windows.slice(0, 8).map(w => `• ${w.start}–${w.end}: ${fmtNames(w)}`);
+                reply += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
                 await interaction.editReply(reply);
             }
 
@@ -388,18 +383,14 @@ async function pollRallyActions() {
                 case 'judge_time': {
                     const meta = action.metadata;
                     if (meta?.windows?.length > 0) {
+                        const fmtNames = (w) => (w.user_names?.map(n => n.trim()).join(', ') ?? `${w.user_count} people`);
                         const best = meta.windows[0];
-                        const bestNames = best.user_names?.join(', ') ?? `${best.user_count} people`;
-                        text = `📅 **Best window:** ${best.start}–${best.end} UTC (${bestNames})`;
-                        if (meta.windows.length > 1) {
-                            const allLines = meta.windows.slice(0, 8).map((w, i) => {
-                                const names = w.user_names?.join(', ') ?? `${w.user_count} people`;
-                                return `${i + 1}. ${w.start}–${w.end}: ${names}`;
-                            });
-                            text += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
-                        }
+                        text = `📅 **Best window:** ${best.start}–${best.end} UTC (${fmtNames(best)})`;
+                        const allLines = meta.windows.slice(0, 8).map(w => `• ${w.start}–${w.end}: ${fmtNames(w)}`);
+                        text += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
+                        text += `\n_Requested by ${action.actor_username}_`;
                     } else {
-                        text = `🤖 No overlapping availability found today. Ask everyone to set their times!`;
+                        text = `🤖 No overlapping availability found today. Ask everyone to set their times!\n_Requested by ${action.actor_username}_`;
                     }
                     break;
                 }
