@@ -49,3 +49,24 @@
 	--border: #333333;
 	--border-hover: #444444;
 }
+
+/* Daylight — light mode */
+:root[data-theme="daylight"] {
+	--bg-primary: #f8f9fa;
+	--bg-secondary: #ffffff;
+	--bg-tertiary: #e9ecef;
+	--bg-card: #ffffff;
+	--accent: #2563eb;
+	--accent-hover: #1d4ed8;
+	--accent-dim: #1e40af;
+	--text-primary: #1a1a1a;
+	--text-secondary: #555555;
+	--text-muted: #888888;
+	--border: #dee2e6;
+	--border-hover: #ced4da;
+	--success: #16a34a;
+	--warning: #ca8a04;
+	--danger: #dc2626;
+	--shame: #ea580c;
+	--shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}

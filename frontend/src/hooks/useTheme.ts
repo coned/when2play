@@ -6,6 +6,7 @@ export const THEMES = [
 	{ id: 'forest', label: 'Forest', accent: '#2ecc71' },
 	{ id: 'sakura', label: 'Sakura', accent: '#e891b9' },
 	{ id: 'amber', label: 'Amber', accent: '#f59e0b' },
+	{ id: 'daylight', label: 'Daylight', accent: '#2563eb' },
 ] as const;
 
 export type ThemeId = (typeof THEMES)[number]['id'];
