@@ -4,7 +4,7 @@ import { AuthCallback } from './pages/AuthCallback';
 import { LoadingSpinner } from './components/ui/LoadingSpinner';
 
 export function App() {
-	const { user, loading, logout } = useAuth();
+	const { user, loading, logout, refetch } = useAuth();
 
 	// Simple path-based routing
 	const path = window.location.pathname;
@@ -45,5 +45,5 @@ export function App() {
 	}
 
 	// Authenticated — show dashboard
-	return <Home user={user} onLogout={logout} />;
+	return <Home user={user} onLogout={logout} onUserUpdate={refetch} />;
 }
