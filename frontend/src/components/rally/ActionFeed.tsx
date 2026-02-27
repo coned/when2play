@@ -51,9 +51,13 @@ function formatAction(action: ActionItem, users: Map<string, { discord_username:
 	}
 
 	if (action.action_type === 'judge_time' && action.metadata) {
-		const meta = action.metadata as { windows?: Array<{ start: string; end: string; user_count: number }> };
+		const meta = action.metadata as { windows?: Array<{ start: string; end: string; user_count: number }>; day_key?: string };
 		if (meta.windows && meta.windows.length > 0) {
-			const windowStrs = meta.windows.slice(0, 3).map((w) => `${w.start}-${w.end} (${w.user_count})`);
+			const toLocal = (t: string) => {
+				if (!meta.day_key) return t;
+				return new Date(`${meta.day_key}T${t}:00Z`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+			};
+			const windowStrs = meta.windows.slice(0, 3).map((w) => `${toLocal(w.start)}–${toLocal(w.end)} (${w.user_count})`);
 			text = `Best windows: ${windowStrs.join(', ')}`;
 		} else {
 			text = 'No overlapping availability found';
