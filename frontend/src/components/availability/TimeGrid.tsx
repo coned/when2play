@@ -62,23 +62,31 @@ function etHourToUtcSlot(etHour: number, dateStr: string): string {
 	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-/** Generate only slots within the ET time range for a given date. */
-function generateFilteredSlots(startHourET: number, endHourET: number, dateStr: string): typeof ALL_SLOTS {
+interface FilteredSlot {
+	start_time: string;
+	end_time: string;
+	dateOffset: 0 | 1;
+}
+
+/** Generate only slots within the ET time range for a given date, with dateOffset for midnight-crossing. */
+function generateFilteredSlots(startHourET: number, endHourET: number, dateStr: string): FilteredSlot[] {
 	const startUtc = etHourToUtcSlot(startHourET, dateStr);
 	const endUtc = etHourToUtcSlot(endHourET, dateStr);
 
 	const startIdx = ALL_SLOTS.findIndex((s) => s.start_time === startUtc);
-	if (startIdx === -1) return ALL_SLOTS;
+	if (startIdx === -1) return ALL_SLOTS.map((s) => ({ ...s, dateOffset: 0 as const }));
 
-	// If end wraps (e.g. 5PM->3AM), endUtc < startUtc
 	const endIdx = ALL_SLOTS.findIndex((s) => s.start_time === endUtc);
-	if (endIdx === -1) return ALL_SLOTS;
+	if (endIdx === -1) return ALL_SLOTS.map((s) => ({ ...s, dateOffset: 0 as const }));
 
 	if (endIdx > startIdx) {
-		return ALL_SLOTS.slice(startIdx, endIdx);
+		return ALL_SLOTS.slice(startIdx, endIdx).map((s) => ({ ...s, dateOffset: 0 as const }));
 	}
-	// Wraps around midnight
-	return [...ALL_SLOTS.slice(startIdx), ...ALL_SLOTS.slice(0, endIdx)];
+	// Wraps around midnight: slots from startIdx onward are day 0, slots from 0 to endIdx are day 1
+	return [
+		...ALL_SLOTS.slice(startIdx).map((s) => ({ ...s, dateOffset: 0 as const })),
+		...ALL_SLOTS.slice(0, endIdx).map((s) => ({ ...s, dateOffset: 1 as const })),
+	];
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -97,11 +105,11 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 	const isFirstRender = useRef(true);
 
 	// Use filtered slots if time range is configured
-	const filteredSlots = useMemo(() => {
+	const filteredSlots = useMemo((): FilteredSlot[] => {
 		if (availStartHourET !== undefined && availEndHourET !== undefined) {
 			return generateFilteredSlots(availStartHourET, availEndHourET, date);
 		}
-		return ALL_SLOTS;
+		return ALL_SLOTS.map((s) => ({ ...s, dateOffset: 0 as const }));
 	}, [availStartHourET, availEndHourET, date]);
 
 	// Measure available height after mount
@@ -141,18 +149,8 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 		};
 	}, [selected]);
 
-	// Find start slot index based on filtered slots
-	const startIndex = useMemo(() => {
-		if (!isToday) return 0;
-		const now = new Date();
-		const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
-		const slotMin = Math.floor(utcMin / GRANULARITY) * GRANULARITY;
-		const h = Math.floor(slotMin / 60);
-		const m = slotMin % 60;
-		const time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-		const idx = filteredSlots.findIndex((s) => s.start_time === time);
-		return Math.max(0, idx);
-	}, [isToday, filteredSlots]);
+	// Always start from index 0 — past slots remain visible (dimmed + strikethrough)
+	const startIndex = 0;
 
 	const nextDate = useMemo(() => getNextDate(date), [date]);
 	const numColumns = isMobile ? 2 : 3;
@@ -165,14 +163,17 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 		return now.getUTCHours() * 60 + now.getUTCMinutes();
 	}, []);
 
-	// Build visible slots, wrapping around boundary
+	// Build visible slots, using dateOffset for correct date on midnight-crossing ranges
 	const visibleSlots = useMemo(() => {
 		const total = filteredSlots.length;
 		return Array.from({ length: totalSlots }, (_, i) => {
 			const raw = startIndex + i;
 			const wrapped = raw % total;
-			const slotDate = raw >= total ? nextDate : date;
-			return { ...filteredSlots[wrapped], slotDate };
+			const slot = filteredSlots[wrapped];
+			// dateOffset=1 means this slot is already next-day in the filtered range;
+			// wrapping past total adds another day
+			const slotDate = (slot.dateOffset > 0 || raw >= total) ? nextDate : date;
+			return { ...slot, slotDate };
 		});
 	}, [startIndex, totalSlots, date, nextDate, filteredSlots]);
 
@@ -210,11 +211,18 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 		if (time) toggleSlot(time, dragValue);
 	};
 
+	const formatDateLabel = (dateStr: string): string => {
+		const d = new Date(dateStr + 'T12:00:00Z');
+		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	};
+
 	const colTimeRange = (col: typeof visibleSlots) => {
 		if (col.length === 0) return '';
+		const firstDate = col[0].slotDate;
+		const dateLabel = formatDateLabel(firstDate);
 		const first = formatLocalTime(col[0].start_time, col[0].slotDate);
 		const last = formatLocalTime(col[col.length - 1].start_time, col[col.length - 1].slotDate);
-		return `${first} – ${last}`;
+		return `${dateLabel}: ${first} – ${last}`;
 	};
 
 	const isSlotPast = (slotTime: string, slotDate: string): boolean => {
