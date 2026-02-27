@@ -66,6 +66,9 @@ const commands = [
     new SlashCommandBuilder()
         .setName('ranking')
         .setDescription('Post the current game rankings to the channel'),
+    new SlashCommandBuilder()
+        .setName('help')
+        .setDescription('Show all when2play commands'),
 ];
 
 async function registerCommands() {
@@ -383,14 +386,14 @@ async function pollRallyActions() {
                     text = `📢 ${actor} called${action.message ? ` — "${action.message}"` : ''}`;
                     break;
                 case 'in':
-                    text = `✅ ${actor} is in!${action.message ? ` ${action.message}` : ''}`;
+                    text = `✅ ${actor} is in${action.message ? ` — "${action.message}"` : '!'}`;
                     break;
                 case 'out':
-                    text = `❌ ${actor} is out.${action.message ? ` "${action.message}"` : ''}`;
+                    text = `❌ ${actor} is out${action.message ? ` — "${action.message}"` : ''}`;
                     break;
                 case 'ping': {
                     const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
-                    text = `👋 ${actor} → ${targets}: ${action.message || 'come play!'}`;
+                    text = `👋 ${actor} → ${targets}${action.message ? ` — "${action.message}"` : ''}`;
                     break;
                 }
                 case 'judge_time': {
@@ -411,11 +414,11 @@ async function pollRallyActions() {
                     break;
                 }
                 case 'brb':
-                    text = `⏳ ${actor}: brb${action.message ? ', ' + action.message : ''}`;
+                    text = `⏳ ${actor} brb${action.message ? ` — "${action.message}"` : ''}`;
                     break;
                 case 'where': {
                     const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
-                    text = `❓ ${actor} → ${targets}: where are you?`;
+                    text = `❓ ${actor} → ${targets}${action.message ? ` — "${action.message}"` : ''}`;
                     break;
                 }
                 case 'share_ranking': {
@@ -511,6 +514,41 @@ async function pollGatherPings() {
         console.error(`Error polling gather pings (consecutive errors: ${consecutiveErrors}):`, err);
     }
 }
+
+// --- /help handler ---
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'help') return;
+    await interaction.deferReply({ flags: 64 });
+
+    const helpText = [
+        '**when2play** — Gaming coordination bot\n',
+        '**Getting Started**',
+        '`/play` — Get a login link for the when2play dashboard',
+        '`/url` — Get the when2play website URL',
+        '`/when2play-admin` — Get an admin link (requires ADMINISTRATOR)\n',
+        '**Rally — Session Coordination**',
+        '`/call [message]` — Call everyone to play',
+        '`/in [message]` — Join the rally',
+        '`/out [reason]` — Bail from the rally',
+        '`/brb [message]` — Mark yourself as away briefly',
+        '`/ping @user [message]` — Ping someone to come play',
+        '`/where @user` — Ask where someone is\n',
+        '**Judge — Smart Scheduling**',
+        '`/judge time` — Find the best overlapping time slots',
+        '`/judge avail @user` — Nudge someone to set their availability\n',
+        '**Sharing**',
+        '`/tree` — Post today\'s gaming tree to the channel',
+        '`/ranking` — Post the current game rankings to the channel\n',
+        '**Dashboard Features**',
+        'The web dashboard at the `/play` link also includes:',
+        '- Schedule — Set your daily availability grid',
+        '- Games — Vote and rank games to play',
+        '- Shame Wall — Call out friends who bailed',
+        '- Gaming Tree — Visualize today\'s rally as a DAG',
+    ].join('\n');
+
+    await interaction.editReply(helpText);
+});
 
 function scheduleNextPoll() {
     const delay = consecutiveErrors === 0
