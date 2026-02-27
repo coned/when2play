@@ -13,10 +13,10 @@ interface SettingsState {
 	rally_show_discord_command: boolean;
 }
 
-const RALLY_ACTION_TYPES = ['call', 'in', 'out', 'brb', 'ping', 'where', 'judge_time', 'judge_avail'] as const;
+const RALLY_ACTION_TYPES = ['call', 'in', 'out', 'brb', 'ping', 'where', 'judge_avail', 'judge_time', 'share_ranking'] as const;
 const DEFAULT_RALLY_LABELS: Record<string, string> = {
 	call: 'Call', in: 'In', out: 'Out', brb: 'BRB',
-	ping: 'Ping', where: 'Where', judge_time: 'Judge Time', judge_avail: 'Judge Avail',
+	ping: 'Ping', where: 'Where', judge_avail: 'Judge Avail', judge_time: 'Judge Time', share_ranking: 'Share Ranking',
 };
 
 function Field({

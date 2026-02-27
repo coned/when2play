@@ -242,7 +242,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 		textAlign: 'center',
 	});
 
-	const actionTypes: ExpandedButton[] = ['call', 'in', 'out', 'brb', 'ping', 'where', 'judge_time', 'judge_avail', 'share_ranking'];
+	const actionTypes: ExpandedButton[] = ['call', 'in', 'out', 'brb', 'ping', 'where', 'judge_avail', 'judge_time', 'share_ranking'];
 
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
