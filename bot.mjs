@@ -340,7 +340,7 @@ client.on('interactionCreate', async (interaction) => {
                 const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
                 if (channel?.isTextBased()) {
                     const actor = authData.user.display_name ?? authData.user.discord_username;
-                    await channel.send(`${summary}_On behalf of ${actor}_`);
+                    await channel.send({ content: `${summary}_On behalf of ${actor}_`, allowedMentions: { parse: [], users: [] } });
                 }
                 await interaction.editReply('Gaming tree posted to the channel!');
             }
@@ -433,7 +433,7 @@ async function pollRallyActions() {
                     text = `${actor}: ${action.action_type}`;
             }
 
-            if (text) await channel.send(text);
+            if (text) await channel.send({ content: text, allowedMentions: { parse: [], users: action.target_discord_ids ?? [] } });
 
             await fetch(`${API_URL}/api/rally/${action.id}/delivered`, {
                 method: 'PATCH',
@@ -459,7 +459,7 @@ async function pollTreeShares() {
             if (share.image_data) {
                 const buffer = Buffer.from(share.image_data, 'base64');
                 const attachment = new AttachmentBuilder(buffer, { name: `gaming-tree-${share.day_key}.png` });
-                await channel.send({ content: `📊 **Gaming Tree** — ${share.day_key}`, files: [attachment] });
+                await channel.send({ content: `📊 **Gaming Tree** — ${share.day_key}`, files: [attachment], allowedMentions: { parse: [], users: [] } });
             }
 
             await fetch(`${API_URL}/api/rally/tree/share/${share.id}/delivered`, {
@@ -498,7 +498,11 @@ async function pollGatherPings() {
                 text += ` → ${mentions}`;
             }
 
-            await channel.send(text);
+            const intentionalUsers = [
+                ...(ping.is_anonymous ? [] : [ping.sender_discord_id]),
+                ...(ping.target_discord_ids ?? []),
+            ].filter(Boolean);
+            await channel.send({ content: text, allowedMentions: { parse: [], users: intentionalUsers } });
             await fetch(`${API_URL}/api/gather/${ping.id}/delivered`, {
                 method: 'PATCH',
                 headers: botHeaders,
