@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { api } from '../../api/client';
-import { getTimezoneAbbreviation, formatLocalTimeRange } from '../../lib/time';
+import { getTimezoneAbbreviation, formatLocalTimeRangeStructured, type TimeRangeParts } from '../../lib/time';
 
 interface ScheduleSummaryProps {
 	userId: string;
@@ -72,6 +72,22 @@ function groupMySlots(slots: Array<{ start_time: string }>): Array<{ startTime: 
 	return groups;
 }
 
+function TimeRange({ parts }: { parts: TimeRangeParts }) {
+	const nextDayBadge = (
+		<span style={{ color: 'var(--warning)', fontSize: '0.75em', verticalAlign: 'super', fontWeight: 600 }}>+1</span>
+	);
+	return (
+		<>
+			{parts.startTime}
+			{parts.startNextDay && <>{' '}{nextDayBadge}</>}
+			{' \u2013 '}
+			{parts.endTime}
+			{parts.endNextDay && <>{' '}{nextDayBadge}</>}
+			{' '}{parts.tz}
+		</>
+	);
+}
+
 export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 	const [ranking, setRanking] = useState<any[]>([]);
 	const [availability, setAvailability] = useState<any[]>([]);
@@ -79,6 +95,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 	const [loading, setLoading] = useState(true);
 
 	const today = new Date().toISOString().split('T')[0];
+	const todayLabel = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
 	useEffect(() => {
 		(async () => {
@@ -142,7 +159,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 
 			{/* Overlap Windows */}
 			<div style={{ marginBottom: '24px' }}>
-				<h3 style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>Who's Around Today</h3>
+				<h3 style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>Who's Around — {todayLabel}</h3>
 				{overlapGroups.length === 0 ? (
 					<p class="text-muted">No overlapping availability yet.</p>
 				) : (
@@ -166,7 +183,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 									}}
 								>
 									<span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-										{formatLocalTimeRange(group.startTime, group.endTime, today)}
+										<TimeRange parts={formatLocalTimeRangeStructured(group.startTime, group.endTime, today)} />
 									</span>
 
 									{/* Avatar stack */}
@@ -233,7 +250,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 
 			{/* My Availability */}
 			<div>
-				<h3 style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>My Availability Today</h3>
+				<h3 style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>My Availability — {todayLabel}</h3>
 				{(() => {
 					const mySlots = availability.filter((s) => s.user_id === userId);
 					const myGroups = groupMySlots(mySlots);
@@ -251,7 +268,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 										fontSize: '12px',
 									}}
 								>
-									{formatLocalTimeRange(g.startTime, g.endTime, today)}
+									<TimeRange parts={formatLocalTimeRangeStructured(g.startTime, g.endTime, today)} />
 								</span>
 							))}
 						</div>
