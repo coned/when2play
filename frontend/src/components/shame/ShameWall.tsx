@@ -31,6 +31,15 @@ export function ShameWall({ userId }: ShameWallProps) {
 		setLoading(false);
 	};
 
+	const refreshShameData = async () => {
+		const [lbResult, myVotesResult] = await Promise.all([
+			api.getShameLeaderboard(),
+			api.getMyShameVotes(),
+		]);
+		if (lbResult.ok) setLeaderboard(lbResult.data);
+		if (myVotesResult.ok) setMyVotes(new Set(myVotesResult.data));
+	};
+
 	const handleShame = async (targetId: string) => {
 		setError('');
 		const reason = reasons[targetId]?.trim();
@@ -38,7 +47,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 		if (result.ok) {
 			setReasons((prev) => ({ ...prev, [targetId]: '' }));
 			setExpandedTarget(null);
-			fetchData();
+			refreshShameData();
 		} else {
 			setError(result.error.message);
 		}
@@ -49,7 +58,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 		const result = await api.withdrawShame(targetId);
 		if (result.ok) {
 			setExpandedTarget(null);
-			fetchData();
+			refreshShameData();
 		} else {
 			setError(result.error.message);
 		}
