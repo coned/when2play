@@ -186,8 +186,8 @@ For each pending action, format a Discord message using the universal `label —
 | `in` | `✅ **User** is in!` | `✅ **User** is in — "message"` |
 | `out` | `❌ **User** is out` | `❌ **User** is out — "message"` |
 | `ping` | `👋 **User** → @Target` | `👋 **User** → @Target — "message"` |
-| `judge_time` | `🤖 Judge says: Best windows — {windows}` | *(metadata-driven)* |
-| `judge_avail` | `🤖 Judge → @Target: Please set your availability!` | *(metadata-driven)* |
+| `judge_time` | Two-line: `📅 **Best window:** HH:MM–HH:MM UTC (Alice, Bob)` + `📋 **All windows today (N):**\n1. ...` | *(metadata-driven)* |
+| `judge_avail` | `🤖 **User** → @Target: Please set your availability!` | *(metadata-driven)* |
 | `brb` | `⏳ **User** brb` | `⏳ **User** brb — "message"` |
 | `where` | `❓ **User** → @Target` | `❓ **User** → @Target — "message"` |
 | `share_ranking` | `🏆 **Game Rankings:**\n#1 Name (X pts, Y votes)` | *(metadata-driven)* |
@@ -244,13 +244,13 @@ The bot registers the following slash commands:
 | `/in` | Join the rally | `message` (string, optional) |
 | `/out` | Bail from rally | `reason` (string, optional) |
 | `/ping` | Ping someone to come play | `user` (required), `message` (optional) |
-| `/judge time` | Suggest best time slots | — |
-| `/judge avail` | Nudge someone to set availability | `user` (required) |
 | `/brb` | Be right back | `message` (optional) |
 | `/where` | Ask where someone is | `user` (required) |
-| `/tree` | Post today's gaming tree | — |
+| `/call2select` | Nudge someone to set their availability | `user` (required) |
+| `/post schedule` | Find and post best overlapping time windows | — |
+| `/post gamerank` | Post current game rankings to channel | — |
+| `/post gametree` | Post today's gaming tree diagram | — |
 | `/url` | Get the website URL | — |
-| `/ranking` | Post game rankings to channel | — |
 
 Each command authenticates the user via the auth token flow, then calls the appropriate rally API endpoint.
 
