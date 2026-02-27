@@ -12,6 +12,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 	const [loading, setLoading] = useState(true);
 	const [expandedTarget, setExpandedTarget] = useState<string | null>(null);
 	const [reasons, setReasons] = useState<Record<string, string>>({});
+	const [anonymous, setAnonymous] = useState<Record<string, boolean>>({});
 	const [error, setError] = useState('');
 
 	useEffect(() => {
@@ -43,9 +44,11 @@ export function ShameWall({ userId }: ShameWallProps) {
 	const handleShame = async (targetId: string) => {
 		setError('');
 		const reason = reasons[targetId]?.trim();
-		const result = await api.shameUser(targetId, reason || undefined);
+		const isAnonymous = anonymous[targetId] ?? false;
+		const result = await api.shameUser(targetId, reason || undefined, isAnonymous);
 		if (result.ok) {
 			setReasons((prev) => ({ ...prev, [targetId]: '' }));
+			setAnonymous((prev) => ({ ...prev, [targetId]: false }));
 			setExpandedTarget(null);
 			refreshShameData();
 		} else {
@@ -146,10 +149,18 @@ export function ShameWall({ userId }: ShameWallProps) {
 										</span>
 										{u.recent_reasons?.length > 0 && (
 											<div style={{ marginTop: '3px' }}>
-												{u.recent_reasons.map((r: string, j: number) => (
-													<span key={j} style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-														"{r}"
-													</span>
+												{u.recent_reasons.map((r: any, j: number) => (
+													<div key={j} style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: j > 0 ? '2px' : 0 }}>
+														{r.voter_name && (
+															<>
+																{r.voter_avatar && (
+																	<img src={r.voter_avatar} alt={r.voter_name} style={{ width: '14px', height: '14px', borderRadius: '50%', flexShrink: 0 }} />
+																)}
+																<span style={{ fontWeight: 500, color: 'var(--text-secondary)', flexShrink: 0 }}>{r.voter_name}:</span>
+															</>
+														)}
+														<span>"{typeof r === 'string' ? r : r.reason}"</span>
+													</div>
 												))}
 											</div>
 										)}
@@ -193,24 +204,37 @@ export function ShameWall({ userId }: ShameWallProps) {
 								</div>
 
 								{isExpanded && !alreadyShamed && (
-									<div style={{ display: 'flex', gap: '8px', padding: '8px 16px', background: 'var(--bg-secondary)', borderRadius: '0 0 var(--radius) var(--radius)' }}>
-										<input
-											type="text"
-											placeholder="Reason (optional)"
-											value={reasons[u.id] || ''}
-											onInput={(e) =>
-												setReasons((prev) => ({ ...prev, [u.id]: (e.target as HTMLInputElement).value }))
-											}
-											style={{ flex: 1, fontSize: '13px', padding: '4px 8px' }}
-											maxLength={200}
-										/>
-										<button
-											class="btn btn-danger"
-											style={{ padding: '4px 10px', fontSize: '12px' }}
-											onClick={() => handleShame(u.id)}
-										>
-											Confirm
-										</button>
+									<div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', borderRadius: '0 0 var(--radius) var(--radius)' }}>
+										<div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+											<input
+												type="text"
+												placeholder="Reason (optional)"
+												value={reasons[u.id] || ''}
+												onInput={(e) =>
+													setReasons((prev) => ({ ...prev, [u.id]: (e.target as HTMLInputElement).value }))
+												}
+												style={{ flex: 1, fontSize: '13px', padding: '4px 8px' }}
+												maxLength={200}
+											/>
+											<button
+												class="btn btn-danger"
+												style={{ padding: '4px 10px', fontSize: '12px' }}
+												onClick={() => handleShame(u.id)}
+											>
+												Confirm
+											</button>
+										</div>
+										<label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+											<input
+												type="checkbox"
+												checked={anonymous[u.id] ?? false}
+												onChange={(e) =>
+													setAnonymous((prev) => ({ ...prev, [u.id]: (e.target as HTMLInputElement).checked }))
+												}
+												style={{ width: 'auto' }}
+											/>
+											Anonymous
+										</label>
 									</div>
 								)}
 							</div>

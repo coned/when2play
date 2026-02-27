@@ -39,14 +39,14 @@ shame.post('/:targetId', async (c) => {
 		return c.json({ ok: false, error: { code: 'NOT_FOUND', message: 'User not found' } }, 404);
 	}
 
-	const body = await c.req.json<{ reason?: string }>().catch(() => ({}));
+	const body = await c.req.json<{ reason?: string; is_anonymous?: boolean }>().catch(() => ({}));
 
 	if (body.reason && body.reason.length > 200) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Reason must be 200 characters or less' } }, 400);
 	}
 
 	try {
-		const vote = await createShameVote(c.env.DB, user.id, targetId, body.reason);
+		const vote = await createShameVote(c.env.DB, user.id, targetId, body.reason, body.is_anonymous ?? false);
 		return c.json({ ok: true, data: vote }, 201);
 	} catch (err: any) {
 		if (err.message === 'Already shamed this user today') {

@@ -6,7 +6,15 @@ export interface ShameVoteRow {
 	voter_id: string;
 	target_id: string;
 	reason: string | null;
+	is_anonymous: number;
 	created_at: string;
+}
+
+export interface ShameReasonRow {
+	reason: string;
+	voter_id: string | null;
+	voter_name: string | null;
+	voter_avatar: string | null;
 }
 
 export interface ShameLeaderboardRow {
@@ -15,10 +23,10 @@ export interface ShameLeaderboardRow {
 	avatar_url: string | null;
 	shame_count_today: number;
 	shame_count_week: number;
-	recent_reasons: string[];
+	recent_reasons: ShameReasonRow[];
 }
 
-export async function createShameVote(db: D1Database, voterId: string, targetId: string, reason?: string): Promise<ShameVoteRow> {
+export async function createShameVote(db: D1Database, voterId: string, targetId: string, reason?: string, isAnonymous = false): Promise<ShameVoteRow> {
 	const id = uuid();
 	const timestamp = now();
 	const today = timestamp.split('T')[0];
@@ -34,11 +42,11 @@ export async function createShameVote(db: D1Database, voterId: string, targetId:
 	}
 
 	await db
-		.prepare('INSERT INTO shame_votes (id, voter_id, target_id, reason, created_at) VALUES (?, ?, ?, ?, ?)')
-		.bind(id, voterId, targetId, reason ?? null, timestamp)
+		.prepare('INSERT INTO shame_votes (id, voter_id, target_id, reason, is_anonymous, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+		.bind(id, voterId, targetId, reason ?? null, isAnonymous ? 1 : 0, timestamp)
 		.run();
 
-	return { id, voter_id: voterId, target_id: targetId, reason: reason ?? null, created_at: timestamp };
+	return { id, voter_id: voterId, target_id: targetId, reason: reason ?? null, is_anonymous: isAnonymous ? 1 : 0, created_at: timestamp };
 }
 
 export async function deleteShameVote(db: D1Database, voterId: string, targetId: string): Promise<void> {
@@ -89,21 +97,32 @@ export async function getShameLeaderboard(db: D1Database): Promise<ShameLeaderbo
 		.bind(today, sevenDaysAgo)
 		.all<Omit<ShameLeaderboardRow, 'recent_reasons'>>();
 
-	// Fetch recent reasons for each user
+	// Fetch recent reasons for each user with voter info
 	const entries: ShameLeaderboardRow[] = [];
 	for (const row of result.results) {
 		const reasons = await db
 			.prepare(
-				`SELECT reason FROM shame_votes
-				WHERE target_id = ? AND reason IS NOT NULL AND reason != ''
-				ORDER BY created_at DESC LIMIT 3`,
+				`SELECT sv.reason, sv.is_anonymous,
+					sv.voter_id,
+					v.display_name as voter_display_name,
+					v.discord_username as voter_discord_username,
+					v.avatar_url as voter_avatar
+				FROM shame_votes sv
+				LEFT JOIN users v ON sv.voter_id = v.id
+				WHERE sv.target_id = ? AND sv.reason IS NOT NULL AND sv.reason != ''
+				ORDER BY sv.created_at DESC LIMIT 3`,
 			)
 			.bind(row.user_id)
-			.all<{ reason: string }>();
+			.all<{ reason: string; is_anonymous: number; voter_id: string; voter_display_name: string | null; voter_discord_username: string; voter_avatar: string | null }>();
 
 		entries.push({
 			...row,
-			recent_reasons: reasons.results.map((r) => r.reason),
+			recent_reasons: reasons.results.map((r) => ({
+				reason: r.reason,
+				voter_id: r.is_anonymous ? null : r.voter_id,
+				voter_name: r.is_anonymous ? null : (r.voter_display_name ?? r.voter_discord_username),
+				voter_avatar: r.is_anonymous ? null : r.voter_avatar,
+			})),
 		});
 	}
 

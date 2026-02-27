@@ -79,8 +79,8 @@ export const api = {
 	getPendingGather: () => request<any[]>('/gather/pending'),
 
 	// Shame
-	shameUser: (targetId: string, reason?: string) =>
-		request<any>(`/shame/${targetId}`, { method: 'POST', body: JSON.stringify({ reason }) }),
+	shameUser: (targetId: string, reason?: string, isAnonymous = false) =>
+		request<any>(`/shame/${targetId}`, { method: 'POST', body: JSON.stringify({ reason, is_anonymous: isAnonymous }) }),
 	withdrawShame: (targetId: string) => request<null>(`/shame/${targetId}`, { method: 'DELETE' }),
 	getShameLeaderboard: () => request<any[]>('/shame/leaderboard'),
 	getMyShameVotes: () => request<string[]>('/shame/my-votes'),
