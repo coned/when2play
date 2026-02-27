@@ -146,7 +146,7 @@ async function apiCallWithSession(sessionId, path, options = {}) {
         ...options,
         headers: {
             'Content-Type': 'application/json',
-            'Cookie': `session=${sessionId}`,
+            'Cookie': `session_id=${sessionId}`,
             ...(options.headers || {}),
         },
     });
@@ -336,7 +336,7 @@ client.on('interactionCreate', async (interaction) => {
 
         else if (commandName === 'tree') {
             const res = await fetch(`${API_URL}/api/rally/active`, {
-                headers: { ...botHeaders, 'Cookie': `session=${session.session_id}` },
+                headers: { ...botHeaders, 'Cookie': `session_id=${session.session_id}` },
             });
             const json = await res.json();
             if (!json.ok || !json.data.rally) {
