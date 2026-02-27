@@ -8,6 +8,8 @@ If you've ever tried to get 4-5 friends online at the same time, you know the dr
 
 This is a coordination problem, and it turns out it looks a lot like something computer scientists already solved in the 1970s.
 
+![](assets/handshake.png)
+
 ## TCP: The Original "Let's Play"
 
 When two computers want to talk to each other, they do a three-way handshake:
