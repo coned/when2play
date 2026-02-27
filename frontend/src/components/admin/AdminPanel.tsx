@@ -6,7 +6,18 @@ interface SettingsState {
 	game_pool_lifespan_days: number;
 	gather_cooldown_seconds: number;
 	gather_hourly_limit: number;
+	avail_start_hour_et: number;
+	avail_end_hour_et: number;
+	rally_button_labels: Record<string, string>;
+	rally_suggested_phrases: Record<string, string[]>;
+	rally_show_discord_command: boolean;
 }
+
+const RALLY_ACTION_TYPES = ['call', 'in', 'out', 'brb', 'ping', 'where', 'judge_time', 'judge_avail'] as const;
+const DEFAULT_RALLY_LABELS: Record<string, string> = {
+	call: 'Call', in: 'In', out: 'Out', brb: 'BRB',
+	ping: 'Ping', where: 'Where', judge_time: 'Judge Time', judge_avail: 'Judge Avail',
+};
 
 function Field({
 	label,
@@ -49,6 +60,38 @@ function Field({
 	);
 }
 
+function TextField({
+	label,
+	hint,
+	value,
+	placeholder,
+	onChange,
+}: {
+	label: string;
+	hint?: string;
+	value: string;
+	placeholder?: string;
+	onChange: (v: string) => void;
+}) {
+	return (
+		<div style={{ marginBottom: '16px' }}>
+			<label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', color: 'var(--text-primary)' }}>
+				{label}
+			</label>
+			<input
+				type="text"
+				value={value}
+				placeholder={placeholder}
+				onInput={(e) => onChange((e.target as HTMLInputElement).value)}
+				style={{ width: '100%' }}
+			/>
+			{hint && (
+				<p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>{hint}</p>
+			)}
+		</div>
+	);
+}
+
 function SectionCard({ title, children }: { title: string; children: preact.ComponentChildren }) {
 	return (
 		<div
@@ -78,6 +121,11 @@ export function AdminPanel() {
 		game_pool_lifespan_days: 7,
 		gather_cooldown_seconds: 10,
 		gather_hourly_limit: 30,
+		avail_start_hour_et: 17,
+		avail_end_hour_et: 3,
+		rally_button_labels: {},
+		rally_suggested_phrases: {},
+		rally_show_discord_command: true,
 	});
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
@@ -93,6 +141,11 @@ export function AdminPanel() {
 					game_pool_lifespan_days: (s.game_pool_lifespan_days as number) ?? 7,
 					gather_cooldown_seconds: (s.gather_cooldown_seconds as number) ?? 10,
 					gather_hourly_limit: (s.gather_hourly_limit as number) ?? 30,
+					avail_start_hour_et: (s.avail_start_hour_et as number) ?? 17,
+					avail_end_hour_et: (s.avail_end_hour_et as number) ?? 3,
+					rally_button_labels: (s.rally_button_labels as Record<string, string>) ?? {},
+					rally_suggested_phrases: (s.rally_suggested_phrases as Record<string, string[]>) ?? {},
+					rally_show_discord_command: s.rally_show_discord_command !== false,
 				});
 			}
 			setLoading(false);
@@ -101,6 +154,21 @@ export function AdminPanel() {
 
 	const set = (key: keyof SettingsState) => (v: number) =>
 		setSettings((s) => ({ ...s, [key]: v }));
+
+	const setRallyLabel = (actionType: string, value: string) => {
+		setSettings((s) => ({
+			...s,
+			rally_button_labels: { ...s.rally_button_labels, [actionType]: value },
+		}));
+	};
+
+	const setRallyPhrases = (actionType: string, value: string) => {
+		const phrases = value.split(',').map((p) => p.trim()).filter(Boolean);
+		setSettings((s) => ({
+			...s,
+			rally_suggested_phrases: { ...s.rally_suggested_phrases, [actionType]: phrases },
+		}));
+	};
 
 	const handleSave = async () => {
 		setSaving(true);
@@ -132,6 +200,22 @@ export function AdminPanel() {
 					step={5}
 					onChange={set('time_granularity_minutes')}
 				/>
+				<Field
+					label="Display start hour (ET, 0-23)"
+					hint="First hour shown in the availability grid. Default: 17 (5 PM ET)."
+					value={settings.avail_start_hour_et}
+					min={0}
+					max={23}
+					onChange={set('avail_start_hour_et')}
+				/>
+				<Field
+					label="Display end hour (ET, 0-23)"
+					hint="Last hour shown. Wraps past midnight. Default: 3 (3 AM ET next day)."
+					value={settings.avail_end_hour_et}
+					min={0}
+					max={23}
+					onChange={set('avail_end_hour_et')}
+				/>
 			</SectionCard>
 
 			<SectionCard title="Game Pool">
@@ -161,6 +245,40 @@ export function AdminPanel() {
 				/>
 			</SectionCard>
 
+			<SectionCard title="Rally Buttons">
+				{RALLY_ACTION_TYPES.map((actionType) => (
+					<div key={actionType} style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
+						<TextField
+							label={`"${DEFAULT_RALLY_LABELS[actionType]}" button label`}
+							placeholder={DEFAULT_RALLY_LABELS[actionType]}
+							value={settings.rally_button_labels[actionType] || ''}
+							onChange={(v) => setRallyLabel(actionType, v)}
+						/>
+						<TextField
+							label={`Suggested phrases`}
+							hint="Comma-separated list of quick-reply phrases."
+							placeholder="e.g. On my way, 5 mins, After this game"
+							value={(settings.rally_suggested_phrases[actionType] ?? []).join(', ')}
+							onChange={(v) => setRallyPhrases(actionType, v)}
+						/>
+					</div>
+				))}
+				<div style={{ marginBottom: '16px' }}>
+					<label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+						<input
+							type="checkbox"
+							checked={settings.rally_show_discord_command}
+							onChange={(e) => setSettings((s) => ({ ...s, rally_show_discord_command: (e.target as HTMLInputElement).checked }))}
+							style={{ width: 'auto' }}
+						/>
+						Show Discord command names under buttons
+					</label>
+					<p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+						Display "/call", "/in", etc. below button labels.
+					</p>
+				</div>
+			</SectionCard>
+
 			{error && (
 				<p style={{ color: 'var(--danger)', fontSize: '14px', marginBottom: '12px' }}>{error}</p>
 			)}
@@ -169,7 +287,7 @@ export function AdminPanel() {
 			)}
 
 			<button class="btn btn-primary" onClick={handleSave} disabled={saving}>
-				{saving ? 'Saving…' : 'Save Settings'}
+				{saving ? 'Saving...' : 'Save Settings'}
 			</button>
 		</div>
 	);
