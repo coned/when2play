@@ -30,7 +30,7 @@ export function BlogPage() {
 	}, []);
 
 	return (
-		<div style={{ maxWidth: '680px' }}>
+		<div style={{ maxWidth: '900px', margin: '0 auto' }}>
 			<h2 style={{ marginBottom: '4px' }}>Blog</h2>
 			<p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '28px' }}>Thoughts on gaming coordination</p>
 			<div class="blog-content" dangerouslySetInnerHTML={{ __html: html }} />
