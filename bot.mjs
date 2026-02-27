@@ -4,7 +4,9 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const API_URL = process.env.WHEN2PLAY_API_URL;
 const BOT_API_KEY = process.env.BOT_API_KEY;
 const GAMING_CHANNEL_ID = process.env.GAMING_CHANNEL_ID;
-const GATHER_POLL_INTERVAL_MS = 15_000;
+const BASE_POLL_MS = 15_000;
+const MAX_POLL_MS = 2 * 60 * 1000;
+let consecutiveErrors = 0;
 
 if (!DISCORD_TOKEN || !API_URL || !GAMING_CHANNEL_ID) {
     console.error('Missing required env vars');
@@ -72,10 +74,16 @@ async function pollGatherPings() {
     try {
         const res = await fetch(`${API_URL}/api/gather/pending`, { headers: botHeaders });
         const json = await res.json();
-        if (!json.ok || json.data.length === 0) return;
+        if (!json.ok || json.data.length === 0) {
+            consecutiveErrors = 0;
+            return;
+        }
 
         const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
-        if (!channel?.isTextBased()) return;
+        if (!channel?.isTextBased()) {
+            consecutiveErrors = 0;
+            return;
+        }
 
         for (const ping of json.data) {
             // sender_discord_id is the numeric Discord ID (e.g. "123456789012345678")
@@ -95,16 +103,28 @@ async function pollGatherPings() {
                 headers: botHeaders,
             });
         }
+        consecutiveErrors = 0;
     } catch (err) {
-        console.error('Error polling gather pings:', err);
+        consecutiveErrors++;
+        console.error(`Error polling gather pings (consecutive errors: ${consecutiveErrors}):`, err);
     }
+}
+
+function scheduleNextPoll() {
+    const delay = consecutiveErrors === 0
+        ? BASE_POLL_MS
+        : Math.min(BASE_POLL_MS * Math.pow(2, consecutiveErrors - 1), MAX_POLL_MS);
+    setTimeout(async () => {
+        await pollGatherPings();
+        scheduleNextPoll();
+    }, delay);
 }
 
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
     await registerCommands();
-    setInterval(pollGatherPings, GATHER_POLL_INTERVAL_MS);
-    console.log(`Polling for gather pings every ${GATHER_POLL_INTERVAL_MS / 1000}s`);
+    scheduleNextPoll();
+    console.log(`Polling for gather pings every ${BASE_POLL_MS / 1000}s (with exponential backoff on errors)`);
 });
 
 client.login(DISCORD_TOKEN);
