@@ -8,6 +8,9 @@ interface TimeGridProps {
 	allSlots: any[];
 	userId: string;
 	onSave: (slots: Array<{ start_time: string; end_time: string }>) => Promise<void>;
+	isToday?: boolean;
+	availStartHourET?: number;
+	availEndHourET?: number;
 }
 
 const GRANULARITY = 15;
@@ -36,9 +39,51 @@ function getNextDate(dateStr: string): string {
 	return d.toISOString().split('T')[0];
 }
 
+/** Convert an ET hour to a UTC HH:MM slot for a given date, accounting for DST. */
+function etHourToUtcSlot(etHour: number, dateStr: string): string {
+	// Build a date in America/New_York at the given hour
+	// We use a trial-and-error approach: construct UTC, then check what ET hour it maps to
+	// Start with a rough estimate (ET is UTC-5 or UTC-4)
+	const estimateUtcHour = (etHour + 5) % 24;
+	const trial = new Date(`${dateStr}T${String(estimateUtcHour).padStart(2, '0')}:00:00Z`);
+
+	// Get the actual ET hour for this UTC time
+	const etStr = trial.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
+	const actualEtHour = parseInt(etStr, 10) % 24;
+
+	// Adjust if needed
+	const diff = ((etHour - actualEtHour) % 24 + 24) % 24;
+	if (diff !== 0) {
+		trial.setUTCHours(trial.getUTCHours() + diff);
+	}
+
+	const h = trial.getUTCHours();
+	const m = trial.getUTCMinutes();
+	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Generate only slots within the ET time range for a given date. */
+function generateFilteredSlots(startHourET: number, endHourET: number, dateStr: string): typeof ALL_SLOTS {
+	const startUtc = etHourToUtcSlot(startHourET, dateStr);
+	const endUtc = etHourToUtcSlot(endHourET, dateStr);
+
+	const startIdx = ALL_SLOTS.findIndex((s) => s.start_time === startUtc);
+	if (startIdx === -1) return ALL_SLOTS;
+
+	// If end wraps (e.g. 5PM->3AM), endUtc < startUtc
+	const endIdx = ALL_SLOTS.findIndex((s) => s.start_time === endUtc);
+	if (endIdx === -1) return ALL_SLOTS;
+
+	if (endIdx > startIdx) {
+		return ALL_SLOTS.slice(startIdx, endIdx);
+	}
+	// Wraps around midnight
+	return [...ALL_SLOTS.slice(startIdx), ...ALL_SLOTS.slice(0, endIdx)];
+}
+
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridProps) {
+export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = true, availStartHourET, availEndHourET }: TimeGridProps) {
 	const [selected, setSelected] = useState<Set<string>>(new Set(mySlots.map((s) => s.start_time)));
 	const [isDragging, setIsDragging] = useState(false);
 	const [dragValue, setDragValue] = useState(true);
@@ -51,6 +96,14 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 	const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const isFirstRender = useRef(true);
 
+	// Use filtered slots if time range is configured
+	const filteredSlots = useMemo(() => {
+		if (availStartHourET !== undefined && availEndHourET !== undefined) {
+			return generateFilteredSlots(availStartHourET, availEndHourET, date);
+		}
+		return ALL_SLOTS;
+	}, [availStartHourET, availEndHourET, date]);
+
 	// Measure available height after mount
 	useEffect(() => {
 		if (containerRef.current) {
@@ -61,7 +114,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 		}
 	}, [isMobile]);
 
-	// Debounced auto-save when selected changes
+	// Debounced auto-save when selected changes (5 second debounce)
 	useEffect(() => {
 		if (isFirstRender.current) {
 			isFirstRender.current = false;
@@ -81,40 +134,47 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 				setSaveStatus('error');
 				clearTimer.current = setTimeout(() => setSaveStatus('idle'), 3000);
 			}
-		}, 600);
+		}, 5000);
 
 		return () => {
 			if (saveTimer.current) clearTimeout(saveTimer.current);
 		};
 	}, [selected]);
 
-	// Find start slot index = current UTC time, rounded down to slot boundary
+	// Find start slot index based on filtered slots
 	const startIndex = useMemo(() => {
+		if (!isToday) return 0;
 		const now = new Date();
 		const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
 		const slotMin = Math.floor(utcMin / GRANULARITY) * GRANULARITY;
 		const h = Math.floor(slotMin / 60);
 		const m = slotMin % 60;
 		const time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-		const idx = ALL_SLOTS.findIndex((s) => s.start_time === time);
+		const idx = filteredSlots.findIndex((s) => s.start_time === time);
 		return Math.max(0, idx);
-	}, []);
+	}, [isToday, filteredSlots]);
 
 	const nextDate = useMemo(() => getNextDate(date), [date]);
 	const numColumns = isMobile ? 2 : 3;
 	const slotsPerColumn = Math.max(4, Math.floor((containerHeight - 28) / SLOT_HEIGHT));
-	const totalSlots = numColumns * slotsPerColumn;
+	const totalSlots = Math.min(numColumns * slotsPerColumn, filteredSlots.length);
 
-	// Build visible slots, wrapping around 24h boundary
+	// Current UTC time for past-slot detection
+	const nowUtcMin = useMemo(() => {
+		const now = new Date();
+		return now.getUTCHours() * 60 + now.getUTCMinutes();
+	}, []);
+
+	// Build visible slots, wrapping around boundary
 	const visibleSlots = useMemo(() => {
-		const total = ALL_SLOTS.length;
+		const total = filteredSlots.length;
 		return Array.from({ length: totalSlots }, (_, i) => {
 			const raw = startIndex + i;
 			const wrapped = raw % total;
 			const slotDate = raw >= total ? nextDate : date;
-			return { ...ALL_SLOTS[wrapped], slotDate };
+			return { ...filteredSlots[wrapped], slotDate };
 		});
-	}, [startIndex, totalSlots, date, nextDate]);
+	}, [startIndex, totalSlots, date, nextDate, filteredSlots]);
 
 	const columns = useMemo(
 		() => Array.from({ length: numColumns }, (_, i) => visibleSlots.slice(i * slotsPerColumn, (i + 1) * slotsPerColumn)),
@@ -157,7 +217,13 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 		return `${first} – ${last}`;
 	};
 
-	const statusText = saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? 'Save failed' : '';
+	const isSlotPast = (slotTime: string, slotDate: string): boolean => {
+		if (!isToday || slotDate !== date) return false;
+		const [h, m] = slotTime.split(':').map(Number);
+		return h * 60 + m < nowUtcMin;
+	};
+
+	const statusText = saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? 'Save failed' : '';
 	const statusColor = saveStatus === 'saved' ? 'var(--success)' : saveStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)';
 
 	return (
@@ -231,6 +297,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 							const isSelected = selected.has(slot.start_time);
 							const overlapCount = otherUsers.get(slot.start_time)?.size ?? 0;
 							const isHourStart = slot.start_time.endsWith(':00');
+							const isPast = isSlotPast(slot.start_time, slot.slotDate);
 
 							return (
 								<div
@@ -260,6 +327,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 										userSelect: 'none',
 										borderRadius: '3px',
 										flexShrink: 0,
+										opacity: isPast ? 0.45 : 1,
 										background: isSelected
 											? overlapCount > 0
 												? 'var(--success)'
@@ -282,6 +350,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave }: TimeGridPr
 											overflow: 'hidden',
 											textOverflow: 'ellipsis',
 											fontWeight: isHourStart ? 600 : 400,
+											textDecoration: isPast ? 'line-through' : 'none',
 										}}
 									>
 										{formatLocalTime(slot.start_time, slot.slotDate)}
