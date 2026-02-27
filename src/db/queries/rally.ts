@@ -272,29 +272,14 @@ export async function computeJudgeTime(
 }> {
 	const dk = dayKey ?? (await getDayKey(db));
 
-	// Get users who said /in for today's rally
-	const inActions = await db
-		.prepare(
-			`SELECT DISTINCT actor_id FROM rally_actions
-			WHERE day_key = ? AND action_type = 'in'`,
-		)
-		.bind(dk)
-		.all<{ actor_id: string }>();
-
-	const userIds: string[] = inActions.results.map((r: { actor_id: string }) => r.actor_id);
-	if (userIds.length === 0) {
-		return { windows: [], day_key: dk };
-	}
-
-	// Get availability for these users on this date
-	const placeholders = userIds.map(() => '?').join(',');
+	// Get availability for all users on this date (same as Schedule page overlap view)
 	const availability = await db
 		.prepare(
 			`SELECT user_id, start_time, end_time FROM availability
-			WHERE date = ? AND user_id IN (${placeholders})
+			WHERE date = ?
 			ORDER BY start_time ASC`,
 		)
-		.bind(dk, ...userIds)
+		.bind(dk)
 		.all<{ user_id: string; start_time: string; end_time: string }>();
 
 	if (availability.results.length === 0) {
