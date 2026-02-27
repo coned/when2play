@@ -1,0 +1,183 @@
+# when2play Discord Bot — Setup Guide
+
+This is the standalone Discord bot for [when2play](https://github.com/your-org/when2play). It provides:
+
+- `/play` — generates a one-time login link and DMs it to the user
+- `/when2play-admin` — generates a one-time admin link (requires Discord `ADMINISTRATOR` permission)
+- **Gather polling** — checks for pending gather bell pings every 15 seconds and posts them to a Discord channel
+
+The bot connects to the when2play Cloudflare Worker backend via HTTP.
+
+---
+
+## Prerequisites
+
+- Node.js 22+ (`node --version` to verify)
+- A running when2play Worker deployment (see `docs/SETUP.md` in the main repo)
+- A Discord bot application (see below)
+
+---
+
+## 1. Create a Discord Bot Application
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+2. Click **New Application**, name it `when2play`
+3. Go to **Bot** tab → **Reset Token** → copy the token
+4. Under **Privileged Gateway Intents**, enable **Message Content Intent**
+5. Go to **OAuth2** → **URL Generator**:
+   - Scopes: `bot`, `applications.commands`
+   - Bot Permissions: `Send Messages`, `Use Slash Commands`
+6. Open the generated URL and invite the bot to your server
+
+---
+
+## 2. Find Your Gaming Channel ID
+
+In Discord: **Settings** → **Advanced** → enable **Developer Mode**.
+Then right-click the channel where gather pings should be posted → **Copy Channel ID**.
+
+---
+
+## 3. Install Dependencies
+
+```bash
+npm install
+```
+
+---
+
+## 4. Configure Environment Variables
+
+Create a `.env` file in this directory:
+
+```env
+DISCORD_TOKEN=your-bot-token-here
+WHEN2PLAY_API_URL=https://when2play.<your-subdomain>.workers.dev
+BOT_API_KEY=your-generated-key-here
+GAMING_CHANNEL_ID=123456789012345678
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DISCORD_TOKEN` | Yes | Bot token from Discord Developer Portal |
+| `WHEN2PLAY_API_URL` | Yes | Base URL of the deployed when2play Worker |
+| `BOT_API_KEY` | Yes (production) | Shared secret — must match `BOT_API_KEY` set via `npx wrangler secret put BOT_API_KEY` in the main repo |
+| `GAMING_CHANNEL_ID` | Yes | Discord channel ID where gather bell pings are posted |
+
+> `BOT_API_KEY` can be omitted for local development against a Worker that also has no `BOT_API_KEY` set.
+
+---
+
+## 5. Run the Bot
+
+```bash
+node --env-file=.env bot.mjs
+```
+
+Expected output on success:
+
+```
+Logged in as when2play#1234
+Slash commands registered.
+Polling for gather pings every 15s
+```
+
+---
+
+## 6. Keeping It Running (Production)
+
+The bot must stay running 24/7. Options:
+
+### systemd (Linux VPS / home server)
+
+Create `/etc/systemd/system/when2play-bot.service`:
+
+```ini
+[Unit]
+Description=when2play Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/when2play_discordbot
+ExecStart=/usr/bin/node --env-file=.env bot.mjs
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable when2play-bot
+sudo systemctl start when2play-bot
+sudo systemctl status when2play-bot
+```
+
+### pm2
+
+```bash
+npm install -g pm2
+pm2 start bot.mjs --name when2play-bot --env-file .env
+pm2 save
+pm2 startup   # follow the printed instructions to auto-start on reboot
+```
+
+### Cloud hosting
+
+| Platform | Notes |
+|----------|-------|
+| Railway | `railway up` — free tier available |
+| Fly.io | Dockerfile-based — free tier available |
+| Render | Background worker type — free tier sleeps after inactivity |
+
+---
+
+## Troubleshooting
+
+### `ConnectTimeoutError` when polling or handling `/play`
+
+```
+Error polling gather pings: TypeError: fetch failed
+  [cause]: ConnectTimeoutError (attempted addresses: 172.67.x.x:443, timeout: 10000ms)
+```
+
+**This is a transient network issue on the bot's host**, not a bug. The bot's machine temporarily failed to reach the Cloudflare Worker IP. The bot recovers automatically on the next poll cycle (15 seconds). If it happens frequently, check:
+
+- Whether the host's network has intermittent connectivity
+- Whether a firewall is blocking outbound HTTPS
+- Whether the `WHEN2PLAY_API_URL` is correct and the Worker is deployed
+
+### `Missing required env vars` on startup
+
+One of `DISCORD_TOKEN`, `WHEN2PLAY_API_URL`, or `GAMING_CHANNEL_ID` is missing from `.env`. Check that the file exists and is being loaded (`--env-file=.env`).
+
+### Slash commands not appearing in Discord
+
+Commands are registered on bot startup via `registerCommands()`. This requires the bot to connect successfully at least once. If commands still don't appear after a minute, check the console for errors during startup.
+
+### `Failed: ...` reply to `/play`
+
+The Worker returned an error from `POST /api/auth/token`. Common causes:
+- `BOT_API_KEY` in `.env` doesn't match the secret set in the Worker (`npx wrangler secret put BOT_API_KEY`)
+- The Worker is not deployed or is unhealthy (`curl $WHEN2PLAY_API_URL/api/health`)
+
+---
+
+## Architecture
+
+```
+Discord Gateway (WebSocket)
+        ↕
+  bot.mjs (this service)
+        ↕  HTTPS + X-Bot-Token header
+  when2play Cloudflare Worker
+        ↕
+  Cloudflare D1 (SQLite)
+```
+
+For an alternative architecture with no separate bot process, see `docs/CLOUDFLARE_NATIVE_BOT.md` in the main when2play repo.
