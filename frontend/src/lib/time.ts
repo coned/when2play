@@ -115,6 +115,17 @@ export function formatLocalTimeRangeStructured(startUTC: string, endUTC: string,
 }
 
 /**
+ * Convert a UTC HH:MM string to a local time string with timezone abbreviation,
+ * without any day offset indicator. Use when the date context is already known.
+ */
+export function formatLocalTimeClean(utcHHMM: string, dateStr: string): string {
+	const utcDate = new Date(`${dateStr}T${utcHHMM}:00Z`);
+	if (isNaN(utcDate.getTime())) return utcHHMM;
+	const local = utcDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+	return `${local} ${getTimezoneAbbreviation()}`;
+}
+
+/**
  * @deprecated Use formatLocalTime instead.
  */
 export function formatDualTime(utcHHMM: string, dateStr: string): string {
