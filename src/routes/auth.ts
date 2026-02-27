@@ -79,6 +79,13 @@ auth.get('/callback/:token', async (c) => {
 	const sessionId = generateSessionId();
 	await createSession(c.env.DB, authToken.user_id, sessionId, isAdmin);
 
+	// Bot calls: return JSON with user + session instead of cookie + redirect
+	const botToken = c.req.header('X-Bot-Token');
+	if (botToken && botToken === c.env.BOT_API_KEY) {
+		const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(authToken.user_id).first();
+		return c.json({ ok: true, data: { user, session: { session_id: sessionId } } });
+	}
+
 	const isProduction = new URL(c.req.url).protocol === 'https:';
 	const cookieOptions = {
 		httpOnly: true,
