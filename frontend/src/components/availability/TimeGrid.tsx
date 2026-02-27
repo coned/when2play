@@ -122,7 +122,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 		}
 	}, [isMobile]);
 
-	// Debounced auto-save when selected changes (5 second debounce)
+	// Debounced auto-save when selected changes (1 second debounce)
 	useEffect(() => {
 		if (isFirstRender.current) {
 			isFirstRender.current = false;
@@ -142,7 +142,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 				setSaveStatus('error');
 				clearTimer.current = setTimeout(() => setSaveStatus('idle'), 3000);
 			}
-		}, 5000);
+		}, 1000);
 
 		return () => {
 			if (saveTimer.current) clearTimeout(saveTimer.current);

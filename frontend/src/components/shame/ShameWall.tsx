@@ -275,7 +275,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 										<div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
 											<input
 												type="text"
-												placeholder="Reason (optional)"
+												placeholder="Additional Comment (optional)"
 												value={reasons[u.id] || ''}
 												onInput={(e) =>
 													setReasons((prev) => ({ ...prev, [u.id]: (e.target as HTMLInputElement).value }))
