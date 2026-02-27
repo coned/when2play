@@ -72,20 +72,36 @@ function groupMySlots(slots: Array<{ start_time: string }>): Array<{ startTime: 
 	return groups;
 }
 
-function TimeRange({ parts }: { parts: TimeRangeParts }) {
-	const nextDayBadge = (
-		<span style={{ color: 'var(--warning)', fontSize: '0.75em', verticalAlign: 'super', fontWeight: 600 }}>+1</span>
+function DayBadge({ offset }: { offset: number }) {
+	if (offset <= 0) return null;
+	return (
+		<>
+			{' '}
+			<span style={{ color: 'var(--warning)', fontSize: '0.75em', verticalAlign: 'super', fontWeight: 600 }}>
+				+{offset}
+			</span>
+		</>
 	);
+}
+
+function TimeRange({ parts }: { parts: TimeRangeParts }) {
 	return (
 		<>
 			{parts.startTime}
-			{parts.startNextDay && <>{' '}{nextDayBadge}</>}
+			<DayBadge offset={parts.startDayOffset} />
 			{' \u2013 '}
 			{parts.endTime}
-			{parts.endNextDay && <>{' '}{nextDayBadge}</>}
+			<DayBadge offset={parts.endDayOffset} />
 			{' '}{parts.tz}
 		</>
 	);
+}
+
+/** Sort key: local time of day in minutes, for displaying times in local order */
+function localSortKey(utcHHMM: string, dateStr: string): number {
+	const d = new Date(`${dateStr}T${utcHHMM}:00Z`);
+	if (isNaN(d.getTime())) return 0;
+	return d.getHours() * 60 + d.getMinutes();
 }
 
 export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
@@ -127,6 +143,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 
 	const overlapSlots = Array.from(slotUsers.entries()).filter(([, users]) => users.size >= 2);
 	const overlapGroups = groupAdjacentSlots(overlapSlots);
+	overlapGroups.sort((a, b) => localSortKey(a.startTime, today) - localSortKey(b.startTime, today));
 
 	return (
 		<div>
@@ -254,6 +271,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 				{(() => {
 					const mySlots = availability.filter((s) => s.user_id === userId);
 					const myGroups = groupMySlots(mySlots);
+					myGroups.sort((a, b) => localSortKey(a.startTime, today) - localSortKey(b.startTime, today));
 					if (myGroups.length === 0) return <p class="text-muted">You haven't set availability for today.</p>;
 					return (
 						<div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>

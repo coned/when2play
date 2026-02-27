@@ -67,29 +67,42 @@ export function formatLocalTimeRange(startUTC: string, endUTC: string, dateStr: 
 	return `${startLocal}${startSuffix} – ${endLocal}${endSuffix} ${getTimezoneAbbreviation()}`;
 }
 
+/**
+ * Compute the day offset of a UTC HH:MM slot relative to today's local date.
+ * Returns 0 for today, +1 for tomorrow, -1 for yesterday, etc.
+ */
+export function getDayOffset(utcHHMM: string, dateStr: string): number {
+	const utcDate = new Date(`${dateStr}T${utcHHMM}:00Z`);
+	if (isNaN(utcDate.getTime())) return 0;
+	const localDateStr = utcDate.toLocaleDateString('en-CA');
+	const localToday = new Date().toLocaleDateString('en-CA');
+	const diff = (new Date(localDateStr + 'T12:00:00Z').getTime() - new Date(localToday + 'T12:00:00Z').getTime()) / (86400000);
+	return Math.round(diff);
+}
+
 export interface TimeRangeParts {
 	startTime: string;
-	startNextDay: boolean;
+	startDayOffset: number;
 	endTime: string;
-	endNextDay: boolean;
+	endDayOffset: number;
 	tz: string;
 }
 
 /**
  * Format a UTC time range into structured parts for custom rendering.
- * Allows callers to render +1 indicators separately (e.g. as colored superscripts).
+ * Day offsets are relative to the user's local today, not the UTC dateStr.
  */
 export function formatLocalTimeRangeStructured(startUTC: string, endUTC: string, dateStr: string): TimeRangeParts {
 	const startDate = new Date(`${dateStr}T${startUTC}:00Z`);
 	const endDate = new Date(`${dateStr}T${endUTC}:00Z`);
-	const fallback = { startTime: startUTC, startNextDay: false, endTime: endUTC, endNextDay: false, tz: '' };
+	const fallback = { startTime: startUTC, startDayOffset: 0, endTime: endUTC, endDayOffset: 0, tz: '' };
 	if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return fallback;
 
 	return {
 		startTime: startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
-		startNextDay: isNextDay(startUTC, dateStr),
+		startDayOffset: getDayOffset(startUTC, dateStr),
 		endTime: endDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
-		endNextDay: isNextDay(endUTC, dateStr),
+		endDayOffset: getDayOffset(endUTC, dateStr),
 		tz: getTimezoneAbbreviation(),
 	};
 }
