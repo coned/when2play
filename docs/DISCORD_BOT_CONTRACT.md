@@ -35,10 +35,12 @@ X-Bot-Token: <BOT_API_KEY>
 
 {
   "discord_id": "123456789012345678",    # 1-30 chars, required
-  "discord_username": "GamerDave",       # 1-50 chars, required
+  "discord_username": "GamerDave",       # 1-50 chars, required (prefer guild nickname)
   "avatar_url": "https://cdn.discordapp.com/avatars/123/abc.png"  # max 500 chars, optional
 }
 ```
+
+> **Important:** `discord_username` should be the user's **guild nickname** (server-specific display name), not their global display name. Use `interaction.member.displayName` (discord.js) or `interaction.user.display_name` within a guild context (discord.py) to get the server nickname, falling back to the global name if no nickname is set.
 
 **Response (201):**
 ```json
@@ -68,7 +70,7 @@ X-Bot-Token: <BOT_API_KEY>
 
 {
   "discord_id": "123456789012345678",    # 1-30 chars, required
-  "discord_username": "GuildAdmin",      # 1-50 chars, required
+  "discord_username": "GuildAdmin",      # 1-50 chars, required (prefer guild nickname)
   "avatar_url": "https://cdn.discordapp.com/avatars/123/abc.png"  # max 500 chars, optional
 }
 ```
@@ -280,9 +282,11 @@ HEADERS = {
 
 # On /play command
 async def handle_play(interaction):
+    member = interaction.guild.get_member(interaction.user.id)
+    display_name = member.display_name if member else interaction.user.display_name
     response = requests.post(f"{API_URL}/api/auth/token", json={
         "discord_id": str(interaction.user.id),
-        "discord_username": interaction.user.display_name,
+        "discord_username": display_name,  # guild nickname preferred
         "avatar_url": str(interaction.user.avatar.url) if interaction.user.avatar else None,
     }, headers=HEADERS)
     data = response.json()["data"]
