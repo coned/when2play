@@ -327,7 +327,26 @@ export async function computeJudgeTime(
 	// Sort by user_count desc, then start asc
 	merged.sort((a, b) => b.user_count - a.user_count || a.start.localeCompare(b.start));
 
-	return { windows: merged, day_key: dk };
+	// Enrich with display names
+	const allUserIds = Array.from(new Set(merged.flatMap((w) => w.user_ids)));
+	const userNames = new Map<string, string>();
+	if (allUserIds.length > 0) {
+		const ph = allUserIds.map(() => '?').join(',');
+		const usersResult = await db
+			.prepare(`SELECT id, discord_username, display_name FROM users WHERE id IN (${ph})`)
+			.bind(...allUserIds)
+			.all<{ id: string; discord_username: string; display_name: string | null }>();
+		for (const u of usersResult.results) {
+			userNames.set(u.id, u.display_name ?? u.discord_username);
+		}
+	}
+
+	const enriched = merged.map((w) => ({
+		...w,
+		user_names: w.user_ids.map((id) => userNames.get(id) ?? id),
+	}));
+
+	return { windows: enriched, day_key: dk };
 }
 
 // ---------- Tree Shares ----------

@@ -44,8 +44,8 @@ const BUTTON_EMOJIS: Record<string, string> = {
 
 const DISCORD_COMMANDS: Record<string, string> = {
 	call: '/call', in: '/in', out: '/out', brb: '/brb',
-	ping: '/ping', where: '/where', judge_time: '/judge time', judge_avail: '/judge avail',
-	share_ranking: '',
+	ping: '/ping', where: '/where', judge_avail: '/call2select', judge_time: '/post schedule',
+	share_ranking: '/post gamerank',
 };
 
 export function RallyPanel({ userId }: RallyPanelProps) {
