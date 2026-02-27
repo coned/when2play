@@ -3,7 +3,7 @@ import { useState, useEffect } from 'preact/hooks';
 export const THEMES = [
 	{ id: 'midnight', label: 'Midnight', accent: '#3b82f6' },
 	{ id: 'cyberpunk', label: 'Cyberpunk', accent: '#ff2a6d' },
-	{ id: 'forest', label: 'Forest', accent: '#2ecc71' },
+	{ id: 'ocean', label: 'Ocean', accent: '#06b6d4' },
 	{ id: 'sakura', label: 'Sakura', accent: '#e891b9' },
 	{ id: 'amber', label: 'Amber', accent: '#f59e0b' },
 ] as const;
@@ -29,11 +29,15 @@ function applyMode(mode: Mode) {
 export function useTheme() {
 	const [theme, setThemeState] = useState<ThemeId>(() => {
 		const saved = localStorage.getItem(THEME_KEY) as ThemeId | null;
-		// Migrate old daylight theme to midnight + light mode
+		// Migrate old themes
 		if (saved === 'daylight') {
 			localStorage.setItem(THEME_KEY, 'midnight');
 			localStorage.setItem(MODE_KEY, 'light');
 			return 'midnight';
+		}
+		if (saved === 'forest') {
+			localStorage.setItem(THEME_KEY, 'ocean');
+			return 'ocean';
 		}
 		return saved && THEMES.some((t) => t.id === saved) ? saved : 'midnight';
 	});
@@ -72,12 +76,16 @@ export function initTheme() {
 	const savedTheme = localStorage.getItem(THEME_KEY) as ThemeId | null;
 	const savedMode = localStorage.getItem(MODE_KEY) as Mode | null;
 
-	// Migrate old daylight theme
+	// Migrate old themes
 	if (savedTheme === 'daylight') {
 		localStorage.setItem(THEME_KEY, 'midnight');
 		localStorage.setItem(MODE_KEY, 'light');
 		document.documentElement.setAttribute('data-mode', 'light');
 		return;
+	}
+	if (savedTheme === 'forest') {
+		localStorage.setItem(THEME_KEY, 'ocean');
+		document.documentElement.setAttribute('data-theme', 'ocean');
 	}
 
 	if (savedTheme && savedTheme !== 'midnight' && THEMES.some((t) => t.id === savedTheme)) {
