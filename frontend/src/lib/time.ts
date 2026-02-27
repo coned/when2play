@@ -90,7 +90,8 @@ export interface TimeRangeParts {
 
 /**
  * Format a UTC time range into structured parts for custom rendering.
- * Day offsets are relative to the user's local today, not the UTC dateStr.
+ * Day offsets are relative to the start time's local date (not today),
+ * so midnight-crossing ranges correctly show +1 on the end time.
  */
 export function formatLocalTimeRangeStructured(startUTC: string, endUTC: string, dateStr: string): TimeRangeParts {
 	const startDate = new Date(`${dateStr}T${startUTC}:00Z`);
@@ -98,11 +99,17 @@ export function formatLocalTimeRangeStructured(startUTC: string, endUTC: string,
 	const fallback = { startTime: startUTC, startDayOffset: 0, endTime: endUTC, endDayOffset: 0, tz: '' };
 	if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return fallback;
 
+	const startLocalDate = startDate.toLocaleDateString('en-CA');
+	const endLocalDate = endDate.toLocaleDateString('en-CA');
+	const endDayDiff = Math.round(
+		(new Date(endLocalDate + 'T12:00:00Z').getTime() - new Date(startLocalDate + 'T12:00:00Z').getTime()) / 86400000,
+	);
+
 	return {
 		startTime: startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
-		startDayOffset: getDayOffset(startUTC, dateStr),
+		startDayOffset: 0,
 		endTime: endDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
-		endDayOffset: getDayOffset(endUTC, dateStr),
+		endDayOffset: endDayDiff,
 		tz: getTimezoneAbbreviation(),
 	};
 }
