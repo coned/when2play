@@ -71,7 +71,7 @@ export const api = {
 	clearAvailability: (date: string) => request<null>(`/availability?date=${date}`, { method: 'DELETE' }),
 
 	// Users (all)
-	getUsers: () => cachedGet<Array<{ id: string; discord_username: string; avatar_url: string | null }>>('/users'),
+	getUsers: () => cachedGet<Array<{ id: string; discord_username: string; display_name: string | null; avatar_url: string | null }>>('/users'),
 
 	// Gather
 	ringGather: (options?: { message?: string; is_anonymous?: boolean; target_user_ids?: string[] }) =>
