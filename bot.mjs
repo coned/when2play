@@ -338,7 +338,8 @@ client.on('interactionCreate', async (interaction) => {
                 }
                 const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
                 if (channel?.isTextBased()) {
-                    await channel.send(summary);
+                    const actor = authData.user.display_name ?? authData.user.discord_username;
+                    await channel.send(`${summary}_On behalf of ${actor}_`);
                 }
                 await interaction.editReply('Gaming tree posted to the channel!');
             }
@@ -388,9 +389,9 @@ async function pollRallyActions() {
                         text = `📅 **Best window:** ${best.start}–${best.end} UTC (${fmtNames(best)})`;
                         const allLines = meta.windows.slice(0, 8).map(w => `• ${w.start}–${w.end}: ${fmtNames(w)}`);
                         text += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
-                        text += `\n_Requested by ${action.actor_username}_`;
+                        text += `\n_On behalf of ${action.actor_username}_`;
                     } else {
-                        text = `🤖 No overlapping availability found today. Ask everyone to set their times!\n_Requested by ${action.actor_username}_`;
+                        text = `🤖 No overlapping availability found today. Ask everyone to set their times!\n_On behalf of ${action.actor_username}_`;
                     }
                     break;
                 }
@@ -413,7 +414,7 @@ async function pollRallyActions() {
                         const lines = meta.ranking.map((r, i) =>
                             `#${i + 1} ${r.name} (${r.total_score} pts, ${r.vote_count} votes)`
                         );
-                        text = `🏆 **Game Rankings:**\n${lines.join('\n')}`;
+                        text = `🏆 **Game Rankings:**\n${lines.join('\n')}\n_On behalf of ${action.actor_username}_`;
                     } else {
                         text = `🏆 ${actor} shared rankings — no games ranked yet`;
                     }
