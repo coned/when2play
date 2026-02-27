@@ -14,13 +14,14 @@ import { BlogPage } from '../components/blog/BlogPage';
 interface HomeProps {
 	user: User;
 	onLogout: () => void;
+	onUserUpdate: () => void;
 }
 
-export function Home({ user, onLogout }: HomeProps) {
+export function Home({ user, onLogout, onUserUpdate }: HomeProps) {
 	const [activeTab, setActiveTab] = useState('schedule');
 
 	return (
-		<Shell user={user} activeTab={activeTab} onTabChange={setActiveTab} onLogout={onLogout}>
+		<Shell user={user} activeTab={activeTab} onTabChange={setActiveTab} onLogout={onLogout} onUserUpdate={onUserUpdate}>
 			{activeTab === 'schedule' && <ScheduleSummary userId={user.id} />}
 			{activeTab === 'games' && <GamePool userId={user.id} />}
 			{activeTab === 'availability' && <AvailabilityView userId={user.id} />}

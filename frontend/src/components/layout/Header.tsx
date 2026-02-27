@@ -7,9 +7,10 @@ import { api } from '../../api/client';
 interface HeaderProps {
 	user: User | null;
 	onLogout: () => void;
+	onUserUpdate?: () => void;
 }
 
-export function Header({ user, onLogout }: HeaderProps) {
+export function Header({ user, onLogout, onUserUpdate }: HeaderProps) {
 	const { theme, setTheme } = useTheme();
 	const isMobile = useMediaQuery(768);
 	const [showProfile, setShowProfile] = useState(false);
@@ -22,12 +23,13 @@ export function Header({ user, onLogout }: HeaderProps) {
 	const handleSaveProfile = async () => {
 		if (!user) return;
 		setSaving(true);
-		await api.updateMe({
+		const result = await api.updateMe({
 			display_name: displayName,
 			sync_name_from_discord: syncFromDiscord,
 		});
 		setSaving(false);
 		setShowProfile(false);
+		if (result.ok && onUserUpdate) onUserUpdate();
 	};
 
 	return (

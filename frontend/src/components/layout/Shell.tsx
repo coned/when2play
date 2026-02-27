@@ -10,15 +10,16 @@ interface ShellProps {
 	activeTab: string;
 	onTabChange: (tab: string) => void;
 	onLogout: () => void;
+	onUserUpdate: () => void;
 	children: ComponentChildren;
 }
 
-export function Shell({ user, activeTab, onTabChange, onLogout, children }: ShellProps) {
+export function Shell({ user, activeTab, onTabChange, onLogout, onUserUpdate, children }: ShellProps) {
 	const isMobile = useMediaQuery(768);
 
 	return (
 		<div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-			<Header user={user} onLogout={onLogout} />
+			<Header user={user} onLogout={onLogout} onUserUpdate={onUserUpdate} />
 			<div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 				{!isMobile && <Sidebar activeTab={activeTab} onTabChange={onTabChange} isAdmin={user.is_admin} />}
 				<main
