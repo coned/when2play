@@ -8,7 +8,6 @@ interface TimeGridProps {
 	allSlots: any[];
 	userId: string;
 	onSave: (slots: Array<{ start_time: string; end_time: string }>) => Promise<void>;
-	isToday?: boolean;
 	availStartHourET?: number;
 	availEndHourET?: number;
 }
@@ -91,7 +90,7 @@ function generateFilteredSlots(startHourET: number, endHourET: number, dateStr: 
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = true, availStartHourET, availEndHourET }: TimeGridProps) {
+export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHourET, availEndHourET }: TimeGridProps) {
 	const [selected, setSelected] = useState<Set<string>>(new Set(mySlots.map((s) => s.start_time)));
 	const [isDragging, setIsDragging] = useState(false);
 	const [dragValue, setDragValue] = useState(true);
@@ -176,11 +175,8 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 	// Base local date for detecting +1 day slots
 	const baseLocalDate = useMemo(() => new Date(`${date}T12:00:00Z`).toLocaleDateString('en-CA'), [date]);
 
-	// Current UTC time for past-slot detection
-	const nowUtcMin = useMemo(() => {
-		const now = new Date();
-		return now.getUTCHours() * 60 + now.getUTCMinutes();
-	}, []);
+	// Current UTC timestamp for past-slot detection (full datetime, not just time-of-day)
+	const nowMs = useMemo(() => Date.now(), []);
 
 	// Build visible slots, using dateOffset for correct date on midnight-crossing ranges
 	const visibleSlots = useMemo(() => {
@@ -262,9 +258,8 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 	};
 
 	const isSlotPast = (slotTime: string, slotDate: string): boolean => {
-		if (!isToday || slotDate !== date) return false;
-		const [h, m] = slotTime.split(':').map(Number);
-		return h * 60 + m < nowUtcMin;
+		const slotMs = new Date(`${slotDate}T${slotTime}:00Z`).getTime();
+		return slotMs < nowMs;
 	};
 
 	const statusText = saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? 'Save failed' : '';
