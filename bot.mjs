@@ -27,6 +27,14 @@ function getChannelId() {
     return cachedConfig.channelId || GAMING_CHANNEL_ID || null;
 }
 
+async function safeJson(res) {
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+    return res.json();
+}
+
 function logError(context, err) {
     const ts = new Date().toISOString();
     const cause = err.cause ? ` | cause: ${err.cause.message ?? err.cause}` : '';
@@ -140,7 +148,7 @@ client.on('interactionCreate', async (interaction) => {
                 avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
             }),
         });
-        const json = await res.json();
+        const json = await safeJson(res);
 
         if (!json.ok) {
             await interaction.editReply(`Failed: ${json.error.message}`);
@@ -170,11 +178,11 @@ async function ensureUser(discordUser, guildMember) {
             avatar_url: discordUser.displayAvatarURL?.({ size: 128 }) ?? null,
         }),
     });
-    const json = await res.json();
+    const json = await safeJson(res);
     if (!json.ok) return null;
     const token = json.data.token;
     const cbRes = await fetch(`${API_URL}/api/auth/callback/${token}`, { headers: botHeaders });
-    const cbJson = await cbRes.json();
+    const cbJson = await safeJson(cbRes);
     if (!cbJson.ok) return null;
     return cbJson.data; // { user, session }
 }
@@ -189,7 +197,7 @@ async function apiCallWithSession(sessionId, path, options = {}) {
             ...(options.headers || {}),
         },
     });
-    return res.json();
+    return safeJson(res);
 }
 
 // --- /url handler ---
@@ -363,7 +371,7 @@ client.on('interactionCreate', async (interaction) => {
                 const res = await fetch(`${API_URL}/api/rally/active`, {
                     headers: { ...botHeaders, 'Cookie': `session_id=${session.session_id}` },
                 });
-                const json = await res.json();
+                const json = await safeJson(res);
                 if (!json.ok || !json.data.rally) {
                     await interaction.editReply('No active rally today. Use `/call` to start one!');
                     return;
@@ -412,7 +420,7 @@ async function pollRallyActions() {
         if (!channelId) return;
 
         const res = await fetch(`${API_URL}/api/rally/pending`, { headers: botHeaders });
-        const json = await res.json();
+        const json = await safeJson(res);
         if (!json.ok || json.data.length === 0) return;
 
         const channel = await client.channels.fetch(channelId);
@@ -502,7 +510,7 @@ async function pollTreeShares() {
         if (!channelId) return;
 
         const res = await fetch(`${API_URL}/api/rally/tree/share/pending`, { headers: botHeaders });
-        const json = await res.json();
+        const json = await safeJson(res);
         if (!json.ok || json.data.length === 0) return;
 
         const channel = await client.channels.fetch(channelId);
@@ -536,7 +544,7 @@ async function pollGatherPings() {
         }
 
         const res = await fetch(`${API_URL}/api/gather/pending`, { headers: botHeaders });
-        const json = await res.json();
+        const json = await safeJson(res);
         if (!json.ok || json.data.length === 0) {
             consecutiveErrors = 0;
             return;
@@ -658,7 +666,7 @@ client.on('interactionCreate', async (interaction) => {
                 avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
             }),
         });
-        const json = await res.json();
+        const json = await safeJson(res);
 
         if (!json.ok) {
             await interaction.editReply(`Failed: ${json.error.message}`);
