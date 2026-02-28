@@ -169,3 +169,4 @@ dist
 # Bot runtime files
 errors.log
 guild-config.json
+.local/*
