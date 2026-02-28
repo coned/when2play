@@ -103,16 +103,28 @@ A new middleware resolves the guild ID from the request and overwrites `c.env.DB
 
 ```typescript
 import { createMiddleware } from 'hono/factory';
+import { getCookie } from 'hono/cookie';
 import type { Bindings } from '../env';
 
 export const guildDb = createMiddleware<{ Bindings: Bindings }>(async (c, next) => {
-	const guildId =
-		c.req.header('X-Guild-Id') ||            // bot requests
-		c.req.query('guild') ||                   // auth callback redirect
-		getCookie(c, 'guild_id');                  // browser session
+	// Only trust X-Guild-Id from bot-authenticated requests.
+	// Browsers can set arbitrary headers via fetch(), so unauthenticated
+	// requests must use the guild_id cookie or guild query param instead.
+	const isBotAuth =
+		!!c.env.BOT_API_KEY &&
+		c.req.header('X-Bot-Token') === c.env.BOT_API_KEY;
+
+	const guildId = isBotAuth
+		? c.req.header('X-Guild-Id')
+		: (c.req.query('guild') || getCookie(c, 'guild_id'));
 
 	if (!guildId) {
 		return c.json({ ok: false, error: { code: 'MISSING_GUILD', message: 'No guild context' } }, 400);
+	}
+
+	// Validate format: Discord snowflakes are numeric strings, 17-20 digits.
+	if (!/^\d{17,20}$/.test(guildId)) {
+		return c.json({ ok: false, error: { code: 'INVALID_GUILD', message: 'Invalid guild ID format' } }, 400);
 	}
 
 	const bindingKey = `DB_${guildId}` as const;
@@ -121,6 +133,7 @@ export const guildDb = createMiddleware<{ Bindings: Bindings }>(async (c, next) 
 	if (!db) {
 		// Fall back to default DB if no guild-specific binding exists.
 		// This supports the initial single-guild setup where only `DB` is configured.
+		// Once all guilds have named bindings, remove this fallback for defense in depth.
 		if (c.env.DB) {
 			await next();
 			return;
@@ -134,9 +147,9 @@ export const guildDb = createMiddleware<{ Bindings: Bindings }>(async (c, next) 
 ```
 
 **Resolution priority:**
-1. `X-Guild-Id` header -- set by the bot on every API call
-2. `guild` query parameter -- passed through during the auth callback redirect
-3. `guild_id` cookie -- set after auth completes, used by browser sessions
+1. `X-Guild-Id` header -- trusted only when the request also carries a valid `X-Bot-Token`
+2. `guild` query parameter -- passed through during the auth callback redirect (browser)
+3. `guild_id` cookie -- set after auth completes, used by subsequent browser requests
 
 ### Wiring into `src/index.ts`
 
@@ -197,11 +210,13 @@ The callback reads `guild` from the query string (the guild middleware already r
 ```typescript
 const guildId = c.req.query('guild');
 if (guildId) {
-	setCookie(c, 'guild_id', guildId, cookieOptions);
+	setCookie(c, 'guild_id', guildId, cookieOptions);  // same options as session_id
 }
 setCookie(c, 'session_id', sessionId, cookieOptions);
 return c.redirect('/');
 ```
+
+`guild_id` must use the same cookie attributes as `session_id`: `httpOnly`, `Secure`, `SameSite=Lax`, `Path=/`. This prevents client-side JavaScript from reading or modifying the guild context.
 
 ### Subsequent browser requests
 
@@ -469,7 +484,41 @@ Some interactions (e.g., bot DMs) have no `guildId`. The bot should skip these o
 
 ---
 
-## 9. Migration path from Phase 1
+## 9. Security considerations
+
+### Guild ID source trust boundary
+
+The `X-Guild-Id` header is only trusted when the request also carries a valid `X-Bot-Token`. The guild middleware verifies the bot token itself (a simple string comparison against `c.env.BOT_API_KEY`) before reading the header. This is necessary because browsers can set arbitrary request headers via `fetch()` -- a user in guild A could otherwise craft a request with `X-Guild-Id: <guild_b_id>`.
+
+For browser requests (no valid bot token), guild context comes exclusively from:
+- The `guild_id` cookie (httpOnly, set by the server during auth callback)
+- The `guild` query parameter (used only during the auth callback redirect)
+
+### Guild ID format validation
+
+Guild IDs are validated as Discord snowflakes (17-20 digit numeric strings) before being used as a dynamic property key (`env["DB_" + guildId]`). This prevents unexpected property lookups on the Worker `env` object from malformed or injected values.
+
+### Cross-guild session isolation
+
+Even if guild context were somehow spoofed, cross-guild data access is prevented by construction:
+
+- **Sessions are per-database.** A session created in guild A's DB does not exist in guild B's DB. If a request is routed to the wrong DB, `requireAuth` fails to find the session and returns 401.
+- **Auth tokens are per-database.** A token created by the bot for guild A (stored in guild A's DB) cannot be consumed from guild B's DB. Tampering with the `guild` query param during the auth callback causes the token lookup to fail.
+- **The worst case for cookie tampering is self-denial.** If a user modifies their `guild_id` cookie via devtools, their session won't be found in the new DB, and they get 401 until they re-authenticate.
+
+### Cookie integrity
+
+The `guild_id` cookie uses the same attributes as `session_id` (`httpOnly`, `Secure`, `SameSite=Lax`, `Path=/`). `httpOnly` prevents client-side JavaScript from reading the guild context. Users can still modify cookies via browser devtools, but this only results in self-denial (401), not cross-guild access.
+
+### Default DB fallback
+
+During migration from Phase 1, the middleware falls back to the default `DB` binding when no guild-specific binding exists. This is safe because session isolation still applies -- even if an unknown guild ID routes to the default DB, the session won't exist there unless the user legitimately authenticated against it.
+
+Once all guilds have explicit `DB_<guild_id>` bindings, the fallback should be removed for defense in depth. At that point, any request with an unrecognized guild ID should fail with `UNKNOWN_GUILD`.
+
+---
+
+## 10. Migration path from Phase 1
 
 The transition from single-guild to multi-guild is incremental:
 
@@ -485,7 +534,7 @@ The transition from single-guild to multi-guild is incremental:
 
 ---
 
-## 10. Implementation scope summary
+## 11. Implementation scope summary
 
 | Area | Change | Scope |
 |------|--------|-------|
