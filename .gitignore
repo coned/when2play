@@ -166,5 +166,6 @@ dist
 !.env.example
 .wrangler/
 
-# Bot error log
+# Bot runtime files
 errors.log
+guild-config.json
