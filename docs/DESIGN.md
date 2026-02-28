@@ -238,127 +238,11 @@ One rally per day. Day boundary: 8:01 AM ET → 8:00 AM next day ET (configurabl
 
 ## 4. API Reference
 
-### Auth
+See [API.md](API.md) for the complete reference with request/response examples.
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /api/auth/token | Bot (`X-Bot-Token`) | Create one-time auth token. Body: `{ discord_id: 1-30, discord_username: 1-50, avatar_url?: max 500 }` |
-| POST | /api/auth/admin-token | Bot (`X-Bot-Token`) | Create one-time admin auth token (same body). Resulting session has `is_admin=1`, 1h TTL, browser-session cookie. |
-| GET | /api/auth/callback/:token | None | Exchange token for session cookie. Admin tokens get no `Max-Age`. |
-| POST | /api/auth/logout | Session | Destroy session |
+**Endpoint groups:** Auth, Users, Games, Votes, Steam, Availability, Gather, Shame, Rally, Settings, Health.
 
-### Users
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | /api/users | Session | List all users (id, discord_username, avatar_url) |
-| GET | /api/users/me | Session | Get current user (includes `is_admin: boolean`) |
-| PATCH | /api/users/me | Session | Update timezone, display name, granularity |
-
-### Games
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | /api/games | Session | List active games (optional ?include_archived=true) |
-| POST | /api/games | Session | Propose a game (name max 100, image_url max 500) |
-| PATCH | /api/games/:id | Session | Update game (owner only) |
-| DELETE | /api/games/:id | Session | Archive a game (owner only) |
-
-### Votes
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| PUT | /api/games/:id/vote | Session | Set rank + approval for a game |
-| DELETE | /api/games/:id/vote | Session | Remove vote |
-| GET | /api/games/:id/votes | Session | Get votes for a game (user_id stripped) |
-| GET | /api/games/ranking | Session | Aggregated Borda count ranking |
-| GET | /api/games/my-votes | Session | Current user's votes with game data |
-| PUT | /api/games/reorder-votes | Session | Bulk rank update: `{ rankings: [{ game_id, rank }] }` |
-
-### Steam
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | /api/steam/search?q=QUERY | Session | Search Steam by name (2-100 chars, returns top 10) |
-| GET | /api/steam/lookup/:appId | None | Lookup game info by Steam App ID |
-
-### Availability
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | /api/availability | Session | Get slots (?user_id, ?date). user_id scoped to self without date filter |
-| PUT | /api/availability | Session | Set availability slots (bulk replace for a date) |
-| DELETE | /api/availability | Session | Clear slots for a date |
-
-### Gather
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /api/gather | Session | Ring the bell. Body: `{ message?, is_anonymous?, target_user_ids? }`. Rate-limited: hourly limit (default 30/h) + per-ping cooldown (default 10s). |
-| GET | /api/gather/pending | Bot (`X-Bot-Token`) | Get undelivered pings (includes is_anonymous, target_user_ids) |
-| PATCH | /api/gather/:id/delivered | Bot (`X-Bot-Token`) | Mark ping as delivered |
-
-### Shame
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /api/shame/:targetId | Session | Shame a user (reason max 200 chars) |
-| GET | /api/shame/leaderboard | Session | Get leaderboard with recent reasons |
-
-### Rally
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /api/rally/call | Session | Create rally + call action. Body: `{ timing?: "now"\|"later" }` |
-| POST | /api/rally/action | Session | Record action. Body: `{ action_type, target_user_ids?, message? }` |
-| POST | /api/rally/judge/time | Session | Compute overlapping availability windows for today (all users with availability, 2+ overlap) |
-| POST | /api/rally/share-ranking | Session | Broadcast current game ranking to Discord |
-| POST | /api/rally/judge/avail | Session | Nudge user to set availability. Body: `{ target_user_ids }` |
-| GET | /api/rally/active | Session | Get today's rally + actions (?day_key optional) |
-| GET | /api/rally/tree | Session | Get tree DAG data (?day_key optional) |
-| GET | /api/rally/pending | Bot (`X-Bot-Token`) | Poll undelivered rally actions |
-| PATCH | /api/rally/:id/delivered | Bot (`X-Bot-Token`) | Mark rally action delivered |
-| POST | /api/rally/tree/share | Session | Upload base64 PNG for Discord sharing |
-| GET | /api/rally/tree/share/pending | Bot (`X-Bot-Token`) | Poll pending tree images |
-| PATCH | /api/rally/tree/share/:id/delivered | Bot (`X-Bot-Token`) | Mark tree share delivered |
-
-### Settings
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | /api/settings | Session | Get all settings |
-| PATCH | /api/settings | Session (admin) | Update settings (requires `is_admin` session flag from admin-token flow) |
-
-### Health
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | /api/health | None | Health check |
-
-### Response Format
-
-All endpoints return:
-
-```json
-{
-  "ok": true,
-  "data": { ... }
-}
-```
-
-Or on error:
-
-```json
-{
-  "ok": false,
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "Game not found"
-  }
-}
-```
-
-Error messages are redacted in production (HTTPS) for unhandled errors.
+All endpoints return `{ ok, data }` or `{ ok: false, error: { code, message } }`. Error messages are redacted in production.
 
 ---
 
@@ -466,61 +350,28 @@ All time displays show both UTC and local time:
 
 ## 7. Security
 
+See [SETUP.md Part 4](SETUP.md#part-4-security-reference) for the full security reference (cookies, input validation limits, headers, data privacy).
+
 ### Middleware Stack
 
-1. **Error handler** — catches unhandled errors, redacts messages in production
-2. **CORS** — dynamic origin (same-origin in production, localhost in dev)
-3. **Security headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
-4. **Foreign keys** — enables `PRAGMA foreign_keys = ON` per API request
-5. **Bot auth** (`requireBotAuth`) — validates `X-Bot-Token` against `BOT_API_KEY` secret
-6. **Session auth** (`requireAuth`) — validates `session_id` cookie
-
-### Input Validation
-
-- Auth token creation: Zod schema (discord_id 1-30, discord_username 1-50, avatar_url optional max 500)
-- Game name: max 100 chars
-- Game image_url: max 500 chars
-- Gather message: max 500 chars
-- Gather target_user_ids: max 20 entries
-- Shame reason: max 200 chars
-- Rally action message: max 500 chars
-- Rally action target_user_ids: required for ping/where
-- Steam search query: 2-100 chars
-
-### Access Control
-
-- Settings PATCH: admin only — session must carry `is_admin=1`, set by the admin-token flow (Discord ADMINISTRATOR permission gated at the bot)
-- Game votes: `user_id` stripped from public response
-- Availability: `user_id` param scoped to authenticated user without date filter
+1. **Error handler** -- catches unhandled errors, redacts messages in production
+2. **CORS** -- dynamic origin (same-origin in production, localhost in dev)
+3. **Security headers** -- `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
+4. **Foreign keys** -- enables `PRAGMA foreign_keys = ON` per API request
+5. **Bot auth** (`requireBotAuth`) -- validates `X-Bot-Token` against `BOT_API_KEY` secret
+6. **Session auth** (`requireAuth`) -- validates `session_id` cookie
 
 ---
 
 ## 8. Discord Bot Contract
 
-The Discord bot is **not implemented** in this repo. See `docs/SETUP.md` for a complete working example.
+The Discord bot is **not implemented** in this repo. See [DISCORD_BOT_CONTRACT.md](DISCORD_BOT_CONTRACT.md) for the full integration spec and [SETUP.md Part 3](SETUP.md#part-3-discord-bot-setup) for a complete working example.
 
-### Bot-Facing Endpoints
-
-All require `X-Bot-Token` header (matching `BOT_API_KEY` Cloudflare secret):
-
-| Endpoint | Description |
-|----------|-------------|
-| `POST /api/auth/token` | Create regular auth link. Body: `{ discord_id, discord_username, avatar_url? }` |
-| `POST /api/auth/admin-token` | Create admin auth link (same body). Bot must verify `ADMINISTRATOR` permission before calling. |
-| `GET /api/gather/pending` | Poll for undelivered gather pings |
-| `PATCH /api/gather/:id/delivered` | Mark gather ping as delivered |
-| `GET /api/rally/pending` | Poll for undelivered rally actions |
-| `PATCH /api/rally/:id/delivered` | Mark rally action as delivered |
-| `GET /api/rally/tree/share/pending` | Poll for pending tree share images |
-| `PATCH /api/rally/tree/share/:id/delivered` | Mark tree share as delivered |
-
-### Gather Ping Fields
-
-When polling `GET /api/gather/pending`, each ping includes:
-- `sender_discord_id` (string) — numeric Discord ID of the sender, pre-resolved. Use `<@id>` directly.
-- `sender_username` (string) — display name of the sender
-- `is_anonymous` (boolean) — if true, hide the sender's identity
-- `target_discord_ids` (string[] | null) — if non-null, numeric Discord IDs to mention. Pre-resolved server-side — no bot-side mapping needed.
+Bot-facing endpoints (all require `X-Bot-Token` header):
+- `POST /api/auth/token` and `/api/auth/admin-token` -- create login links
+- `GET /api/gather/pending` + `PATCH /api/gather/:id/delivered` -- deliver gather pings
+- `GET /api/rally/pending` + `PATCH /api/rally/:id/delivered` -- deliver rally actions
+- `GET /api/rally/tree/share/pending` + `PATCH /api/rally/tree/share/:id/delivered` -- deliver tree images
 
 ---
 
