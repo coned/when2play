@@ -18,6 +18,8 @@ This is the standalone Discord bot for [when2play](https://github.com/your-org/w
   - `/post schedule` — find and post the best overlapping time windows for today
   - `/post gamerank` — post the current game rankings to the channel
   - `/post gametree` — post today's gaming tree diagram to the channel
+- **Admin commands:**
+  - `/setchannel` — set the current channel as the bot output channel (requires ADMINISTRATOR)
 - **Gather polling** — checks for pending gather bell pings every 15 seconds and posts them to a Discord channel
 - **Rally polling** — checks for pending rally actions every 15 seconds and posts formatted messages
 - **Tree share polling** — checks for pending gaming tree images and posts them as attachments
@@ -47,10 +49,20 @@ The bot connects to the when2play Cloudflare Worker backend via HTTP.
 
 ---
 
-## 2. Find Your Gaming Channel ID
+## 2. Set the Output Channel
 
-In Discord: **Settings** → **Advanced** → enable **Developer Mode**.
-Then right-click the channel where gather pings should be posted → **Copy Channel ID**.
+The bot needs to know which channel to post messages to. You have two options:
+
+**Option A (recommended): `/setchannel` command**
+
+After the bot is running, go to the desired channel in Discord and run `/setchannel`. This requires ADMINISTRATOR permission. The setting is saved to `guild-config.json` and persists across restarts.
+
+**Option B: `GAMING_CHANNEL_ID` env var**
+
+In Discord: **Settings** > **Advanced** > enable **Developer Mode**.
+Then right-click the channel > **Copy Channel ID** and add it to your `.env` file.
+
+If both are set, the `/setchannel` value takes priority.
 
 ---
 
@@ -77,8 +89,8 @@ GAMING_CHANNEL_ID=123456789012345678
 |----------|----------|-------------|
 | `DISCORD_TOKEN` | Yes | Bot token from Discord Developer Portal |
 | `WHEN2PLAY_API_URL` | Yes | Base URL of the deployed when2play Worker |
-| `BOT_API_KEY` | Yes (production) | Shared secret — must match `BOT_API_KEY` set via `npx wrangler secret put BOT_API_KEY` in the main repo |
-| `GAMING_CHANNEL_ID` | Yes | Discord channel ID where gather bell pings are posted |
+| `BOT_API_KEY` | Yes (production) | Shared secret -- must match `BOT_API_KEY` set via `npx wrangler secret put BOT_API_KEY` in the main repo |
+| `GAMING_CHANNEL_ID` | No | Fallback channel ID. Optional if using `/setchannel` instead |
 
 > `BOT_API_KEY` can be omitted for local development against a Worker that also has no `BOT_API_KEY` set.
 
@@ -170,7 +182,7 @@ Error polling gather pings: TypeError: fetch failed
 
 ### `Missing required env vars` on startup
 
-One of `DISCORD_TOKEN`, `WHEN2PLAY_API_URL`, or `GAMING_CHANNEL_ID` is missing from `.env`. Check that the file exists and is being loaded (`--env-file=.env`).
+Either `DISCORD_TOKEN` or `WHEN2PLAY_API_URL` is missing from `.env`. Check that the file exists and is being loaded (`--env-file=.env`). Note: `GAMING_CHANNEL_ID` is no longer required -- you can use `/setchannel` instead.
 
 ### Slash commands not appearing in Discord
 

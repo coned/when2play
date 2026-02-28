@@ -1,10 +1,31 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } from 'discord.js';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ERROR_LOG_PATH = join(__dirname, 'errors.log');
+const CONFIG_PATH = join(__dirname, 'guild-config.json');
+
+let cachedConfig = {};
+
+function loadConfig() {
+    try {
+        cachedConfig = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
+    } catch {
+        cachedConfig = {};
+    }
+    return cachedConfig;
+}
+
+function saveConfig(data) {
+    cachedConfig = data;
+    writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2) + '\n');
+}
+
+function getChannelId() {
+    return cachedConfig.channelId || GAMING_CHANNEL_ID || null;
+}
 
 function logError(context, err) {
     const ts = new Date().toISOString();
@@ -22,9 +43,14 @@ const BASE_POLL_MS = 15_000;
 const MAX_POLL_MS = 2 * 60 * 1000;
 let consecutiveErrors = 0;
 
-if (!DISCORD_TOKEN || !API_URL || !GAMING_CHANNEL_ID) {
-    console.error('Missing required env vars');
+loadConfig();
+
+if (!DISCORD_TOKEN || !API_URL) {
+    console.error('Missing required env vars (DISCORD_TOKEN, WHEN2PLAY_API_URL)');
     process.exit(1);
+}
+if (!getChannelId()) {
+    console.warn('Warning: No channel configured. Use /setchannel or set GAMING_CHANNEL_ID in .env');
 }
 
 const botHeaders = {
@@ -80,6 +106,9 @@ const commands = [
     new SlashCommandBuilder()
         .setName('help')
         .setDescription('Show all when2play commands'),
+    new SlashCommandBuilder()
+        .setName('setchannel')
+        .setDescription('Set this channel as the when2play output channel (requires ADMINISTRATOR)'),
 ];
 
 async function registerCommands() {
@@ -340,6 +369,11 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.editReply('No active rally today. Use `/call` to start one!');
                     return;
                 }
+                const channelId = getChannelId();
+                if (!channelId) {
+                    await interaction.editReply('No output channel configured. An admin should run `/setchannel` first.');
+                    return;
+                }
                 const { rally, actions } = json.data;
                 let summary = `**Gaming Tree** — ${rally.day_key}\n`;
                 if (actions.length === 0) {
@@ -350,7 +384,7 @@ client.on('interactionCreate', async (interaction) => {
                         summary += `${icon} **${a.actor_username}**: ${a.action_type}${a.message ? ` — ${a.message}` : ''}\n`;
                     }
                 }
-                const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
+                const channel = await client.channels.fetch(channelId);
                 if (channel?.isTextBased()) {
                     const actor = authData.user.display_name ?? authData.user.discord_username;
                     await channel.send({ content: `${summary}_On behalf of ${actor}_`, allowedMentions: { parse: [], users: [] } });
@@ -375,11 +409,14 @@ function fmtDiscordTime(utcHHMM, dayKey) {
 // --- Rally action polling ---
 async function pollRallyActions() {
     try {
+        const channelId = getChannelId();
+        if (!channelId) return;
+
         const res = await fetch(`${API_URL}/api/rally/pending`, { headers: botHeaders });
         const json = await res.json();
         if (!json.ok || json.data.length === 0) return;
 
-        const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
+        const channel = await client.channels.fetch(channelId);
         if (!channel?.isTextBased()) return;
 
         for (const action of json.data) {
@@ -462,11 +499,14 @@ async function pollRallyActions() {
 // --- Tree share polling ---
 async function pollTreeShares() {
     try {
+        const channelId = getChannelId();
+        if (!channelId) return;
+
         const res = await fetch(`${API_URL}/api/rally/tree/share/pending`, { headers: botHeaders });
         const json = await res.json();
         if (!json.ok || json.data.length === 0) return;
 
-        const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
+        const channel = await client.channels.fetch(channelId);
         if (!channel?.isTextBased()) return;
 
         for (const share of json.data) {
@@ -490,6 +530,12 @@ async function pollTreeShares() {
 // Gather ping polling
 async function pollGatherPings() {
     try {
+        const channelId = getChannelId();
+        if (!channelId) {
+            consecutiveErrors = 0;
+            return;
+        }
+
         const res = await fetch(`${API_URL}/api/gather/pending`, { headers: botHeaders });
         const json = await res.json();
         if (!json.ok || json.data.length === 0) {
@@ -497,7 +543,7 @@ async function pollGatherPings() {
             return;
         }
 
-        const channel = await client.channels.fetch(GAMING_CHANNEL_ID);
+        const channel = await client.channels.fetch(channelId);
         if (!channel?.isTextBased()) {
             consecutiveErrors = 0;
             return;
@@ -540,8 +586,7 @@ client.on('interactionCreate', async (interaction) => {
         '**when2play** — Gaming coordination bot\n',
         '**Getting Started**',
         '`/play` — Get a login link for the when2play dashboard',
-        '`/url` — Get the when2play website URL',
-        '`/when2play-admin` — Get an admin link (requires ADMINISTRATOR)\n',
+        '`/url` — Get the when2play website URL\n',
         '**Rally — Session Coordination**',
         '`/call [message]` — Call everyone to play',
         '`/in [message]` — Join the rally',
@@ -555,6 +600,9 @@ client.on('interactionCreate', async (interaction) => {
         '**Post to Channel**',
         '`/post gamerank` — Post the current game rankings',
         '`/post gametree` — Post today\'s gaming tree diagram\n',
+        '**Admin**',
+        '`/setchannel` — Set the current channel as the bot output channel',
+        '`/when2play-admin` — Get an admin link\n',
         '**Dashboard Features**',
         'The web dashboard at the `/play` link also includes:',
         '- Schedule — Set your daily availability grid',
@@ -627,5 +675,26 @@ client.on('interactionCreate', async (interaction) => {
     } catch (err) {
         console.error('Error handling /when2play-admin:', err);
         await interaction.editReply('Something went wrong.');
+    }
+});
+
+// --- /setchannel handler ---
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'setchannel') return;
+    await interaction.deferReply({ flags: 64 });
+
+    if (!interaction.memberPermissions?.has('Administrator')) {
+        await interaction.editReply('You need the ADMINISTRATOR permission to use this command.');
+        return;
+    }
+
+    try {
+        const config = loadConfig();
+        config.channelId = interaction.channelId;
+        saveConfig(config);
+        await interaction.editReply(`Messages will now be sent to <#${interaction.channelId}>.`);
+    } catch (err) {
+        console.error('Error handling /setchannel:', err);
+        await interaction.editReply('Failed to save channel configuration.');
     }
 });

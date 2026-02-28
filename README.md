@@ -52,10 +52,10 @@ Copy the example below into a `.env` file in this directory:
 DISCORD_TOKEN=your-bot-token-here
 WHEN2PLAY_API_URL=https://when2play.<your-subdomain>.workers.dev
 BOT_API_KEY=your-shared-secret-here
-GAMING_CHANNEL_ID=123456789012345678
+GAMING_CHANNEL_ID=123456789012345678   # optional if using /setchannel
 ```
 
-> To find your channel ID: in Discord, enable **Developer Mode** (Settings → Advanced), then right-click the channel → **Copy Channel ID**.
+> **Channel setup:** You can either set `GAMING_CHANNEL_ID` in `.env`, or use the `/setchannel` slash command in Discord (requires ADMINISTRATOR). The slash command is preferred -- it persists in `guild-config.json` and takes priority over the env var.
 
 ### 5. Run
 
@@ -84,6 +84,7 @@ That's it — slash commands like `/call`, `/in`, `/play`, and `/help` are now l
 | `/post schedule` | Show overlapping availability windows |
 | `/post gamerank` | Post game rankings |
 | `/post gametree` | Post the gaming tree diagram |
+| `/setchannel` | Set the current channel as the bot output channel (admin) |
 
 ## Further Reading
 
