@@ -1,4 +1,17 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } from 'discord.js';
+import { appendFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ERROR_LOG_PATH = join(__dirname, 'errors.log');
+
+function logError(context, err) {
+    const ts = new Date().toISOString();
+    const cause = err.cause ? ` | cause: ${err.cause.message ?? err.cause}` : '';
+    const line = `[${ts}] ${context}: ${err.message}${cause}\n`;
+    try { appendFileSync(ERROR_LOG_PATH, line); } catch {}
+}
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const API_URL = process.env.WHEN2PLAY_API_URL;
@@ -441,6 +454,7 @@ async function pollRallyActions() {
             });
         }
     } catch (err) {
+        logError('polling rally actions', err);
         console.error('Error polling rally actions:', err);
     }
 }
@@ -468,6 +482,7 @@ async function pollTreeShares() {
             });
         }
     } catch (err) {
+        logError('polling tree shares', err);
         console.error('Error polling tree shares:', err);
     }
 }
@@ -511,6 +526,7 @@ async function pollGatherPings() {
         consecutiveErrors = 0;
     } catch (err) {
         consecutiveErrors++;
+        logError(`polling gather pings (consecutive errors: ${consecutiveErrors})`, err);
         console.error(`Error polling gather pings (consecutive errors: ${consecutiveErrors}):`, err);
     }
 }
@@ -564,7 +580,7 @@ function scheduleNextPoll() {
     }, delay);
 }
 
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}`);
     await registerCommands();
     scheduleNextPoll();
