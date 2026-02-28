@@ -168,4 +168,6 @@ dist
 
 # MISC
 CLAUDE.md
+MEMORY.md
 .claude/*
+.local/*
