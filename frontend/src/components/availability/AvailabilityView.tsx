@@ -59,7 +59,6 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 
 	const today = todayStr();
 	const tomorrow = tomorrowStr();
-	const isToday = selectedDate === today;
 
 	return (
 		<div>
@@ -95,7 +94,6 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 					allSlots={allSlots}
 					userId={userId}
 					onSave={handleSave}
-					isToday={isToday}
 					availStartHourET={availStartHourET}
 					availEndHourET={availEndHourET}
 				/>
