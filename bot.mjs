@@ -113,15 +113,14 @@ const commands = [
 
 async function registerCommands() {
     const rest = new REST().setToken(DISCORD_TOKEN);
+    const body = commands.map(c => c.toJSON());
     if (GUILD_ID) {
-        await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), {
-            body: commands.map(c => c.toJSON()),
-        });
+        await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body });
+        // Clear stale global commands so old commands like /judge don't linger
+        await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
         console.log(`Slash commands registered (guild: ${GUILD_ID}).`);
     } else {
-        await rest.put(Routes.applicationCommands(client.user.id), {
-            body: commands.map(c => c.toJSON()),
-        });
+        await rest.put(Routes.applicationCommands(client.user.id), { body });
         console.log('Slash commands registered (global — may take up to 1h to propagate).');
     }
 }
