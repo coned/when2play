@@ -103,6 +103,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const isFirstRender = useRef(true);
+	const onSaveRef = useRef(onSave);
+	const pendingSelectedRef = useRef<Set<string> | null>(null);
+	onSaveRef.current = onSave;
 
 	// Use filtered slots if time range is configured
 	const filteredSlots = useMemo((): FilteredSlot[] => {
@@ -132,7 +135,10 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 		if (saveTimer.current) clearTimeout(saveTimer.current);
 		if (clearTimer.current) clearTimeout(clearTimer.current);
 
+		pendingSelectedRef.current = selected;
+
 		saveTimer.current = setTimeout(async () => {
+			pendingSelectedRef.current = null;
 			try {
 				const slots = ALL_SLOTS.filter((s) => selected.has(s.start_time));
 				await onSave(slots);
@@ -148,6 +154,16 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, isToday = tr
 			if (saveTimer.current) clearTimeout(saveTimer.current);
 		};
 	}, [selected]);
+
+	// Flush any pending save immediately when navigating away (component unmounts)
+	useEffect(() => {
+		return () => {
+			if (pendingSelectedRef.current !== null) {
+				const slots = ALL_SLOTS.filter((s) => pendingSelectedRef.current!.has(s.start_time));
+				onSaveRef.current(slots).catch(() => {});
+			}
+		};
+	}, []);
 
 	// Always start from index 0 — past slots remain visible (dimmed + strikethrough)
 	const startIndex = 0;
