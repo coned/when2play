@@ -504,9 +504,13 @@ async function pollRallyActions(guildId, config) {
             case 'share_ranking': {
                 const meta = action.metadata;
                 if (meta?.ranking?.length > 0) {
-                    const lines = meta.ranking.map((r, i) =>
-                        `#${i + 1} ${r.name} (${r.total_score} pts, ${r.vote_count} votes)`
-                    );
+                    const lines = meta.ranking.map((r, i) => {
+                        const name = r.steam_app_id
+                            ? `[${r.name}](https://store.steampowered.com/app/${r.steam_app_id}/)`
+                            : r.name;
+                        const likes = r.like_count ? `, ${r.like_count} likes` : '';
+                        return `#${i + 1} ${name} (${r.total_score} pts, ${r.vote_count} votes${likes})`;
+                    });
                     text = `🏆 **Game Rankings:**\n${lines.join('\n')}\n_On behalf of ${action.actor_username}_`;
                 } else {
                     text = `🏆 ${actor} shared rankings -- no games ranked yet`;
