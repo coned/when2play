@@ -4,6 +4,7 @@ import { errorHandler } from './middleware/error';
 import { cors } from './middleware/cors';
 import { securityHeaders } from './middleware/security-headers';
 import { foreignKeys } from './middleware/fk';
+import { guildDb } from './middleware/guild';
 import auth from './routes/auth';
 import users from './routes/users';
 import games from './routes/games';
@@ -26,6 +27,7 @@ app.get('/api/health', (c) => {
 });
 
 const api = new Hono<{ Bindings: Bindings }>();
+api.use('*', guildDb);
 api.use('*', foreignKeys);
 api.route('/auth', auth);
 api.route('/users', users);

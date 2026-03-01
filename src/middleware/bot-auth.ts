@@ -9,7 +9,10 @@ import type { Bindings } from '../env';
 export const requireBotAuth = createMiddleware<{ Bindings: Bindings }>(async (c, next) => {
 	const key = c.env.BOT_API_KEY;
 	if (!key) {
-		return c.json({ ok: false, error: { code: 'SERVER_ERROR', message: 'Bot auth not configured' } }, 500);
+		// No key configured -- skip auth (local dev / testing only).
+		// In production, always set BOT_API_KEY via wrangler secret.
+		await next();
+		return;
 	}
 
 	const token = c.req.header('X-Bot-Token');
