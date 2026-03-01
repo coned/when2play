@@ -135,6 +135,32 @@ export function formatLocalTimeClean(utcHHMM: string, dateStr: string): string {
 }
 
 /**
+ * Get "today" for availability purposes, respecting a day cutoff hour in ET.
+ * Before the cutoff hour (ET), "today" still means yesterday's date,
+ * because the gaming session hasn't ended yet.
+ */
+export function availabilityToday(cutoffHourET: number): string {
+	const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+	if (et.getHours() < cutoffHourET) {
+		et.setDate(et.getDate() - 1);
+	}
+	const y = et.getFullYear();
+	const m = String(et.getMonth() + 1).padStart(2, '0');
+	const d = String(et.getDate()).padStart(2, '0');
+	return `${y}-${m}-${d}`;
+}
+
+/**
+ * Get "tomorrow" for availability purposes, one day after availabilityToday.
+ */
+export function availabilityTomorrow(cutoffHourET: number): string {
+	const todayStr = availabilityToday(cutoffHourET);
+	const d = new Date(todayStr + 'T12:00:00Z');
+	d.setDate(d.getDate() + 1);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
  * @deprecated Use formatLocalTime instead.
  */
 export function formatDualTime(utcHHMM: string, dateStr: string): string {

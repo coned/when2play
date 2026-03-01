@@ -1,20 +1,15 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import { api } from '../../api/client';
 import { TimeGrid } from './TimeGrid';
-import { getTimezoneAbbreviation, localToday } from '../../lib/time';
+import { getTimezoneAbbreviation, availabilityToday, availabilityTomorrow } from '../../lib/time';
 
 interface AvailabilityViewProps {
 	userId: string;
 }
 
-function tomorrowStr() {
-	const d = new Date();
-	d.setDate(d.getDate() + 1);
-	return d.toLocaleDateString('en-CA');
-}
-
 export function AvailabilityView({ userId }: AvailabilityViewProps) {
-	const [selectedDate, setSelectedDate] = useState(localToday());
+	const [cutoffHourET, setCutoffHourET] = useState(5);
+	const [selectedDate, setSelectedDate] = useState(availabilityToday(5));
 	const [mySlots, setMySlots] = useState<any[]>([]);
 	const [allSlots, setAllSlots] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -35,6 +30,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 			const s = settingsResult.data as Record<string, unknown>;
 			if (s.avail_start_hour_et !== undefined) setAvailStartHourET(s.avail_start_hour_et as number);
 			if (s.avail_end_hour_et !== undefined) setAvailEndHourET(s.avail_end_hour_et as number);
+			if (s.day_cutoff_hour_et !== undefined) setCutoffHourET(s.day_cutoff_hour_et as number);
 		}
 		setLoading(false);
 	}, [userId, selectedDate]);
@@ -53,8 +49,8 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 		}
 	};
 
-	const today = localToday();
-	const tomorrow = tomorrowStr();
+	const today = availabilityToday(cutoffHourET);
+	const tomorrow = availabilityTomorrow(cutoffHourET);
 
 	return (
 		<div>
