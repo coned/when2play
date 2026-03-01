@@ -10,28 +10,31 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Discord                                  │
-│   User runs /in, /call, /post schedule, /play, etc.             │
-└───────────────────────────┬─────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        Discord                                   │
+│   User runs /in, /call, /post schedule, /play, etc.              │
+└───────────────────────────────┬──────────────────────────────────┘
                             │ discord.js interactions
                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       bot.mjs                                   │
-│                                                                 │
-│   ┌──────────────────┐    ┌───────────────────────────────────┐ │
-│   │ Command handlers │    │ Three polling loops (every 15s)   │ │
-│   │ /play, /call,    │    │  • pollRallyActions()             │ │
-│   │ /in, /out, ...   │    │  • pollGatherPings()              │ │
-│   └────────┬─────────┘    │  • pollTreeShares()               │ │
-│            │              └──────────────┬────────────────────┘ │
-└────────────┼─────────────────────────────┼──────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                  bot.mjs (single instance, multi-guild)          │
+│                                                                  │
+│   ┌──────────────────┐    ┌────────────────────────────────────┐ │
+│   │ Command handlers │    │ Per-guild polling loops (every 15s)│ │
+│   │ /play, /call,    │    │  For each guild in config:         │ │
+│   │ /in, /out, ...   │    │  * pollRallyActions(guildId, cfg)  │ │
+│   └────────┬─────────┘    │  * pollGatherPings(guildId, cfg)   │ │
+│            │              │  * pollTreeShares(guildId, cfg)    │ │
+│            │              └──────────────┬─────────────────────┘ │
+└────────────┼─────────────────────────────┼───────────────────────┘
              │  HTTPS                      │  HTTPS
              │  Cookie: session_id=...     │  X-Bot-Token: ...
+             │  X-Guild-Id: <guild_id>     │  X-Guild-Id: <guild_id>
              ▼                             ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                   when2play Server (Hono / CF Workers)           │
 │                                                                  │
+│   guildDb middleware (resolves DB binding from guild context)    │
 │   requireAuth middleware      requireBotAuth middleware          │
 │   (session_id cookie)         (X-Bot-Token header)               │
 │                                                                  │
@@ -42,7 +45,10 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 │   /api/gather (write)         /api/gather/pending                │
 │                               /api/gather/:id/delivered          │
 │                                                                  │
-│                       Cloudflare D1 (SQLite)                     │
+│         ┌──────────┬──────────┬──────────┐                      │
+│         │ D1 Guild │ D1 Guild │ D1 Guild │                      │
+│         │    A     │    B     │    C     │                      │
+│         └──────────┴──────────┴──────────┘                      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -117,43 +123,48 @@ this way are identical to browser sessions in the database.
 This flow covers `/play` (and any command that needs a fresh user session).
 
 ```
-User: /play
-  ↓
+User: /play (in guild 111...)
+  |
 bot.mjs calls POST /api/auth/token
-  headers: X-Bot-Token
+  headers: X-Bot-Token, X-Guild-Id: 111...
   body:    { discord_id, discord_username, avatar_url }
-  ↓
-Server: upsertUser() — create or update users table row
-        generateToken() — random 32-byte hex string
-        createAuthToken() — insert into auth_tokens (expires in 10 min)
-  returns: { token, url: "/auth/<token>" }
-  ↓
-Bot constructs full URL → attempts to DM to user
+  |
+Server: guildDb middleware resolves DB_111... binding
+        upsertUser() -- create or update users table row
+        generateToken() -- random 32-byte hex string
+        createAuthToken() -- insert into auth_tokens (expires in 10 min)
+  returns: { token, url: "/auth/<token>?guild=111..." }
+  |
+Bot DMs the URL to the user
   (falls back to ephemeral channel reply if DMs are closed)
-  ↓
+  |
 User clicks link in browser
-  ↓
-Browser: GET /api/auth/callback/:token
-  Server: consumeAuthToken() — validates and marks used
-          createSession() — insert into sessions (expires in 7 days)
-  returns: Set-Cookie: session_id=<value> + redirect to /
-  ↓
-Browser loads the when2play dashboard (no further bot involvement)
+  |
+Browser: /auth/<token>?guild=111...
+  Frontend (AuthCallback.tsx) passes ?guild= through:
+  -> GET /api/auth/callback/:token?guild=111...
+  Server: guildDb middleware resolves DB from ?guild= param
+          consumeAuthToken() -- validates and marks used
+          createSession() -- insert into sessions (expires in 7 days)
+  returns: Set-Cookie: guild_id=111..., session_id=<value> + redirect to /
+  |
+Browser loads dashboard (subsequent requests include both cookies)
 ```
 
 For commands like `/in` or `/call`, the bot calls the same first two steps programmatically
 to obtain a session, then uses it immediately to call the action endpoint:
 
 ```
-Bot: ensureUser(discordId, username, avatarUrl)
-  → POST /api/auth/token (X-Bot-Token)   → token
-  → GET  /api/auth/callback/:token (X-Bot-Token) → { session_id }
-  ↓
-Bot: apiCallWithSession(session_id, '/api/rally/action', { action_type: 'in', ... })
-  → POST /api/rally/action
+Bot: ensureUser(discordUser, guildMember, guildId)
+  -> POST /api/auth/token (X-Bot-Token, X-Guild-Id)   -> token
+  -> GET  /api/auth/callback/:token (X-Bot-Token, X-Guild-Id) -> { session_id }
+  |
+Bot: apiCallWithSession(session_id, '/api/rally/action', { action_type: 'in', ... }, guildId)
+  -> POST /api/rally/action
     Cookie: session_id=<value>
+    X-Guild-Id: <guild_id>
     body: { action_type, message?, target_user_ids? }
-  ↓
+  |
 Server records action with delivered = 0
 Bot replies to Discord user with confirmation
 ```
@@ -197,9 +208,11 @@ All rally commands call `ensureUser()` first to obtain a session.
 
 ## Polling Loops
 
-The bot runs three polling loops in parallel, scheduled via `scheduleNextPoll()`. All three
-fire every 15 seconds under normal conditions, with shared exponential backoff on errors
-(doubles each failure, capped at 2 minutes, resets on first success).
+The bot runs three polling loops per guild, scheduled via `scheduleNextPoll()`. For each
+guild registered in `guild-config.json`, all three loops fire every 15 seconds under normal
+conditions, with per-guild exponential backoff on errors (doubles each failure, capped at
+2 minutes, resets on first success for that guild). All API requests include the
+`X-Guild-Id` header so the Worker routes them to the correct guild database.
 
 ### Loop 1: Rally actions (`pollRallyActions`)
 
@@ -274,7 +287,11 @@ PATCH /api/rally/tree/share/:id/delivered  (X-Bot-Token)
 | `POST` | `/api/rally/share-ranking` | `/post gamerank` | Share game rankings to channel |
 | `GET` | `/api/rally/active` | `/post gametree` | Fetch today's rally + actions |
 
-### Bot-authenticated (`X-Bot-Token`)
+### Bot-authenticated (`X-Bot-Token` + `X-Guild-Id`)
+
+All bot-authenticated requests include `X-Guild-Id: <guild_id>` to route to the correct
+guild database. The Worker's guild middleware trusts this header only when `X-Bot-Token`
+matches `BOT_API_KEY`.
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -300,7 +317,12 @@ Both the bot and server must share exactly one secret: `BOT_API_KEY`.
 | `DISCORD_TOKEN` | Bot `.env` only | Discord bot token |
 | `WHEN2PLAY_API_URL` | Bot `.env` only | Base URL of the server (e.g. `https://when2play.example.workers.dev`) |
 | `GAMING_CHANNEL_ID` | Bot `.env` only | Discord channel where polling output is posted |
-| `GUILD_ID` | Bot `.env`, optional | If set, registers slash commands guild-wide instead of globally (faster for dev) |
+| `GUILD_ID` | Bot `.env`, optional | If set, registers slash commands guild-wide instead of globally (faster for dev). Also used for auto-migrating flat config format |
+
+`X-Guild-Id` is **not a secret**. It is a Discord guild snowflake (public identifier) sent
+as a plain header. The Worker's guild middleware only trusts it from bot-authenticated
+requests (validated via `X-Bot-Token`). For browser requests, guild context comes from the
+`guild_id` cookie (httpOnly, set by the server).
 
 On the server side, `BOT_API_KEY` is accessed via the Cloudflare Worker binding
 `c.env.BOT_API_KEY`. If it is not set, `requireBotAuth` returns HTTP 500 immediately
