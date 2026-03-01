@@ -111,6 +111,25 @@ Copy the returned `database_id` into `wrangler.jsonc`:
 make migrate-remote
 ```
 
+#### Multi-Guild D1 Setup
+
+To support multiple Discord guilds, create a separate D1 database per guild:
+
+```bash
+# Use the helper script
+scripts/add-guild.sh <guild-name> <guild-id>
+```
+
+This creates a D1 database named `when2play-<guild-name>`. Follow the script's output to add the `DB_<guild_id>` binding to `wrangler.jsonc`, apply migrations, and deploy.
+
+To apply migrations to all when2play databases at once:
+
+```bash
+scripts/migrate-all.sh
+```
+
+**Existing users:** The original `DB` binding continues to work as a fallback. No migration is needed until you add a second guild.
+
 Verify tables exist:
 
 ```bash
@@ -174,7 +193,8 @@ In the Cloudflare dashboard: **Workers & Pages** → your worker → **Settings*
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `DB` | D1 Binding | Yes | Configured in `wrangler.jsonc` |
+| `DB` | D1 Binding | Yes | Default D1 database, configured in `wrangler.jsonc` |
+| `DB_<guild_id>` | D1 Binding | No | Per-guild D1 database. Named `DB_` + Discord guild snowflake (e.g. `DB_123456789012345678`). Falls back to `DB` if not configured |
 | `BOT_API_KEY` | Secret | Recommended | Shared secret for bot auth. Set via `wrangler secret put`. When unset, bot auth is skipped. |
 
 | Limit | Detail |

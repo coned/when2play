@@ -22,6 +22,18 @@ X-Bot-Token: <your-bot-api-key>
 
 Set the secret via `npx wrangler secret put BOT_API_KEY`. When the secret is not set, the auth check is skipped (local dev only).
 
+## Guild Context
+
+All API requests from the bot must include the `X-Guild-Id` header with the Discord guild (server) snowflake ID. The Worker uses this to route each request to the correct per-guild D1 database.
+
+```
+X-Guild-Id: 123456789012345678
+```
+
+The guild ID is available as `interaction.guildId` in discord.js. If the bot is used in DMs (no guild context), it should reject the command early and not call the API.
+
+The Worker validates that the guild ID is a Discord snowflake (`/^\d{17,20}$/`). If a per-guild D1 binding (`DB_<guildId>`) exists, it is used; otherwise the Worker falls back to the default `DB` binding.
+
 ## Endpoints
 
 ### 1. Create Auth Token
@@ -32,6 +44,7 @@ When a user types `/play` (or similar command) in Discord:
 POST /api/auth/token
 Content-Type: application/json
 X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
 
 {
   "discord_id": "123456789012345678",    # 1-30 chars, required
@@ -48,10 +61,12 @@ X-Bot-Token: <BOT_API_KEY>
   "ok": true,
   "data": {
     "token": "a1b2c3d4...",
-    "url": "https://when2play.example.com/auth/a1b2c3d4..."
+    "url": "https://when2play.example.com/auth/a1b2c3d4...?guild=123456789012345678"
   }
 }
 ```
+
+The returned URL includes `?guild=<guildId>` so the browser callback sets a `guild_id` cookie for subsequent requests.
 
 The bot should DM the user with `data.url`. The token expires in 10 minutes and is single-use.
 
@@ -67,6 +82,7 @@ When a Discord user with the `ADMINISTRATOR` server permission runs `/when2play-
 POST /api/auth/admin-token
 Content-Type: application/json
 X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
 
 {
   "discord_id": "123456789012345678",    # 1-30 chars, required
@@ -81,7 +97,7 @@ X-Bot-Token: <BOT_API_KEY>
   "ok": true,
   "data": {
     "token": "a1b2c3d4...",
-    "url": "https://when2play.example.com/auth/a1b2c3d4..."
+    "url": "https://when2play.example.com/auth/a1b2c3d4...?guild=123456789012345678"
   }
 }
 ```
@@ -103,6 +119,7 @@ Periodically (every 10-30 seconds):
 ```bash
 GET /api/gather/pending
 X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
 ```
 
 **Response:**
@@ -138,6 +155,7 @@ For each pending ping, the bot should:
 ```bash
 PATCH /api/gather/:id/delivered
 X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
 ```
 
 **Response:**
@@ -152,6 +170,7 @@ Periodically (every 15 seconds, alongside gather polling):
 ```bash
 GET /api/rally/pending
 X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
 ```
 
 **Response:**
@@ -213,6 +232,7 @@ The bot should format this as a numbered list, e.g.:
 ```bash
 PATCH /api/rally/:id/delivered
 X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
 ```
 
 ### 7. Poll for Tree Share Images
@@ -220,6 +240,7 @@ X-Bot-Token: <BOT_API_KEY>
 ```bash
 GET /api/rally/tree/share/pending
 X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
 ```
 
 Returns pending tree images with `image_data` (base64 PNG). The bot should decode and send as a Discord attachment.
@@ -229,6 +250,7 @@ Returns pending tree images with `image_data` (base64 PNG). The bot should decod
 ```bash
 PATCH /api/rally/tree/share/:id/delivered
 X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
 ```
 
 ## Rally Slash Commands
@@ -297,10 +319,13 @@ import os, requests, asyncio
 
 API_URL = os.environ["WHEN2PLAY_API_URL"]
 BOT_API_KEY = os.environ["BOT_API_KEY"]
-HEADERS = {
-    "Content-Type": "application/json",
-    "X-Bot-Token": BOT_API_KEY,
-}
+
+def guild_headers(guild_id):
+    return {
+        "Content-Type": "application/json",
+        "X-Bot-Token": BOT_API_KEY,
+        "X-Guild-Id": str(guild_id),
+    }
 
 # On /play command
 async def handle_play(interaction):
@@ -310,17 +335,18 @@ async def handle_play(interaction):
         "discord_id": str(interaction.user.id),
         "discord_username": display_name,  # guild nickname preferred
         "avatar_url": str(interaction.user.avatar.url) if interaction.user.avatar else None,
-    }, headers=HEADERS)
+    }, headers=guild_headers(interaction.guild_id))
     data = response.json()["data"]
     await interaction.user.send(f"Click to open when2play: {data['url']}")
 
-# Polling loop
-async def poll_gather():
+# Polling loop (per guild)
+async def poll_gather(guild_id, channel_id):
     while True:
-        response = requests.get(f"{API_URL}/api/gather/pending", headers=HEADERS)
+        headers = guild_headers(guild_id)
+        response = requests.get(f"{API_URL}/api/gather/pending", headers=headers)
         pings = response.json()["data"]
         for ping in pings:
-            channel = bot.get_channel(GAMING_CHANNEL_ID)
+            channel = bot.get_channel(channel_id)
             sender = "Someone" if ping["is_anonymous"] else f"<@{ping['sender_discord_id']}>"
             msg = ping["message"] or "Ready to play!"
             text = f"🔔 **Gather bell!** {sender}: {msg}"
@@ -328,6 +354,6 @@ async def poll_gather():
                 mentions = " ".join(f"<@{uid}>" for uid in ping["target_discord_ids"])
                 text += f" → {mentions}"
             await channel.send(text)
-            requests.patch(f"{API_URL}/api/gather/{ping['id']}/delivered", headers=HEADERS)
+            requests.patch(f"{API_URL}/api/gather/{ping['id']}/delivered", headers=headers)
         await asyncio.sleep(15)
 ```
