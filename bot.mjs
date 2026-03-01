@@ -129,6 +129,9 @@ const commands = [
     new SlashCommandBuilder()
         .setName('setchannel')
         .setDescription('Set this channel as the when2play output channel (requires ADMINISTRATOR)'),
+    new SlashCommandBuilder()
+        .setName('welcome')
+        .setDescription('Post a welcome message introducing when2play (requires ADMINISTRATOR)'),
 ];
 
 async function registerCommands() {
@@ -610,6 +613,7 @@ client.on('interactionCreate', async (interaction) => {
         '`/post gametree` -- Post today\'s gaming tree diagram\n',
         '**Admin**',
         '`/setchannel` -- Set the current channel as the bot output channel',
+        '`/welcome` -- Post a welcome message introducing when2play',
         '`/when2play-admin` -- Get an admin link\n',
         '**Dashboard Features**',
         'The web dashboard at the `/play` link also includes:',
@@ -736,5 +740,34 @@ client.on('interactionCreate', async (interaction) => {
     } catch (err) {
         console.error('Error handling /setchannel:', err);
         await interaction.editReply('Failed to save channel configuration.');
+    }
+});
+
+// --- /welcome handler ---
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'welcome') return;
+    if (!interaction.guildId) {
+        await interaction.reply({ content: 'This command can only be used in a server.', flags: 64 });
+        return;
+    }
+    await interaction.deferReply({ flags: 64 });
+
+    if (!interaction.memberPermissions?.has('Administrator')) {
+        await interaction.editReply('You need the ADMINISTRATOR permission to use this command.');
+        return;
+    }
+
+    try {
+        await interaction.channel.send(
+            '**when2play** -- Your group\'s gaming coordinator.\n\n'
+            + '**Getting started:**\n'
+            + '`/play` -- Register and get your personal login link. Each server has its own profile, so use this once per server.\n'
+            + '`/url` -- Revisit the website anytime (your session is remembered).\n\n'
+            + 'Explore the web dashboard to set your availability, vote on games, and more. Type `/help` for a full list of Discord commands.'
+        );
+        await interaction.editReply('Welcome message posted!');
+    } catch (err) {
+        console.error('Error handling /welcome:', err);
+        await interaction.editReply('Failed to post the welcome message.');
     }
 });
