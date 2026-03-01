@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb } from '../setup';
+import { createTestDb, guildUrl, guildCookie } from '../setup';
 
 describe('User routes', () => {
 	let db: D1Database;
@@ -11,7 +11,7 @@ describe('User routes', () => {
 
 		// Create a user and session
 		const tokenRes = await app.request(
-			'/api/auth/token',
+			guildUrl('/api/auth/token'),
 			{
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -20,7 +20,7 @@ describe('User routes', () => {
 			{ DB: db },
 		);
 		const { data } = await tokenRes.json();
-		const callbackRes = await app.request(`/api/auth/callback/${data.token}`, {}, { DB: db });
+		const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
 		const cookie = callbackRes.headers.get('set-cookie')!;
 		const sessionId = cookie.match(/session_id=([^;]+)/)![1];
 		sessionCookie = `session_id=${sessionId}`;
@@ -28,7 +28,7 @@ describe('User routes', () => {
 
 	describe('GET /api/users/me', () => {
 		it('returns current user', async () => {
-			const res = await app.request('/api/users/me', { headers: { Cookie: sessionCookie } }, { DB: db });
+			const res = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(sessionCookie) } }, { DB: db });
 
 			expect(res.status).toBe(200);
 			const body = await res.json();
@@ -39,7 +39,7 @@ describe('User routes', () => {
 		});
 
 		it('returns 401 without session', async () => {
-			const res = await app.request('/api/users/me', {}, { DB: db });
+			const res = await app.request(guildUrl('/api/users/me'), {}, { DB: db });
 			expect(res.status).toBe(401);
 		});
 	});
@@ -47,10 +47,10 @@ describe('User routes', () => {
 	describe('PATCH /api/users/me', () => {
 		it('updates timezone', async () => {
 			const res = await app.request(
-				'/api/users/me',
+				guildUrl('/api/users/me'),
 				{
 					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json', Cookie: sessionCookie },
+					headers: { 'Content-Type': 'application/json', Cookie: guildCookie(sessionCookie) },
 					body: JSON.stringify({ timezone: 'America/New_York' }),
 				},
 				{ DB: db },
@@ -63,10 +63,10 @@ describe('User routes', () => {
 
 		it('rejects invalid time granularity', async () => {
 			const res = await app.request(
-				'/api/users/me',
+				guildUrl('/api/users/me'),
 				{
 					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json', Cookie: sessionCookie },
+					headers: { 'Content-Type': 'application/json', Cookie: guildCookie(sessionCookie) },
 					body: JSON.stringify({ time_granularity_minutes: 1 }),
 				},
 				{ DB: db },

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb } from '../setup';
+import { createTestDb, guildUrl, guildCookie } from '../setup';
 import { createAuthenticatedUser } from '../helpers';
 
 describe('Availability routes', () => {
@@ -14,10 +14,10 @@ describe('Availability routes', () => {
 
 	it('sets and retrieves availability', async () => {
 		const setRes = await app.request(
-			'/api/availability',
+			guildUrl('/api/availability'),
 			{
 				method: 'PUT',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({
 					date: '2026-03-01',
 					slots: [
@@ -33,7 +33,7 @@ describe('Availability routes', () => {
 		const set = await setRes.json();
 		expect(set.data).toHaveLength(2);
 
-		const getRes = await app.request('/api/availability?date=2026-03-01', { headers: { Cookie: cookie } }, { DB: db });
+		const getRes = await app.request(guildUrl('/api/availability?date=2026-03-01'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
 		const get = await getRes.json();
 		expect(get.data).toHaveLength(2);
 	});
@@ -41,10 +41,10 @@ describe('Availability routes', () => {
 	it('replaces existing slots on same date', async () => {
 		// Set initial
 		await app.request(
-			'/api/availability',
+			guildUrl('/api/availability'),
 			{
 				method: 'PUT',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({ date: '2026-03-01', slots: [{ start_time: '19:00', end_time: '19:15' }] }),
 			},
 			{ DB: db },
@@ -52,16 +52,16 @@ describe('Availability routes', () => {
 
 		// Replace
 		await app.request(
-			'/api/availability',
+			guildUrl('/api/availability'),
 			{
 				method: 'PUT',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({ date: '2026-03-01', slots: [{ start_time: '20:00', end_time: '20:15' }] }),
 			},
 			{ DB: db },
 		);
 
-		const getRes = await app.request('/api/availability?date=2026-03-01', { headers: { Cookie: cookie } }, { DB: db });
+		const getRes = await app.request(guildUrl('/api/availability?date=2026-03-01'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
 		const get = await getRes.json();
 		expect(get.data).toHaveLength(1);
 		expect(get.data[0].start_time).toBe('20:00');
@@ -69,23 +69,23 @@ describe('Availability routes', () => {
 
 	it('clears availability', async () => {
 		await app.request(
-			'/api/availability',
+			guildUrl('/api/availability'),
 			{
 				method: 'PUT',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({ date: '2026-03-01', slots: [{ start_time: '19:00', end_time: '19:15' }] }),
 			},
 			{ DB: db },
 		);
 
 		const deleteRes = await app.request(
-			'/api/availability?date=2026-03-01',
-			{ method: 'DELETE', headers: { Cookie: cookie } },
+			guildUrl('/api/availability?date=2026-03-01'),
+			{ method: 'DELETE', headers: { Cookie: guildCookie(cookie) } },
 			{ DB: db },
 		);
 		expect(deleteRes.status).toBe(200);
 
-		const getRes = await app.request('/api/availability?date=2026-03-01', { headers: { Cookie: cookie } }, { DB: db });
+		const getRes = await app.request(guildUrl('/api/availability?date=2026-03-01'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
 		const get = await getRes.json();
 		expect(get.data).toHaveLength(0);
 	});

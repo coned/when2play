@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb } from '../setup';
+import { createTestDb, guildUrl, guildCookie } from '../setup';
 import { createAuthenticatedUser } from '../helpers';
 
 describe('Shame routes', () => {
@@ -18,10 +18,10 @@ describe('Shame routes', () => {
 
 	it('shames another user', async () => {
 		const res = await app.request(
-			`/api/shame/${userId2}`,
+			guildUrl(`/api/shame/${userId2}`),
 			{
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie1 },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({ reason: 'No-showed last night' }),
 			},
 			{ DB: db },
@@ -34,10 +34,10 @@ describe('Shame routes', () => {
 
 	it('allows self-shaming', async () => {
 		const res = await app.request(
-			`/api/shame/${userId1}`,
+			guildUrl(`/api/shame/${userId1}`),
 			{
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie1 },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({ reason: 'I deserved it' }),
 			},
 			{ DB: db },
@@ -50,16 +50,16 @@ describe('Shame routes', () => {
 
 	it('shows leaderboard', async () => {
 		await app.request(
-			`/api/shame/${userId2}`,
+			guildUrl(`/api/shame/${userId2}`),
 			{
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie1 },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({}),
 			},
 			{ DB: db },
 		);
 
-		const res = await app.request('/api/shame/leaderboard', { headers: { Cookie: cookie1 } }, { DB: db });
+		const res = await app.request(guildUrl('/api/shame/leaderboard'), { headers: { Cookie: guildCookie(cookie1) } }, { DB: db });
 		const body = await res.json();
 		expect(body.data).toHaveLength(1);
 		expect(body.data[0].shame_count).toBe(1);

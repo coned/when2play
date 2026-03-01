@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb } from '../setup';
+import { createTestDb, guildUrl, guildCookie } from '../setup';
 import { createAuthenticatedUser } from '../helpers';
 
 describe('Gather routes', () => {
@@ -15,10 +15,10 @@ describe('Gather routes', () => {
 
 	it('rings the gather bell', async () => {
 		const res = await app.request(
-			'/api/gather',
+			guildUrl('/api/gather'),
 			{
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({ message: "Let's play!" }),
 			},
 			{ DB: db },
@@ -32,35 +32,35 @@ describe('Gather routes', () => {
 
 	it('returns pending pings', async () => {
 		await app.request(
-			'/api/gather',
+			guildUrl('/api/gather'),
 			{
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({}),
 			},
 			{ DB: db },
 		);
 
-		const pendingRes = await app.request('/api/gather/pending', { headers: { Cookie: cookie } }, { DB: db });
+		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
 		const pending = await pendingRes.json();
 		expect(pending.data).toHaveLength(1);
 	});
 
 	it('marks ping as delivered', async () => {
 		const createRes = await app.request(
-			'/api/gather',
+			guildUrl('/api/gather'),
 			{
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Cookie: cookie },
+				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({}),
 			},
 			{ DB: db },
 		);
 		const { data: ping } = await createRes.json();
 
-		await app.request(`/api/gather/${ping.id}/delivered`, { method: 'PATCH', headers: { Cookie: cookie } }, { DB: db });
+		await app.request(guildUrl(`/api/gather/${ping.id}/delivered`), { method: 'PATCH', headers: { Cookie: guildCookie(cookie) } }, { DB: db });
 
-		const pendingRes = await app.request('/api/gather/pending', { headers: { Cookie: cookie } }, { DB: db });
+		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
 		const pending = await pendingRes.json();
 		expect(pending.data).toHaveLength(0);
 	});
@@ -68,16 +68,16 @@ describe('Gather routes', () => {
 	it('enforces per-ping cooldown', async () => {
 		// First ping succeeds
 		const res1 = await app.request(
-			'/api/gather',
-			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({}) },
+			guildUrl('/api/gather'),
+			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) }, body: JSON.stringify({}) },
 			{ DB: db },
 		);
 		expect(res1.status).toBe(201);
 
 		// Immediate second ping is blocked by 10s cooldown
 		const res2 = await app.request(
-			'/api/gather',
-			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({}) },
+			guildUrl('/api/gather'),
+			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) }, body: JSON.stringify({}) },
 			{ DB: db },
 		);
 		expect(res2.status).toBe(429);
@@ -99,8 +99,8 @@ describe('Gather routes', () => {
 
 		// 31st ping should be blocked by hourly limit
 		const res = await app.request(
-			'/api/gather',
-			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({}) },
+			guildUrl('/api/gather'),
+			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) }, body: JSON.stringify({}) },
 			{ DB: db },
 		);
 		expect(res.status).toBe(429);

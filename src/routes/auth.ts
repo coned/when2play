@@ -41,7 +41,8 @@ auth.post('/token', requireBotAuth, async (c) => {
 	await createAuthToken(c.env.DB, user.id, token);
 
 	const url = new URL(c.req.url);
-	const authUrl = `${url.protocol}//${url.host}/auth/${token}`;
+	const guildId = c.req.header('X-Guild-Id');
+	const authUrl = `${url.protocol}//${url.host}/auth/${token}${guildId ? `?guild=${guildId}` : ''}`;
 
 	return c.json({ ok: true, data: { token, url: authUrl } }, 201);
 });
@@ -61,7 +62,8 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 	await createAuthToken(c.env.DB, user.id, token, true);
 
 	const url = new URL(c.req.url);
-	const authUrl = `${url.protocol}//${url.host}/auth/${token}`;
+	const guildId = c.req.header('X-Guild-Id');
+	const authUrl = `${url.protocol}//${url.host}/auth/${token}${guildId ? `?guild=${guildId}` : ''}`;
 
 	return c.json({ ok: true, data: { token, url: authUrl } }, 201);
 });
@@ -94,6 +96,10 @@ auth.get('/callback/:token', async (c) => {
 		secure: isProduction,
 		...(isAdmin ? {} : { maxAge: 7 * 24 * 60 * 60 }),
 	};
+	const guildId = c.req.query('guild');
+	if (guildId) {
+		setCookie(c, 'guild_id', guildId, cookieOptions);
+	}
 	setCookie(c, 'session_id', sessionId, cookieOptions);
 
 	return c.redirect('/');
@@ -104,6 +110,7 @@ auth.post('/logout', requireAuth, async (c) => {
 	const sessionId = c.get('sessionId');
 	await deleteSession(c.env.DB, sessionId);
 	deleteCookie(c, 'session_id', { path: '/' });
+	deleteCookie(c, 'guild_id', { path: '/' });
 	return c.json({ ok: true, data: null });
 });
 

@@ -2,6 +2,19 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
+export const TEST_GUILD_ID = '12345678901234567';
+
+/** Append ?guild=TEST_GUILD_ID to a path (handles existing query strings). */
+export function guildUrl(urlPath: string): string {
+	const sep = urlPath.includes('?') ? '&' : '?';
+	return `${urlPath}${sep}guild=${TEST_GUILD_ID}`;
+}
+
+/** Append guild_id cookie to an existing cookie string. */
+export function guildCookie(cookie: string): string {
+	return `${cookie}; guild_id=${TEST_GUILD_ID}`;
+}
+
 interface D1Result {
 	results: unknown[];
 	success: boolean;

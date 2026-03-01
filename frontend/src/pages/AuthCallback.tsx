@@ -14,7 +14,10 @@ export function AuthCallback({ token }: AuthCallbackProps) {
 		}
 
 		// Redirect to the backend callback which sets the session cookie
-		window.location.href = `/api/auth/callback/${token}`;
+		const params = new URLSearchParams(window.location.search);
+		const guild = params.get('guild');
+		const qs = guild ? `?guild=${guild}` : '';
+		window.location.href = `/api/auth/callback/${token}${qs}`;
 	}, [token]);
 
 	if (error) {
