@@ -1,1 +1,0 @@
-ALTER TABLE shame_votes ADD COLUMN is_anonymous INTEGER NOT NULL DEFAULT 0;
