@@ -55,7 +55,7 @@ The bot needs to know which channel to post messages to. You have two options:
 
 **Option A (recommended): `/setchannel` command**
 
-After the bot is running, go to the desired channel in Discord and run `/setchannel`. This requires ADMINISTRATOR permission. The setting is saved to `guild-config.json` and persists across restarts.
+After the bot is running, go to the desired channel in Discord and run `/setchannel`. This requires ADMINISTRATOR permission. The setting is saved under the guild's key in `guild-config.json` and persists across restarts.
 
 **Option B: `GAMING_CHANNEL_ID` env var**
 
@@ -91,6 +91,7 @@ GAMING_CHANNEL_ID=123456789012345678
 | `WHEN2PLAY_API_URL` | Yes | Base URL of the deployed when2play Worker |
 | `BOT_API_KEY` | Yes (production) | Shared secret -- must match `BOT_API_KEY` set via `npx wrangler secret put BOT_API_KEY` in the main repo |
 | `GAMING_CHANNEL_ID` | No | Fallback channel ID. Optional if using `/setchannel` instead |
+| `GUILD_ID` | No | If set, registers slash commands guild-wide (instant) instead of globally (up to 1h). Also used for auto-migrating flat `guild-config.json` to per-guild format on startup |
 
 > `BOT_API_KEY` can be omitted for local development against a Worker that also has no `BOT_API_KEY` set.
 
@@ -201,18 +202,28 @@ The Worker returned an error from `POST /api/auth/token`. Common causes:
 ```
 Discord Gateway (WebSocket)
         ↕
-  bot.mjs (this service)
-        ↕  HTTPS + X-Bot-Token header + session cookies
+  bot.mjs (single instance, multi-guild)
+        ↕  HTTPS + X-Bot-Token + X-Guild-Id headers
   when2play Cloudflare Worker
-        ↕
-  Cloudflare D1 (SQLite)
+        ↕  guild middleware routes to per-guild DB
+  Cloudflare D1 (one database per guild)
 ```
 
-**Polling loops** (all run in parallel every 15s with exponential backoff):
-1. Gather pings: `GET /api/gather/pending` → format → send → `PATCH /api/gather/:id/delivered`
-2. Rally actions: `GET /api/rally/pending` → format by action_type → send → `PATCH /api/rally/:id/delivered`
-3. Tree shares: `GET /api/rally/tree/share/pending` → decode base64 → send as attachment → `PATCH /api/rally/tree/share/:id/delivered`
+**Multi-guild support:** The bot sends `X-Guild-Id` with every API request. The Worker's guild middleware routes each request to the correct guild's D1 database. See `docs/MULTI_GUILD.md` for the full design.
 
-**Rally commands** authenticate users via the auth token flow (`POST /api/auth/token` → `GET /api/auth/callback/:token`) to get a session, then call rally API endpoints on behalf of the user.
+**Polling loops** (per-guild, all run in parallel every 15s with per-guild exponential backoff):
+1. Gather pings: `GET /api/gather/pending` -> format -> send -> `PATCH /api/gather/:id/delivered`
+2. Rally actions: `GET /api/rally/pending` -> format by action_type -> send -> `PATCH /api/rally/:id/delivered`
+3. Tree shares: `GET /api/rally/tree/share/pending` -> decode base64 -> send as attachment -> `PATCH /api/rally/tree/share/:id/delivered`
+
+**Rally commands** authenticate users via the auth token flow (`POST /api/auth/token` -> `GET /api/auth/callback/:token`) to get a session, then call rally API endpoints on behalf of the user.
 
 For an alternative architecture with no separate bot process, see `docs/CLOUDFLARE_NATIVE_BOT.md` in the main when2play repo.
+
+---
+
+## Multi-Guild Support
+
+The bot supports multiple Discord guilds with a single instance. Each guild gets its own isolated D1 database on the Worker side. See `docs/MULTI_GUILD.md` for the full architecture design.
+
+**For existing users:** If you have a flat `guild-config.json` (with a top-level `channelId`), the bot auto-migrates it to the per-guild format on startup, provided the `GUILD_ID` env var is set. No manual migration needed.

@@ -1,6 +1,6 @@
 # Multi-Guild Architecture Design
 
-> Status: Design only -- not yet implemented.
+> Status: Implemented.
 
 This document describes how to evolve when2play from single-guild to multi-guild support using a **single Worker with multiple D1 databases**. Each guild gets its own D1 database for full data isolation, while the bot, Worker, API URL, and API key remain shared.
 
