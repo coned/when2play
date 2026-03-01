@@ -40,7 +40,6 @@ export async function createAuthToken(db: D1Database, userId: string, token: str
 
 export async function consumeAuthToken(db: D1Database, token: string): Promise<AuthTokenRow | null> {
 	const row = await db.prepare('SELECT * FROM auth_tokens WHERE token = ? AND used = 0').bind(token).first<AuthTokenRow>();
-
 	if (!row) return null;
 	if (new Date(row.expires_at) < new Date()) {
 		await db.prepare('DELETE FROM auth_tokens WHERE id = ?').bind(row.id).run();

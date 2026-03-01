@@ -7,6 +7,7 @@ import { upsertUser } from '../db/queries/users';
 import { createAuthToken, consumeAuthToken, createSession, deleteSession } from '../db/queries/auth';
 import { requireAuth } from '../middleware/auth';
 import { requireBotAuth } from '../middleware/bot-auth';
+import { updateSettings } from '../db/queries/settings';
 import type { UserRow } from '../db/queries/users';
 
 type AuthEnv = {
@@ -22,6 +23,7 @@ const createTokenSchema = z.object({
 	discord_id: z.string().min(1).max(30),
 	discord_username: z.string().min(1).max(50),
 	avatar_url: z.string().max(500).optional(),
+	guild_name: z.string().max(100).optional(),
 });
 
 const auth = new Hono<AuthEnv>();
@@ -35,10 +37,14 @@ auth.post('/token', requireBotAuth, async (c) => {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Invalid request body' } }, 400);
 	}
 
-	const { discord_id, discord_username, avatar_url } = parsed.data;
+	const { discord_id, discord_username, avatar_url, guild_name } = parsed.data;
 	const user = await upsertUser(c.env.DB, discord_id, discord_username, avatar_url);
 	const token = generateToken();
 	await createAuthToken(c.env.DB, user.id, token);
+
+	if (guild_name) {
+		await updateSettings(c.env.DB, { guild_name });
+	}
 
 	const url = new URL(c.req.url);
 	const guildId = c.req.header('X-Guild-Id');
@@ -61,6 +67,10 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 	const token = generateToken();
 	await createAuthToken(c.env.DB, user.id, token, true);
 
+	if (parsed.data.guild_name) {
+		await updateSettings(c.env.DB, { guild_name: parsed.data.guild_name });
+	}
+
 	const url = new URL(c.req.url);
 	const guildId = c.req.header('X-Guild-Id');
 	const authUrl = `${url.protocol}//${url.host}/auth/${token}${guildId ? `?guild=${guildId}` : ''}`;
@@ -70,11 +80,16 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 
 // GET /api/auth/callback/:token — Exchange one-time token for session cookie
 auth.get('/callback/:token', async (c) => {
+	c.header('Cache-Control', 'no-store');
+
 	const token = c.req.param('token');
 	const authToken = await consumeAuthToken(c.env.DB, token);
 
 	if (!authToken) {
-		return c.json({ ok: false, error: { code: 'INVALID_TOKEN', message: 'Token is invalid, expired, or already used' } }, 401);
+		return c.json({
+			ok: false,
+			error: { code: 'INVALID_TOKEN', message: 'Token is invalid, expired, or already used' },
+		}, 401);
 	}
 
 	const isAdmin = Boolean(authToken.is_admin);

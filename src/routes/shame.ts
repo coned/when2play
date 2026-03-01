@@ -50,7 +50,7 @@ shame.post('/:targetId', async (c) => {
 		return c.json({ ok: true, data: vote }, 201);
 	} catch (err: any) {
 		if (err.message === 'Already shamed this user today') {
-			return c.json({ ok: false, error: { code: 'RATE_LIMITED', message: err.message } }, 429);
+			return c.json({ ok: false, error: { code: 'RATE_LIMITED', message: 'Already shamed this user today' } }, 429);
 		}
 		throw err;
 	}
