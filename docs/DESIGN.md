@@ -43,7 +43,7 @@ when2play/
 ├── migrations/     # D1 SQL migrations (0000-0016)
 ├── shared/         # Shared TypeScript types (npm workspace)
 ├── src/            # Backend (Hono API)
-│   ├── middleware/  # error, cors, auth, bot-auth, security-headers, fk
+│   ├── middleware/  # error, cors, auth, bot-auth, security-headers, fk, guild
 │   ├── routes/     # auth, users, games, votes, steam, availability, gather, shame, settings, rally
 │   ├── db/queries/ # Database query functions
 │   └── lib/        # crypto, time, steam utilities
@@ -242,7 +242,7 @@ See [API.md](API.md) for the complete reference with request/response examples.
 
 **Endpoint groups:** Auth, Users, Games, Votes, Steam, Availability, Gather, Shame, Rally, Settings, Health.
 
-All endpoints return `{ ok, data }` or `{ ok: false, error: { code, message } }`. Error messages are redacted in production.
+All endpoints return `{ ok, data }` or `{ ok: false, error: { code, message } }`. Error messages are redacted by default (set `VERBOSE_ERRORS=1` to expose).
 
 ---
 
@@ -354,7 +354,7 @@ See [SETUP.md Part 4](SETUP.md#part-4-security-reference) for the full security 
 
 ### Middleware Stack
 
-1. **Error handler** -- catches unhandled errors, redacts messages in production
+1. **Error handler** -- catches unhandled errors, redacts messages by default (enable `VERBOSE_ERRORS=1` for full details)
 2. **CORS** -- dynamic origin (same-origin in production, localhost in dev)
 3. **Security headers** -- `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
 4. **Foreign keys** -- enables `PRAGMA foreign_keys = ON` per API request
@@ -372,6 +372,7 @@ Bot-facing endpoints (all require `X-Bot-Token` header):
 - `GET /api/gather/pending` + `PATCH /api/gather/:id/delivered` -- deliver gather pings
 - `GET /api/rally/pending` + `PATCH /api/rally/:id/delivered` -- deliver rally actions
 - `GET /api/rally/tree/share/pending` + `PATCH /api/rally/tree/share/:id/delivered` -- deliver tree images
+- `GET /api/settings/bot` + `PATCH /api/settings/bot` -- read/write channel config
 
 ---
 
@@ -383,7 +384,7 @@ Bot-facing endpoints (all require `X-Bot-Token` header):
 - **Cookie config**: `session_id=...; HttpOnly; SameSite=Strict; Path=/`. `Secure` flag only in production. Regular sessions include `Max-Age=604800` (7 days). Admin sessions omit `Max-Age` (browser-session) and DB row expires after 1 hour.
 - **CORS**: Production = same-origin. Dev = `localhost:5173` + `localhost:8787`.
 - **Bot auth**: `X-Bot-Token` header validated against `BOT_API_KEY` secret. Skipped when secret is unset (local dev).
-- **Error redaction**: Production returns generic error messages. Dev returns full error details.
+- **Error redaction**: Generic error messages by default. Set `VERBOSE_ERRORS=1` (env var or wrangler secret) to expose full error details for debugging.
 - **Theme persistence**: `localStorage('w2p-theme')` (color scheme) and `localStorage('w2p-mode')` (light/dark) with `initTheme()` before render to prevent flash.
 - **Responsive breakpoint**: 768px. Below = BottomNav + mobile padding. Above = Sidebar + desktop layout.
 - **Steam search**: Fetches `store.steampowered.com/search/suggest` HTML, parses with regex for app IDs, names, and images.

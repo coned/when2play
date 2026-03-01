@@ -49,7 +49,8 @@ X-Guild-Id: 123456789012345678
 {
   "discord_id": "123456789012345678",    # 1-30 chars, required
   "discord_username": "GamerDave",       # 1-50 chars, required (prefer guild nickname)
-  "avatar_url": "https://cdn.discordapp.com/avatars/123/abc.png"  # max 500 chars, optional
+  "avatar_url": "https://cdn.discordapp.com/avatars/123/abc.png",  # max 500 chars, optional
+  "guild_name": "My Server"             # max 100 chars, optional (saved to settings for display)
 }
 ```
 

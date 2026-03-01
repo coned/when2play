@@ -12,7 +12,7 @@ All responses follow the format:
 { "ok": false, "error": { "code": "ERROR_CODE", "message": "Description" } }
 ```
 
-Error messages are redacted in production (HTTPS) for unhandled exceptions.
+Unhandled error messages are redacted by default. Set `VERBOSE_ERRORS=1` (env var / wrangler secret) to include the original error message in the response.
 
 ---
 
@@ -40,7 +40,8 @@ Creates a one-time auth token for a Discord user. Called by the Discord bot.
 {
   "discord_id": "123456789",        // 1-30 chars, required
   "discord_username": "GamerDave",  // 1-50 chars, required
-  "avatar_url": "https://cdn.discordapp.com/..."  // max 500 chars, optional
+  "avatar_url": "https://cdn.discordapp.com/...",  // max 500 chars, optional
+  "guild_name": "My Server"        // max 100 chars, optional (saved to settings)
 }
 ```
 
@@ -325,7 +326,7 @@ Withdraws today's shame vote against a user.
 Returns an array of target user IDs the current user has shamed today.
 
 ### `GET /api/shame/leaderboard`
-Returns the shame leaderboard sorted by all-time shame count. Each entry includes the latest 5 reasons and today's voters.
+Returns the shame leaderboard sorted by weekly shame count. Votes older than 7 days are automatically cleaned up. Each entry includes the latest 3 reasons and today's voters.
 
 **Response:**
 ```json
@@ -335,9 +336,7 @@ Returns the shame leaderboard sorted by all-time shame count. Each entry include
     {
       "user_id": "uuid",
       "discord_username": "GamerDave",
-      "display_name": "Dave",
       "avatar_url": "https://...",
-      "shame_count": 5,
       "shame_count_today": 1,
       "shame_count_week": 3,
       "recent_reasons": [
@@ -476,13 +475,17 @@ Marks a tree share as delivered.
 
 ## Settings
 
-All endpoints require session cookie.
-
 ### `GET /api/settings`
-Returns all settings as a key-value map.
+Returns all settings as a key-value map. Requires session cookie.
 
 ### `PATCH /api/settings`
-Updates settings. **Admin only** — session must have been created via `POST /api/auth/admin-token` (Discord-gated: requires `ADMINISTRATOR` guild permission).
+Updates settings. Requires session cookie. **Admin only** -- session must have been created via `POST /api/auth/admin-token` (Discord-gated: requires `ADMINISTRATOR` guild permission).
+
+### `GET /api/settings/bot`
+Returns all settings. **Auth:** `X-Bot-Token` header. Used by the bot to fetch `channel_id` on startup.
+
+### `PATCH /api/settings/bot`
+Updates settings. **Auth:** `X-Bot-Token` header. Used by the bot's `/setchannel` command to persist `channel_id` in D1.
 
 **Body (all fields optional):**
 ```json
