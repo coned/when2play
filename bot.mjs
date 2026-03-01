@@ -1,38 +1,45 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } from 'discord.js';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ERROR_LOG_PATH = join(__dirname, 'errors.log');
-const CONFIG_PATH = join(__dirname, 'guild-config.json');
 
-let cachedConfig = {};
-
-function loadConfig() {
-    try {
-        cachedConfig = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
-        // Auto-migrate from flat Phase 1 format to Phase 2 per-guild format
-        if (cachedConfig.channelId && !cachedConfig.guilds) {
-            if (GUILD_ID) {
-                cachedConfig = { guilds: { [GUILD_ID]: { channelId: cachedConfig.channelId } } };
-                saveConfig(cachedConfig);
-                console.log(`Config auto-migrated to multi-guild format (guild: ${GUILD_ID})`);
-            }
-        }
-    } catch {
-        cachedConfig = { guilds: {} };
-    }
-    return cachedConfig;
-}
-
-function saveConfig(data) {
-    cachedConfig = data;
-    writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2) + '\n');
-}
+// In-memory guild config cache, populated from D1 on startup
+let cachedConfig = { guilds: {} };
 
 function getChannelId(guildId) {
     return cachedConfig.guilds?.[guildId]?.channelId || GAMING_CHANNEL_ID || null;
+}
+
+/** Fetch channel_id setting from the API for a given guild and update cache. */
+async function fetchGuildSettings(guildId) {
+    try {
+        const res = await fetch(`${API_URL}/api/settings/bot`, {
+            headers: buildGuildHeaders(guildId),
+        });
+        const json = await safeJson(res);
+        if (json.ok && json.data.channel_id) {
+            cachedConfig.guilds ??= {};
+            cachedConfig.guilds[guildId] = {
+                ...(cachedConfig.guilds[guildId] || {}),
+                channelId: json.data.channel_id,
+            };
+        }
+    } catch (err) {
+        logError(`fetchGuildSettings(${guildId})`, err);
+    }
+}
+
+/** Save channel_id to D1 via the API. */
+async function saveChannelToApi(guildId, channelId) {
+    const res = await fetch(`${API_URL}/api/settings/bot`, {
+        method: 'PATCH',
+        headers: buildGuildHeaders(guildId),
+        body: JSON.stringify({ channel_id: channelId }),
+    });
+    return safeJson(res);
 }
 
 async function safeJson(res) {
@@ -54,12 +61,9 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const API_URL = process.env.WHEN2PLAY_API_URL;
 const BOT_API_KEY = process.env.BOT_API_KEY;
 const GAMING_CHANNEL_ID = process.env.GAMING_CHANNEL_ID;
-const GUILD_ID = process.env.GUILD_ID;
 const BASE_POLL_MS = 15_000;
 const MAX_POLL_MS = 2 * 60 * 1000;
 const guildErrors = {};
-
-loadConfig();
 
 if (!DISCORD_TOKEN || !API_URL) {
     console.error('Missing required env vars (DISCORD_TOKEN, WHEN2PLAY_API_URL)');
@@ -130,11 +134,15 @@ const commands = [
 async function registerCommands() {
     const rest = new REST().setToken(DISCORD_TOKEN);
     const body = commands.map(c => c.toJSON());
-    if (GUILD_ID) {
-        await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body });
-        // Clear stale global commands so old commands like /judge don't linger
+    // Register guild-scoped commands (instant) for every guild the bot is in
+    const guilds = client.guilds.cache;
+    if (guilds.size > 0) {
+        await Promise.all(guilds.map(g =>
+            rest.put(Routes.applicationGuildCommands(client.user.id, g.id), { body })
+        ));
+        // Clear stale global commands so old commands don't linger
         await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
-        console.log(`Slash commands registered (guild: ${GUILD_ID}).`);
+        console.log(`Slash commands registered (${guilds.size} guild(s): ${guilds.map(g => g.id).join(', ')}).`);
     } else {
         await rest.put(Routes.applicationCommands(client.user.id), { body });
         console.log('Slash commands registered (global -- may take up to 1h to propagate).');
@@ -158,6 +166,7 @@ client.on('interactionCreate', async (interaction) => {
                 discord_id: interaction.user.id,
                 discord_username: interaction.member?.displayName ?? interaction.user.displayName,
                 avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
+                guild_name: interaction.guild?.name,
             }),
         });
         const json = await safeJson(res);
@@ -188,6 +197,7 @@ async function ensureUser(discordUser, guildMember, guildId) {
             discord_id: discordUser.id,
             discord_username: guildMember?.displayName ?? discordUser.displayName ?? discordUser.username,
             avatar_url: discordUser.displayAvatarURL?.({ size: 128 }) ?? null,
+            guild_name: guildId ? client.guilds.cache.get(guildId)?.name : undefined,
         }),
     });
     const json = await safeJson(res);
@@ -206,6 +216,7 @@ async function apiCallWithSession(sessionId, path, options = {}, guildId) {
         headers: {
             'Content-Type': 'application/json',
             'Cookie': `session_id=${sessionId}`,
+            ...(BOT_API_KEY ? { 'X-Bot-Token': BOT_API_KEY } : {}),
             ...(guildId ? { 'X-Guild-Id': guildId } : {}),
             ...(options.headers || {}),
         },
@@ -622,8 +633,11 @@ function scheduleNextPoll() {
         ? BASE_POLL_MS
         : Math.min(BASE_POLL_MS * Math.pow(2, maxErrors - 1), MAX_POLL_MS);
     setTimeout(async () => {
-        const guilds = Object.entries(cachedConfig.guilds || {});
-        await Promise.all(guilds.map(async ([guildId, config]) => {
+        // Poll all guilds the bot is in (uses D1-cached config + env fallback)
+        const guilds = client.guilds.cache;
+        await Promise.all(guilds.map(async (guild) => {
+            const guildId = guild.id;
+            const config = cachedConfig.guilds?.[guildId] || {};
             try {
                 await Promise.all([
                     pollGatherPings(guildId, config),
@@ -644,9 +658,14 @@ function scheduleNextPoll() {
 client.once('clientReady', async () => {
     console.log(`Logged in as ${client.user.tag}`);
     await registerCommands();
+
+    // Populate guild config from D1 for each guild the bot is in
+    const guilds = client.guilds.cache;
+    await Promise.all(guilds.map(g => fetchGuildSettings(g.id)));
+    console.log(`Loaded settings for ${guilds.size} guild(s) from D1`);
+
     scheduleNextPoll();
-    const guildCount = Object.keys(cachedConfig.guilds || {}).length;
-    console.log(`Polling ${guildCount} guild(s) every ${BASE_POLL_MS / 1000}s (with exponential backoff on errors)`);
+    console.log(`Polling ${guilds.size} guild(s) every ${BASE_POLL_MS / 1000}s (with exponential backoff on errors)`);
 });
 
 client.login(DISCORD_TOKEN);
@@ -675,6 +694,7 @@ client.on('interactionCreate', async (interaction) => {
                 discord_id: interaction.user.id,
                 discord_username: interaction.member?.displayName ?? interaction.user.displayName,
                 avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
+                guild_name: interaction.guild?.name,
             }),
         });
         const json = await safeJson(res);
@@ -711,12 +731,12 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     try {
+        await saveChannelToApi(interaction.guildId, interaction.channelId);
         cachedConfig.guilds ??= {};
         cachedConfig.guilds[interaction.guildId] = {
             ...(cachedConfig.guilds[interaction.guildId] || {}),
             channelId: interaction.channelId,
         };
-        saveConfig(cachedConfig);
         await interaction.editReply(`Messages will now be sent to <#${interaction.channelId}>.`);
     } catch (err) {
         console.error('Error handling /setchannel:', err);
