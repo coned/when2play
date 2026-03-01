@@ -93,6 +93,7 @@ Add an index signature so the Worker can access guild bindings dynamically:
 export interface Bindings {
 	DB: D1Database;
 	BOT_API_KEY?: string;
+	VERBOSE_ERRORS?: string;
 	[key: `DB_${string}`]: D1Database;
 }
 ```
@@ -107,6 +108,11 @@ import { getCookie } from 'hono/cookie';
 import type { Bindings } from '../env';
 
 export const guildDb = createMiddleware<{ Bindings: Bindings }>(async (c, next) => {
+	// Defensive copy: Workers share the env object across requests in the
+	// same isolate. Without this, setting c.env.DB for one guild pollutes
+	// subsequent requests for other guilds.
+	c.env = { ...c.env } as Bindings;
+
 	// Only trust X-Guild-Id from bot-authenticated requests.
 	// Browsers can set arbitrary headers via fetch(), so unauthenticated
 	// requests must use the guild_id cookie or guild query param instead.
@@ -127,21 +133,14 @@ export const guildDb = createMiddleware<{ Bindings: Bindings }>(async (c, next) 
 		return c.json({ ok: false, error: { code: 'INVALID_GUILD', message: 'Invalid guild ID format' } }, 400);
 	}
 
-	const bindingKey = `DB_${guildId}` as const;
-	const db = c.env[bindingKey];
-
-	if (!db) {
-		// Fall back to default DB if no guild-specific binding exists.
-		// This supports the initial single-guild setup where only `DB` is configured.
-		// Once all guilds have named bindings, remove this fallback for defense in depth.
-		if (c.env.DB) {
-			await next();
-			return;
-		}
+	const db = c.env[`DB_${guildId}`];
+	if (db) {
+		c.env.DB = db;
+	} else if (!c.env.DB) {
 		return c.json({ ok: false, error: { code: 'UNKNOWN_GUILD', message: 'No DB binding for guild' } }, 404);
 	}
+	// If no guild-specific binding but c.env.DB exists, fall through (default DB)
 
-	c.env.DB = db;
 	await next();
 });
 ```
@@ -228,46 +227,33 @@ This avoids a chicken-and-egg problem: you can't look up a session to find the g
 
 ## 5. Bot-side changes
 
-### Config file evolution
+### Guild settings (D1-backed)
 
-`guild-config.json` evolves from Phase 1's flat format to a per-guild structure:
-
-```json
-// Phase 1 (current)
-{ "channelId": "222222222222222222" }
-
-// Phase 2 (multi-guild)
-{
-  "guilds": {
-    "111111111111111111": {
-      "channelId": "222222222222222222"
-    },
-    "333333333333333333": {
-      "channelId": "444444444444444444"
-    }
-  }
-}
-```
-
-Note the difference from the old design: no `apiUrl` or `botApiKey` per guild. There is only one Worker, one URL, one key.
-
-### Auto-migration from flat format
-
-On startup, if the config has the old flat shape, migrate automatically:
+Channel configuration is stored in D1 via the `/api/settings/bot` endpoint, not in a local file. On startup, the bot fetches settings for each guild it has joined:
 
 ```javascript
-function loadConfig() {
-	const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-	if (raw.channelId && !raw.guilds) {
-		// Flat Phase 1 format -- migrate to Phase 2
-		const guildId = GUILD_ID; // from env, identifies the original guild
-		const migrated = { guilds: { [guildId]: { channelId: raw.channelId } } };
-		fs.writeFileSync(CONFIG_PATH, JSON.stringify(migrated, null, 2));
-		return migrated;
-	}
-	return raw;
+async function fetchGuildSettings(guildId) {
+    const res = await fetch(`${API_URL}/api/settings/bot`, {
+        headers: buildGuildHeaders(guildId),
+    });
+    const json = await safeJson(res);
+    return json?.ok ? json.data : {};
 }
 ```
+
+The in-memory `guildSettings` map caches these for the lifetime of the process. `/setchannel` updates both the cache and D1:
+
+```javascript
+async function saveChannelToApi(guildId, channelId) {
+    await fetch(`${API_URL}/api/settings/bot`, {
+        method: 'PATCH',
+        headers: buildGuildHeaders(guildId),
+        body: JSON.stringify({ channel_id: channelId }),
+    });
+}
+```
+
+This means channel configuration survives bot restarts and redeploys without any local file management.
 
 ### Guild headers helper
 
@@ -307,7 +293,8 @@ async function apiCallWithSession(sessionId, path, options = {}, guildId) {
 		headers: {
 			'Content-Type': 'application/json',
 			'Cookie': `session_id=${sessionId}`,
-			'X-Guild-Id': guildId,
+			...(BOT_API_KEY ? { 'X-Bot-Token': BOT_API_KEY } : {}),
+			...(guildId ? { 'X-Guild-Id': guildId } : {}),
 			...(options.headers || {}),
 		},
 	});
@@ -317,15 +304,14 @@ async function apiCallWithSession(sessionId, path, options = {}, guildId) {
 
 ### `/setchannel` update
 
-Writes under the guild key instead of the top level:
+Persists the channel ID to D1 and updates the in-memory cache:
 
 ```javascript
-cachedConfig.guilds ??= {};
-cachedConfig.guilds[interaction.guildId] = {
-	...(cachedConfig.guilds[interaction.guildId] || {}),
-	channelId: interaction.channelId,
-};
-saveConfig(cachedConfig);
+guildSettings.set(interaction.guildId, {
+	...(guildSettings.get(interaction.guildId) || {}),
+	channel_id: interaction.channelId,
+});
+await saveChannelToApi(interaction.guildId, interaction.channelId);
 ```
 
 ### Polling loop
@@ -337,8 +323,10 @@ const guildErrors = {}; // { guildId: consecutiveErrorCount }
 
 function scheduleNextPoll() {
 	setTimeout(async () => {
-		const guilds = Object.entries(cachedConfig.guilds || {});
-		await Promise.all(guilds.map(async ([guildId, config]) => {
+		const guilds = [...client.guilds.cache.values()];
+		await Promise.all(guilds.map(async (guild) => {
+			const guildId = guild.id;
+			const config = guildSettings.get(guildId) || {};
 			try {
 				await Promise.all([
 					pollGatherPings(guildId, config),
@@ -388,7 +376,7 @@ Steps to onboard a new guild:
    wrangler deploy
    ```
 
-5. **Run `/setchannel`** in the guild's Discord channel to register the channel mapping in `guild-config.json`.
+5. **Run `/setchannel`** in the guild's Discord channel to register the channel mapping in D1.
 
 This can be scripted as `scripts/add-guild.sh`:
 
@@ -450,8 +438,7 @@ This ensures the Worker never runs against an outdated schema.
 ### Guild removal
 
 When the bot is removed from a guild:
-- Remove the guild entry from `guild-config.json`
-- The polling loop stops polling that guild
+- The guild is no longer in `client.guilds.cache`, so the polling loop stops automatically
 - The D1 database and Worker binding can remain (data preserved) or be cleaned up manually
 
 ### Backend URL changes
@@ -469,7 +456,7 @@ Only one URL exists. If it changes (e.g., custom domain):
 
 ### Bot restarts
 
-Config is persisted to `guild-config.json`. On restart, the bot loads the config and resumes polling for all guilds.
+On startup, the bot fetches settings from D1 (`GET /api/settings/bot`) for each guild in `client.guilds.cache` and resumes polling for all guilds.
 
 ### User switching guilds
 

@@ -55,7 +55,7 @@ The bot needs to know which channel to post messages to. You have two options:
 
 **Option A (recommended): `/setchannel` command**
 
-After the bot is running, go to the desired channel in Discord and run `/setchannel`. This requires ADMINISTRATOR permission. The setting is saved under the guild's key in `guild-config.json` and persists across restarts.
+After the bot is running, go to the desired channel in Discord and run `/setchannel`. This requires ADMINISTRATOR permission. The setting is saved to D1 via the API (`PATCH /api/settings/bot`) and persists across deploys and restarts.
 
 **Option B: `GAMING_CHANNEL_ID` env var**
 
@@ -91,7 +91,6 @@ GAMING_CHANNEL_ID=123456789012345678
 | `WHEN2PLAY_API_URL` | Yes | Base URL of the deployed when2play Worker |
 | `BOT_API_KEY` | Yes (production) | Shared secret -- must match `BOT_API_KEY` set via `npx wrangler secret put BOT_API_KEY` in the main repo |
 | `GAMING_CHANNEL_ID` | No | Fallback channel ID. Optional if using `/setchannel` instead |
-| `GUILD_ID` | No | If set, registers slash commands guild-wide (instant) instead of globally (up to 1h). Also used for auto-migrating flat `guild-config.json` to per-guild format on startup |
 
 > `BOT_API_KEY` can be omitted for local development against a Worker that also has no `BOT_API_KEY` set.
 
@@ -107,8 +106,9 @@ Expected output on success:
 
 ```
 Logged in as when2play#1234
-Slash commands registered.
-Polling for gather pings, rally actions, and tree shares every 15s (with exponential backoff on errors)
+Slash commands registered (N guild(s): ...).
+Loaded settings for N guild(s) from D1
+Polling N guild(s) every 15s (with exponential backoff on errors)
 ```
 
 ---
@@ -226,4 +226,4 @@ For an alternative architecture with no separate bot process, see `docs/CLOUDFLA
 
 The bot supports multiple Discord guilds with a single instance. Each guild gets its own isolated D1 database on the Worker side. See `docs/MULTI_GUILD.md` for the full architecture design.
 
-**For existing users:** If you have a flat `guild-config.json` (with a top-level `channelId`), the bot auto-migrates it to the per-guild format on startup, provided the `GUILD_ID` env var is set. No manual migration needed.
+Channel configuration is stored in D1 via the `/api/settings/bot` endpoint. On startup, the bot fetches settings for each guild it has joined. Use `/setchannel` to configure the output channel for each guild.
