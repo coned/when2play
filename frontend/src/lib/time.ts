@@ -1,4 +1,13 @@
 /**
+ * Get today's date in YYYY-MM-DD format using the user's local timezone.
+ * (Using toISOString().split('T')[0] returns the UTC date, which is wrong
+ * for users west of UTC after midnight UTC.)
+ */
+export function localToday(): string {
+	return new Date().toLocaleDateString('en-CA');
+}
+
+/**
  * Get the user's local timezone string (e.g. "America/New_York")
  */
 export function getUserTimezone(): string {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { api } from '../../api/client';
-import { getTimezoneAbbreviation, formatLocalTimeRangeStructured, type TimeRangeParts } from '../../lib/time';
+import { getTimezoneAbbreviation, formatLocalTimeRangeStructured, localToday, type TimeRangeParts } from '../../lib/time';
 
 interface ScheduleSummaryProps {
 	userId: string;
@@ -108,21 +108,34 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 	const [ranking, setRanking] = useState<any[]>([]);
 	const [availability, setAvailability] = useState<any[]>([]);
 	const [userMap, setUserMap] = useState<Map<string, { discord_username: string; display_name: string | null; avatar_url: string | null }>>(new Map());
+	const [guildName, setGuildName] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 
-	const today = new Date().toISOString().split('T')[0];
+	const today = localToday();
 	const todayLabel = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
 	useEffect(() => {
 		(async () => {
-			const [rankResult, availResult, usersResult] = await Promise.all([
+			const [rankResult, availResult, usersResult, settingsResult] = await Promise.all([
 				api.getGameRanking(),
 				api.getAvailability({ date: today }),
 				api.getUsers(),
+				api.getSettings(),
 			]);
 
-			if (rankResult.ok) setRanking(rankResult.data);
-			if (availResult.ok) setAvailability(availResult.data);
+			if (rankResult.ok) {
+				setRanking(rankResult.data);
+			} else {
+				console.warn('[ScheduleSummary] ranking failed:', rankResult);
+			}
+			if (availResult.ok) {
+				setAvailability(availResult.data);
+			} else {
+				console.warn('[ScheduleSummary] availability failed:', availResult);
+			}
+			if (settingsResult.ok && typeof settingsResult.data.guild_name === 'string') {
+				setGuildName(settingsResult.data.guild_name);
+			}
 			if (usersResult.ok) {
 				const map = new Map<string, { discord_username: string; display_name: string | null; avatar_url: string | null }>();
 				for (const u of usersResult.data) map.set(u.id, u);
@@ -147,7 +160,10 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 
 	return (
 		<div>
-			<h2 style={{ marginBottom: '8px' }}>Schedule Summary</h2>
+			<h2 style={{ marginBottom: guildName ? '2px' : '8px' }}>Schedule Summary</h2>
+			{guildName && (
+				<p style={{ marginBottom: '4px', fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 600 }}>{guildName}</p>
+			)}
 			<p style={{ marginBottom: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
 				Times shown in {getTimezoneAbbreviation()} (local time)
 			</p>
