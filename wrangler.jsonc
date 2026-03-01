@@ -15,12 +15,20 @@
 			"database_name": "when2play-db",
 			"database_id": "4586cbdb-2f57-474d-95a8-96d7c0ee655f",
 			"migrations_dir": "migrations"
+		},
+		{
+			"binding": "DB_1165751530654273707",
+			"database_name": "when2play-r-playground",
+			"database_id": "7b3bc804-3851-4f45-875c-093a71f1edd8",
+			"migrations_dir": "migrations"
 		}
 	],
 	"assets": {
 		"directory": "./frontend/dist/",
 		"binding": "ASSETS",
 		"not_found_handling": "single-page-application",
-		"run_worker_first": ["/api/*"]
+		"run_worker_first": [
+			"/api/*"
+		]
 	}
 }

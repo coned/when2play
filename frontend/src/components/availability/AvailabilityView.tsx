@@ -1,24 +1,20 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import { api } from '../../api/client';
 import { TimeGrid } from './TimeGrid';
-import { getTimezoneAbbreviation } from '../../lib/time';
+import { getTimezoneAbbreviation, localToday } from '../../lib/time';
 
 interface AvailabilityViewProps {
 	userId: string;
 }
 
-function todayStr() {
-	return new Date().toISOString().split('T')[0];
-}
-
 function tomorrowStr() {
 	const d = new Date();
 	d.setDate(d.getDate() + 1);
-	return d.toISOString().split('T')[0];
+	return d.toLocaleDateString('en-CA');
 }
 
 export function AvailabilityView({ userId }: AvailabilityViewProps) {
-	const [selectedDate, setSelectedDate] = useState(todayStr());
+	const [selectedDate, setSelectedDate] = useState(localToday());
 	const [mySlots, setMySlots] = useState<any[]>([]);
 	const [allSlots, setAllSlots] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -57,7 +53,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 		}
 	};
 
-	const today = todayStr();
+	const today = localToday();
 	const tomorrow = tomorrowStr();
 
 	return (

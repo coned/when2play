@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { api } from '../../api/client';
+import { localToday } from '../../lib/time';
 import { TreeVisualization } from './TreeVisualization';
 
 interface TreeData {
@@ -91,7 +92,7 @@ export function GamingTree() {
 	for (let i = 0; i < 7; i++) {
 		const d = new Date();
 		d.setDate(d.getDate() - i);
-		dayOptions.push(d.toISOString().split('T')[0]);
+		dayOptions.push(d.toLocaleDateString('en-CA'));
 	}
 
 	return (
