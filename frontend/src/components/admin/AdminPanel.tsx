@@ -20,6 +20,22 @@ const DEFAULT_RALLY_LABELS: Record<string, string> = {
 	ping: 'Ping', where: 'Where', judge_avail: 'Judge Avail', judge_time: 'Judge Time', share_ranking: 'Share Ranking',
 };
 
+const SETTINGS_WHITELIST: Record<string, 'number' | 'boolean' | 'string' | 'object'> = {
+	time_granularity_minutes: 'number',
+	game_pool_lifespan_days: 'number',
+	gather_cooldown_seconds: 'number',
+	gather_hourly_limit: 'number',
+	avail_start_hour_et: 'number',
+	avail_end_hour_et: 'number',
+	day_cutoff_hour_et: 'number',
+	day_reset_hour_et: 'number',
+	rally_button_labels: 'object',
+	rally_suggested_phrases: 'object',
+	rally_show_discord_command: 'boolean',
+};
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const MAX_IMPORT_SIZE = 100 * 1024; // 100KB
+
 function Field({
 	label,
 	hint,
@@ -271,6 +287,7 @@ export function AdminPanel() {
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState('');
 	const [success, setSuccess] = useState(false);
+	const [importStatus, setImportStatus] = useState('');
 
 	useEffect(() => {
 		api.getSettings().then((r) => {
@@ -308,6 +325,107 @@ export function AdminPanel() {
 			...s,
 			rally_suggested_phrases: { ...s.rally_suggested_phrases, [actionType]: phrases },
 		}));
+	};
+
+	const handleExport = async () => {
+		const result = await api.getSettings();
+		if (!result.ok) {
+			setImportStatus('Export failed: could not fetch settings.');
+			return;
+		}
+		const raw = result.data as Record<string, unknown>;
+		const filtered: Record<string, unknown> = {};
+		for (const key of Object.keys(raw)) {
+			if (key in SETTINGS_WHITELIST) filtered[key] = raw[key];
+		}
+		const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'when2play-settings.json';
+		a.click();
+		URL.revokeObjectURL(url);
+	};
+
+	const handleImport = () => {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.json,application/json';
+		input.onchange = async () => {
+			const file = input.files?.[0];
+			if (!file) return;
+			setImportStatus('');
+
+			if (file.size > MAX_IMPORT_SIZE) {
+				setImportStatus('File too large (max 100 KB).');
+				return;
+			}
+
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(await file.text());
+			} catch {
+				setImportStatus('Invalid JSON file.');
+				return;
+			}
+
+			if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+				setImportStatus('Expected a JSON object.');
+				return;
+			}
+
+			const obj = parsed as Record<string, unknown>;
+			const validated: Record<string, unknown> = {};
+			const skipped: string[] = [];
+
+			for (const [key, value] of Object.entries(obj)) {
+				if (DANGEROUS_KEYS.has(key)) { skipped.push(key); continue; }
+				const expected = SETTINGS_WHITELIST[key];
+				if (!expected) { skipped.push(key); continue; }
+
+				if (expected === 'object') {
+					if (typeof value !== 'object' || value === null || Array.isArray(value)) { skipped.push(key); continue; }
+				} else if (expected === 'string') {
+					if (typeof value !== 'string' || value.length > 1000) { skipped.push(key); continue; }
+				} else if (typeof value !== expected) {
+					skipped.push(key); continue;
+				}
+				validated[key] = value;
+			}
+
+			if (Object.keys(validated).length === 0) {
+				setImportStatus('No valid settings found in file.');
+				return;
+			}
+
+			const result = await api.updateSettings(validated);
+			if (!result.ok) {
+				setImportStatus('Import failed: ' + ((result as any).error?.message ?? 'unknown error'));
+				return;
+			}
+
+			// Refresh local state from server
+			const refreshed = await api.getSettings();
+			if (refreshed.ok) {
+				const s = refreshed.data as Record<string, unknown>;
+				setSettings({
+					time_granularity_minutes: (s.time_granularity_minutes as number) ?? 15,
+					game_pool_lifespan_days: (s.game_pool_lifespan_days as number) ?? 7,
+					gather_cooldown_seconds: (s.gather_cooldown_seconds as number) ?? 10,
+					gather_hourly_limit: (s.gather_hourly_limit as number) ?? 30,
+					avail_start_hour_et: (s.avail_start_hour_et as number) ?? 17,
+					avail_end_hour_et: (s.avail_end_hour_et as number) ?? 3,
+					day_cutoff_hour_et: (s.day_cutoff_hour_et as number) ?? 5,
+					rally_button_labels: (s.rally_button_labels as Record<string, string>) ?? {},
+					rally_suggested_phrases: (s.rally_suggested_phrases as Record<string, string[]>) ?? {},
+					rally_show_discord_command: s.rally_show_discord_command !== false,
+				});
+			}
+
+			const msg = `Imported ${Object.keys(validated).length} setting(s).`;
+			setImportStatus(skipped.length > 0 ? `${msg} Skipped: ${skipped.join(', ')}` : msg);
+		};
+		input.click();
 	};
 
 	const handleSave = async () => {
@@ -434,6 +552,19 @@ export function AdminPanel() {
 			<button class="btn btn-primary" onClick={handleSave} disabled={saving}>
 				{saving ? 'Saving...' : 'Save Settings'}
 			</button>
+
+			<SectionCard title="Export / Import">
+				<p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+					Export settings as JSON for backup, or import from a previously exported file.
+				</p>
+				<div style={{ display: 'flex', gap: '8px', marginBottom: importStatus ? '12px' : 0 }}>
+					<button class="btn btn-secondary" onClick={handleExport}>Export</button>
+					<button class="btn btn-secondary" onClick={handleImport}>Import</button>
+				</div>
+				{importStatus && (
+					<p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{importStatus}</p>
+				)}
+			</SectionCard>
 		</div>
 	);
 }
