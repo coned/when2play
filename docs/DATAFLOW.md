@@ -29,7 +29,8 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 └────────────┼─────────────────────────────┼───────────────────────┘
              │  HTTPS                      │  HTTPS
              │  Cookie: session_id=...     │  X-Bot-Token: ...
-             │  X-Guild-Id: <guild_id>     │  X-Guild-Id: <guild_id>
+             │  X-Bot-Token: ...           │  X-Guild-Id: <guild_id>
+             │  X-Guild-Id: <guild_id>     │
              ▼                             ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                   when2play Server (Hono / CF Workers)           │
@@ -44,6 +45,7 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 │   /api/rally/share-ranking    /api/rally/tree/share/:id/...      │
 │   /api/gather (write)         /api/gather/pending                │
 │                               /api/gather/:id/delivered          │
+│                               /api/settings/bot                  │
 │                                                                  │
 │         ┌──────────┬──────────┬──────────┐                      │
 │         │ D1 Guild │ D1 Guild │ D1 Guild │                      │
@@ -100,10 +102,12 @@ the `BOT_API_KEY` environment variable via the `requireBotAuth` middleware. If t
 missing or wrong the server returns 403; if `BOT_API_KEY` is not configured on the server
 at all it returns 500 (fail-closed).
 
-### 2. User session authentication (`session_id` cookie)
+### 2. User session authentication (`session_id` cookie + `X-Bot-Token`)
 
-Used when the bot runs commands on behalf of a Discord user. Before calling any user-facing
-endpoint, the bot runs `ensureUser()`, which:
+Used when the bot runs commands on behalf of a Discord user. The bot includes both
+`Cookie: session_id=...` and `X-Bot-Token` headers so the guild middleware can trust
+the `X-Guild-Id` header for DB routing. Before calling any user-facing endpoint, the
+bot runs `ensureUser()`, which:
 
 1. Calls `POST /api/auth/token` with `X-Bot-Token` — server upserts the user in the DB
    and returns a one-time token (valid 10 minutes).
@@ -162,6 +166,7 @@ Bot: ensureUser(discordUser, guildMember, guildId)
 Bot: apiCallWithSession(session_id, '/api/rally/action', { action_type: 'in', ... }, guildId)
   -> POST /api/rally/action
     Cookie: session_id=<value>
+    X-Bot-Token: <BOT_API_KEY>
     X-Guild-Id: <guild_id>
     body: { action_type, message?, target_user_ids? }
   |
@@ -209,7 +214,7 @@ All rally commands call `ensureUser()` first to obtain a session.
 ## Polling Loops
 
 The bot runs three polling loops per guild, scheduled via `scheduleNextPoll()`. For each
-guild registered in `guild-config.json`, all three loops fire every 15 seconds under normal
+guild the bot has joined (`client.guilds.cache`), all three loops fire every 15 seconds under normal
 conditions, with per-guild exponential backoff on errors (doubles each failure, capped at
 2 minutes, resets on first success for that guild). All API requests include the
 `X-Guild-Id` header so the Worker routes them to the correct guild database.
@@ -304,6 +309,8 @@ matches `BOT_API_KEY`.
 | `PATCH` | `/api/rally/tree/share/:id/delivered` | Mark tree share delivered |
 | `GET` | `/api/gather/pending` | Fetch undelivered gather pings |
 | `PATCH` | `/api/gather/:id/delivered` | Mark gather ping delivered |
+| `GET` | `/api/settings/bot` | Fetch guild settings (channel_id, guild_name) |
+| `PATCH` | `/api/settings/bot` | Update guild settings (used by `/setchannel`) |
 
 ---
 
@@ -316,8 +323,7 @@ Both the bot and server must share exactly one secret: `BOT_API_KEY`.
 | `BOT_API_KEY` | Bot `.env`, Server `wrangler secret` | Shared 64-char hex key; must match exactly |
 | `DISCORD_TOKEN` | Bot `.env` only | Discord bot token |
 | `WHEN2PLAY_API_URL` | Bot `.env` only | Base URL of the server (e.g. `https://when2play.example.workers.dev`) |
-| `GAMING_CHANNEL_ID` | Bot `.env` only | Discord channel where polling output is posted |
-| `GUILD_ID` | Bot `.env`, optional | If set, registers slash commands guild-wide instead of globally (faster for dev). Also used for auto-migrating flat config format |
+| `GAMING_CHANNEL_ID` | Bot `.env`, optional | Fallback Discord channel ID. Optional if using `/setchannel` (which persists to D1) |
 
 `X-Guild-Id` is **not a secret**. It is a Discord guild snowflake (public identifier) sent
 as a plain header. The Worker's guild middleware only trusts it from bot-authenticated
