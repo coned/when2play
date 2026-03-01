@@ -5,7 +5,7 @@ interface BottomNavProps {
 }
 
 const BASE_TABS = [
-	{ id: 'schedule', label: 'Schedule', icon: '\u{1F4C5}' },
+	{ id: 'dashboard', label: 'Dashboard', icon: '\u{1F4C5}' },
 	{ id: 'games', label: 'Games', icon: '\u{1F3AE}' },
 	{ id: 'availability', label: 'Available', icon: '\u{1F552}' },
 	{ id: 'rally', label: 'Rally', icon: '\u{1F4E2}' },

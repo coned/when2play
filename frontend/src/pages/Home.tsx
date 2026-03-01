@@ -18,11 +18,11 @@ interface HomeProps {
 }
 
 export function Home({ user, onLogout, onUserUpdate }: HomeProps) {
-	const [activeTab, setActiveTab] = useState('schedule');
+	const [activeTab, setActiveTab] = useState('dashboard');
 
 	return (
 		<Shell user={user} activeTab={activeTab} onTabChange={setActiveTab} onLogout={onLogout} onUserUpdate={onUserUpdate}>
-			{activeTab === 'schedule' && <ScheduleSummary userId={user.id} />}
+			{activeTab === 'dashboard' && <ScheduleSummary userId={user.id} />}
 			{activeTab === 'games' && <GamePool userId={user.id} />}
 			{activeTab === 'availability' && <AvailabilityView userId={user.id} />}
 			{activeTab === 'gather' && <GatherBell />}

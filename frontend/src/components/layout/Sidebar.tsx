@@ -5,7 +5,7 @@ interface SidebarProps {
 }
 
 const BASE_TABS = [
-	{ id: 'schedule', label: 'Schedule' },
+	{ id: 'dashboard', label: 'Dashboard' },
 	{ id: 'games', label: 'Games' },
 	{ id: 'availability', label: 'Availability' },
 	{ id: 'rally', label: 'Rally' },
