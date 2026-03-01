@@ -13,7 +13,9 @@ export async function getAllSettings(db: D1Database): Promise<Record<string, unk
 
 	for (const row of result.results) {
 		try {
-			settings[row.key] = JSON.parse(row.value);
+			const parsed = JSON.parse(row.value);
+			// Keep large integers as strings to avoid precision loss (e.g. Discord snowflake IDs)
+			settings[row.key] = typeof parsed === 'number' && !Number.isSafeInteger(parsed) ? row.value : parsed;
 		} catch {
 			settings[row.key] = row.value;
 		}
@@ -27,7 +29,8 @@ export async function getSetting(db: D1Database, key: string): Promise<unknown |
 	if (!row) return null;
 
 	try {
-		return JSON.parse(row.value);
+		const parsed = JSON.parse(row.value);
+		return typeof parsed === 'number' && !Number.isSafeInteger(parsed) ? row.value : parsed;
 	} catch {
 		return row.value;
 	}
