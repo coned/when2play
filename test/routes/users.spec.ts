@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie } from '../setup';
+import { createTestDb, guildUrl, guildCookie, testEnv } from '../setup';
 
 describe('User routes', () => {
 	let db: D1Database;
@@ -17,10 +17,10 @@ describe('User routes', () => {
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser', avatar_url: 'https://example.com/avatar.png' }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		const { data } = await tokenRes.json();
-		const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+		const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 		const cookie = callbackRes.headers.get('set-cookie')!;
 		const sessionId = cookie.match(/session_id=([^;]+)/)![1];
 		sessionCookie = `session_id=${sessionId}`;
@@ -28,7 +28,7 @@ describe('User routes', () => {
 
 	describe('GET /api/users/me', () => {
 		it('returns current user', async () => {
-			const res = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(sessionCookie) } }, { DB: db });
+			const res = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(sessionCookie) } }, testEnv(db));
 
 			expect(res.status).toBe(200);
 			const body = await res.json();
@@ -39,7 +39,7 @@ describe('User routes', () => {
 		});
 
 		it('returns 401 without session', async () => {
-			const res = await app.request(guildUrl('/api/users/me'), {}, { DB: db });
+			const res = await app.request(guildUrl('/api/users/me'), {}, testEnv(db));
 			expect(res.status).toBe(401);
 		});
 	});
@@ -53,7 +53,7 @@ describe('User routes', () => {
 					headers: { 'Content-Type': 'application/json', Cookie: guildCookie(sessionCookie) },
 					body: JSON.stringify({ timezone: 'America/New_York' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(res.status).toBe(200);
@@ -69,7 +69,7 @@ describe('User routes', () => {
 					headers: { 'Content-Type': 'application/json', Cookie: guildCookie(sessionCookie) },
 					body: JSON.stringify({ time_granularity_minutes: 1 }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(res.status).toBe(400);

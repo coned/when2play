@@ -11,8 +11,8 @@
 	],
 	"d1_databases": [
 		{
-			"binding": "DB",
-			"database_name": "when2play-db",
+			"binding": "DB_1458279923100942531",
+			"database_name": "when2play-tmp-matrix",
 			"database_id": "4586cbdb-2f57-474d-95a8-96d7c0ee655f",
 			"migrations_dir": "migrations"
 		},

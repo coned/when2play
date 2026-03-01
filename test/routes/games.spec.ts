@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie } from '../setup';
+import { createTestDb, guildUrl, guildCookie, testEnv } from '../setup';
 
 async function createAuthenticatedUser(db: D1Database, discordId: string = '123456', username: string = 'TestUser') {
 	const tokenRes = await app.request(
@@ -10,10 +10,10 @@ async function createAuthenticatedUser(db: D1Database, discordId: string = '1234
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ discord_id: discordId, discord_username: username }),
 		},
-		{ DB: db },
+		testEnv(db),
 	);
 	const { data } = await tokenRes.json();
-	const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+	const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 	const cookie = callbackRes.headers.get('set-cookie')!;
 	const sessionId = cookie.match(/session_id=([^;]+)/)![1];
 	return `session_id=${sessionId}`;
@@ -37,7 +37,7 @@ describe('Game routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({ name: 'Counter-Strike 2', steam_app_id: '730' }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 
 		expect(createRes.status).toBe(201);
@@ -46,7 +46,7 @@ describe('Game routes', () => {
 		expect(created.data.is_archived).toBe(false);
 
 		// List
-		const listRes = await app.request(guildUrl('/api/games'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
+		const listRes = await app.request(guildUrl('/api/games'), { headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
 		expect(listRes.status).toBe(200);
 		const listed = await listRes.json();
 		expect(listed.data).toHaveLength(1);
@@ -60,21 +60,21 @@ describe('Game routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({ name: 'Test Game' }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		const { data: game } = await createRes.json();
 
 		// Archive
-		const deleteRes = await app.request(guildUrl(`/api/games/${game.id}`), { method: 'DELETE', headers: { Cookie: guildCookie(cookie) } }, { DB: db });
+		const deleteRes = await app.request(guildUrl(`/api/games/${game.id}`), { method: 'DELETE', headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
 		expect(deleteRes.status).toBe(200);
 
 		// Not in active list
-		const listRes = await app.request(guildUrl('/api/games'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
+		const listRes = await app.request(guildUrl('/api/games'), { headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
 		const listed = await listRes.json();
 		expect(listed.data).toHaveLength(0);
 
 		// In archived list
-		const archivedRes = await app.request(guildUrl('/api/games?include_archived=true'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
+		const archivedRes = await app.request(guildUrl('/api/games?include_archived=true'), { headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
 		const archived = await archivedRes.json();
 		expect(archived.data).toHaveLength(1);
 		expect(archived.data[0].is_archived).toBe(true);
@@ -88,7 +88,7 @@ describe('Game routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({ name: 'Test Game' }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		const { data: game } = await createRes.json();
 
@@ -101,7 +101,7 @@ describe('Game routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(otherCookie) },
 				body: JSON.stringify({ name: 'Hacked Name' }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		expect(updateRes.status).toBe(403);
 	});

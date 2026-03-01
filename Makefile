@@ -27,10 +27,10 @@ deploy-only: ## Deploy without rebuilding
 	npx wrangler deploy
 
 migrate-local: ## Apply migrations locally
-	npx wrangler d1 migrations apply when2play-db --local
+	npx wrangler d1 migrations apply when2play-tmp-matrix --local
 
 migrate-remote: ## Apply migrations remotely
-	npx wrangler d1 migrations apply when2play-db --remote
+	npx wrangler d1 migrations apply when2play-tmp-matrix --remote
 
 seed: ## Seed test data
 	bash scripts/seed-data.sh

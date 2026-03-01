@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie } from '../setup';
+import { createTestDb, guildUrl, guildCookie, testEnv } from '../setup';
 import { createAuthenticatedUser } from '../helpers';
 
 describe('Gather routes', () => {
@@ -21,7 +21,7 @@ describe('Gather routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({ message: "Let's play!" }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 
 		expect(res.status).toBe(201);
@@ -38,10 +38,10 @@ describe('Gather routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({}),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 
-		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
+		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
 		const pending = await pendingRes.json();
 		expect(pending.data).toHaveLength(1);
 	});
@@ -54,13 +54,13 @@ describe('Gather routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) },
 				body: JSON.stringify({}),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		const { data: ping } = await createRes.json();
 
-		await app.request(guildUrl(`/api/gather/${ping.id}/delivered`), { method: 'PATCH', headers: { Cookie: guildCookie(cookie) } }, { DB: db });
+		await app.request(guildUrl(`/api/gather/${ping.id}/delivered`), { method: 'PATCH', headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
 
-		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: { Cookie: guildCookie(cookie) } }, { DB: db });
+		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
 		const pending = await pendingRes.json();
 		expect(pending.data).toHaveLength(0);
 	});
@@ -70,7 +70,7 @@ describe('Gather routes', () => {
 		const res1 = await app.request(
 			guildUrl('/api/gather'),
 			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) }, body: JSON.stringify({}) },
-			{ DB: db },
+			testEnv(db),
 		);
 		expect(res1.status).toBe(201);
 
@@ -78,7 +78,7 @@ describe('Gather routes', () => {
 		const res2 = await app.request(
 			guildUrl('/api/gather'),
 			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) }, body: JSON.stringify({}) },
-			{ DB: db },
+			testEnv(db),
 		);
 		expect(res2.status).toBe(429);
 		const body = await res2.json();
@@ -101,7 +101,7 @@ describe('Gather routes', () => {
 		const res = await app.request(
 			guildUrl('/api/gather'),
 			{ method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) }, body: JSON.stringify({}) },
-			{ DB: db },
+			testEnv(db),
 		);
 		expect(res.status).toBe(429);
 		const body = await res.json();

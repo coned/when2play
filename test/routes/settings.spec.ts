@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie } from '../setup';
+import { createTestDb, guildUrl, guildCookie, testEnv } from '../setup';
 import { createAuthenticatedUser, createAuthenticatedAdmin } from '../helpers';
 
 describe('Settings routes', () => {
@@ -15,7 +15,7 @@ describe('Settings routes', () => {
 	});
 
 	it('GET /api/settings returns settings for any authenticated user', async () => {
-		const res = await app.request(guildUrl('/api/settings'), { headers: { Cookie: guildCookie(userCookie) } }, { DB: db });
+		const res = await app.request(guildUrl('/api/settings'), { headers: { Cookie: guildCookie(userCookie) } }, testEnv(db));
 		expect(res.status).toBe(200);
 		const body = await res.json();
 		expect(body.ok).toBe(true);
@@ -30,7 +30,7 @@ describe('Settings routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(userCookie) },
 				body: JSON.stringify({ gather_cooldown_seconds: 60 }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		expect(res.status).toBe(403);
 		const body = await res.json();
@@ -45,7 +45,7 @@ describe('Settings routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(adminCookie) },
 				body: JSON.stringify({ gather_cooldown_seconds: 60 }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		expect(res.status).toBe(200);
 		const body = await res.json();

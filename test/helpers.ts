@@ -1,5 +1,5 @@
 import app from '../src/index';
-import { guildUrl, guildCookie } from './setup';
+import { guildUrl, guildCookie, testEnv } from './setup';
 
 export async function createAuthenticatedAdmin(db: D1Database, discordId: string, username: string) {
 	const tokenRes = await app.request(
@@ -9,14 +9,14 @@ export async function createAuthenticatedAdmin(db: D1Database, discordId: string
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ discord_id: discordId, discord_username: username }),
 		},
-		{ DB: db },
+		testEnv(db),
 	);
 	const { data } = await tokenRes.json();
-	const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+	const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 	const cookie = callbackRes.headers.get('set-cookie')!;
 	const sessionId = cookie.match(/session_id=([^;]+)/)![1];
 
-	const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, { DB: db });
+	const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, testEnv(db));
 	const me = await meRes.json();
 
 	return { cookie: `session_id=${sessionId}`, userId: me.data.id };
@@ -30,15 +30,15 @@ export async function createAuthenticatedUser(db: D1Database, discordId: string,
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ discord_id: discordId, discord_username: username }),
 		},
-		{ DB: db },
+		testEnv(db),
 	);
 	const { data } = await tokenRes.json();
-	const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+	const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 	const cookie = callbackRes.headers.get('set-cookie')!;
 	const sessionId = cookie.match(/session_id=([^;]+)/)![1];
 
 	// Get user ID
-	const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, { DB: db });
+	const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, testEnv(db));
 	const me = await meRes.json();
 
 	return { cookie: `session_id=${sessionId}`, userId: me.data.id };

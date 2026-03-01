@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie } from '../setup';
+import { createTestDb, guildUrl, guildCookie, testEnv } from '../setup';
 import { createAuthenticatedUser } from '../helpers';
 
 describe('Shame routes', () => {
@@ -24,7 +24,7 @@ describe('Shame routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({ reason: 'No-showed last night' }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 
 		expect(res.status).toBe(201);
@@ -40,7 +40,7 @@ describe('Shame routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({ reason: 'I deserved it' }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 
 		expect(res.status).toBe(201);
@@ -56,10 +56,10 @@ describe('Shame routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({}),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 
-		const res = await app.request(guildUrl('/api/shame/leaderboard'), { headers: { Cookie: guildCookie(cookie1) } }, { DB: db });
+		const res = await app.request(guildUrl('/api/shame/leaderboard'), { headers: { Cookie: guildCookie(cookie1) } }, testEnv(db));
 		const body = await res.json();
 		expect(body.data).toHaveLength(1);
 		expect(body.data[0].shame_count_today).toBe(1);
