@@ -176,12 +176,7 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        try {
-            await interaction.user.send(`Click to open **when2play**: ${json.data.url}\n\nExpires in 10 minutes.`);
-            await interaction.editReply('Check your DMs for the login link!');
-        } catch {
-            await interaction.editReply(`Login link (expires in 10 min):\n${json.data.url}`);
-        }
+        await interaction.editReply(`Click to open **when2play**: ${json.data.url}\n\nExpires in 10 minutes.`);
     } catch (err) {
         console.error('Error handling /play:', err);
         await interaction.editReply('Something went wrong. Is the when2play server running?');
