@@ -15,6 +15,8 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 	const [loading, setLoading] = useState(false);
 	const [searching, setSearching] = useState(false);
 	const [error, setError] = useState('');
+	const [duplicateGameId, setDuplicateGameId] = useState<string | null>(null);
+	const [duplicateType, setDuplicateType] = useState<'active' | 'archived' | null>(null);
 	const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
 	// Debounced Steam search
@@ -40,9 +42,14 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 	const selectSearchResult = (result: { app_id: string; name: string; image_url: string }) => {
 		setSteamAppId(result.app_id);
 		setName(result.name);
-		setImageUrl(result.image_url);
+		// Upgrade to higher-res header image
+		const headerUrl = `https://cdn.akamai.steamstatic.com/steam/apps/${result.app_id}/header.jpg`;
+		setImageUrl(headerUrl);
 		setSearchResults([]);
 		setSearchQuery('');
+		setError('');
+		setDuplicateGameId(null);
+		setDuplicateType(null);
 	};
 
 	const handleSteamLookup = async () => {
@@ -60,10 +67,25 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 		setLoading(false);
 	};
 
+	const handleRestore = async () => {
+		if (!duplicateGameId) return;
+		setLoading(true);
+		const result = await api.restoreGame(duplicateGameId);
+		if (result.ok) {
+			onSubmit();
+		} else {
+			setError('Failed to restore game');
+		}
+		setLoading(false);
+	};
+
 	const handleSubmit = async (e: Event) => {
 		e.preventDefault();
 		if (!name) return;
 		setLoading(true);
+		setError('');
+		setDuplicateGameId(null);
+		setDuplicateType(null);
 
 		const result = await api.createGame({
 			name,
@@ -74,7 +96,18 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 		if (result.ok) {
 			onSubmit();
 		} else {
-			setError('Failed to create game');
+			const err = (result as any).error;
+			if (err?.code === 'DUPLICATE_GAME') {
+				setError('This game is already in the pool.');
+				setDuplicateGameId(err.existing_game_id);
+				setDuplicateType('active');
+			} else if (err?.code === 'ARCHIVED_DUPLICATE') {
+				setError('This game is in the archive.');
+				setDuplicateGameId(err.existing_game_id);
+				setDuplicateType('archived');
+			} else {
+				setError(err?.message || 'Failed to create game');
+			}
 		}
 		setLoading(false);
 	};
@@ -195,7 +228,22 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 					<img src={imageUrl} alt="Preview" style={{ maxWidth: '200px', borderRadius: 'var(--radius)' }} />
 				)}
 
-				{error && <p style={{ color: 'var(--danger)', fontSize: '13px' }}>{error}</p>}
+				{error && (
+					<div>
+						<p style={{ color: 'var(--danger)', fontSize: '13px', margin: 0 }}>{error}</p>
+						{duplicateType === 'archived' && duplicateGameId && (
+							<button
+								type="button"
+								class="btn btn-secondary"
+								style={{ marginTop: '6px', fontSize: '12px', padding: '4px 12px' }}
+								onClick={handleRestore}
+								disabled={loading}
+							>
+								Restore from archive
+							</button>
+						)}
+					</div>
+				)}
 
 				<button type="submit" class="btn btn-primary" disabled={loading || !name}>
 					{loading ? 'Saving...' : 'Propose'}
