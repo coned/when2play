@@ -10,6 +10,7 @@ export interface GameRow {
 	is_archived: number;
 	created_at: string;
 	archived_at: string | null;
+	archive_reason: string | null;
 }
 
 export async function createGame(
@@ -27,11 +28,18 @@ export async function createGame(
 		.bind(id, name, steamAppId ?? null, imageUrl ?? null, proposedBy, timestamp)
 		.run();
 
-	return { id, name, steam_app_id: steamAppId ?? null, image_url: imageUrl ?? null, proposed_by: proposedBy, is_archived: 0, created_at: timestamp, archived_at: null };
+	return { id, name, steam_app_id: steamAppId ?? null, image_url: imageUrl ?? null, proposed_by: proposedBy, is_archived: 0, created_at: timestamp, archived_at: null, archive_reason: null };
 }
 
-export async function getGames(db: D1Database, includeArchived: boolean = false): Promise<GameRow[]> {
-	const query = includeArchived ? 'SELECT * FROM games ORDER BY created_at DESC' : 'SELECT * FROM games WHERE is_archived = 0 ORDER BY created_at DESC';
+export async function getGames(db: D1Database, pool: 'active' | 'archive' | 'all' = 'active'): Promise<GameRow[]> {
+	let query: string;
+	if (pool === 'all') {
+		query = 'SELECT * FROM games ORDER BY created_at DESC';
+	} else if (pool === 'archive') {
+		query = 'SELECT * FROM games WHERE is_archived = 1 ORDER BY created_at DESC';
+	} else {
+		query = 'SELECT * FROM games WHERE is_archived = 0 ORDER BY created_at DESC';
+	}
 	const result = await db.prepare(query).all<GameRow>();
 	return result.results;
 }
@@ -60,7 +68,18 @@ export async function updateGame(db: D1Database, id: string, updates: { name?: s
 	return getGameById(db, id);
 }
 
-export async function archiveGame(db: D1Database, id: string): Promise<void> {
+export async function archiveGame(db: D1Database, id: string, reason?: string): Promise<void> {
 	const timestamp = now();
-	await db.prepare('UPDATE games SET is_archived = 1, archived_at = ? WHERE id = ?').bind(timestamp, id).run();
+	await db
+		.prepare('UPDATE games SET is_archived = 1, archived_at = ?, archive_reason = ? WHERE id = ?')
+		.bind(timestamp, reason ?? null, id)
+		.run();
+}
+
+export async function restoreGame(db: D1Database, id: string): Promise<void> {
+	await db.prepare('UPDATE games SET is_archived = 0, archived_at = NULL, archive_reason = NULL WHERE id = ?').bind(id).run();
+}
+
+export async function getGameBySteamAppId(db: D1Database, steamAppId: string): Promise<GameRow | null> {
+	return db.prepare('SELECT * FROM games WHERE steam_app_id = ?').bind(steamAppId).first<GameRow>();
 }

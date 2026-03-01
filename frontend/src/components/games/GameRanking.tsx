@@ -18,37 +18,56 @@ export function GameRanking() {
 
 	return (
 		<div>
-			<h3 style={{ marginBottom: '12px' }}>Ranking (Borda Count)</h3>
+			<h3 style={{ marginBottom: '12px' }}>Suggestion for Today</h3>
 			<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-				{ranking.map((item, i) => (
-					<div
-						key={item.game_id}
-						class="card"
-						style={{
-							display: 'flex',
-							alignItems: 'center',
-							gap: '12px',
-							padding: '10px 16px',
-						}}
-					>
-						<span style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent)', minWidth: '30px' }}>#{i + 1}</span>
-						{item.image_url && (
-							<img
-								src={item.image_url}
-								alt={item.name}
-								style={{ width: '48px', height: '22px', objectFit: 'cover', borderRadius: '4px' }}
-							/>
-						)}
+				{ranking.map((item, i) => {
+					const steamUrl = item.steam_app_id
+						? `https://store.steampowered.com/app/${item.steam_app_id}/`
+						: null;
+
+					const nameEl = steamUrl ? (
+						<a
+							href={steamUrl}
+							target="_blank"
+							rel="noopener"
+							style={{ flex: 1, fontWeight: 500, color: 'var(--text-primary)', textDecoration: 'none' }}
+						>
+							{item.name}
+						</a>
+					) : (
 						<span style={{ flex: 1, fontWeight: 500 }}>{item.name}</span>
-						{item.vote_count < 2 ? (
-							<span class="badge badge-warning">Needs votes</span>
-						) : (
-							<span class="text-secondary" style={{ fontSize: '13px' }}>
-								{item.total_score} pts ({item.vote_count} votes)
-							</span>
-						)}
-					</div>
-				))}
+					);
+
+					return (
+						<div
+							key={item.game_id}
+							class="card"
+							style={{
+								display: 'flex',
+								alignItems: 'center',
+								gap: '12px',
+								padding: '10px 16px',
+							}}
+						>
+							<span style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent)', minWidth: '30px' }}>#{i + 1}</span>
+							{item.image_url && (
+								<img
+									src={item.image_url}
+									alt={item.name}
+									style={{ width: '48px', height: '22px', objectFit: 'cover', borderRadius: '4px' }}
+								/>
+							)}
+							{nameEl}
+							{item.vote_count < 2 ? (
+								<span class="badge badge-warning">Needs votes</span>
+							) : (
+								<span class="text-secondary" style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>
+									{item.total_score} pts ({item.vote_count} votes{item.like_count > 0 ? `, ${item.like_count} likes` : ''})
+								</span>
+							)}
+						</div>
+					);
+				})}
 			</div>
 		</div>
 	);

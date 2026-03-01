@@ -173,7 +173,7 @@ rally.post('/share-ranking', requireAuth, async (c) => {
 
 	const action = await createRallyAction(c.env.DB, user.id, 'share_ranking', {
 		rallyId: activeRally?.id,
-		metadata: { ranking: ranking.slice(0, 10).map((r) => ({ name: r.name, total_score: r.total_score, vote_count: r.vote_count })) },
+		metadata: { ranking: ranking.slice(0, 10).map((r) => ({ name: r.name, total_score: r.total_score, vote_count: r.vote_count, steam_app_id: r.steam_app_id, like_count: r.like_count })) },
 		dayKey,
 	});
 
