@@ -89,7 +89,7 @@ npx wrangler whoami   # verify
 #### 2. Create D1 Database
 
 ```bash
-npx wrangler d1 create when2play-db
+npx wrangler d1 create when2play-<guild-name>
 ```
 
 Copy the returned `database_id` into `wrangler.jsonc`:
@@ -97,8 +97,8 @@ Copy the returned `database_id` into `wrangler.jsonc`:
 ```jsonc
 "d1_databases": [
     {
-        "binding": "DB",
-        "database_name": "when2play-db",
+        "binding": "DB_<guild_id>",
+        "database_name": "when2play-<guild-name>",
         "database_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
         "migrations_dir": "migrations"
     }
@@ -128,12 +128,10 @@ To apply migrations to all when2play databases at once:
 scripts/migrate-all.sh
 ```
 
-**Existing users:** The original `DB` binding continues to work as a fallback. No migration is needed until you add a second guild.
-
 Verify tables exist:
 
 ```bash
-npx wrangler d1 execute when2play-db --remote --command "SELECT name FROM sqlite_master WHERE type='table'"
+npx wrangler d1 execute when2play-<guild-name> --remote --command "SELECT name FROM sqlite_master WHERE type='table'"
 ```
 
 #### 4. Set Bot API Key
@@ -193,8 +191,7 @@ In the Cloudflare dashboard: **Workers & Pages** → your worker → **Settings*
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `DB` | D1 Binding | Yes | Default D1 database, configured in `wrangler.jsonc` |
-| `DB_<guild_id>` | D1 Binding | No | Per-guild D1 database. Named `DB_` + Discord guild snowflake (e.g. `DB_123456789012345678`). Falls back to `DB` if not configured |
+| `DB_<guild_id>` | D1 Binding | Yes (1+ required) | Per-guild D1 database. Named `DB_` + Discord guild snowflake (e.g. `DB_123456789012345678`). Each guild must have its own binding. |
 | `BOT_API_KEY` | Secret | Recommended | Shared secret for bot auth. Set via `wrangler secret put`. When unset, bot auth is skipped. |
 | `VERBOSE_ERRORS` | Secret/Var | No | Set to `1` to include full error messages in 500 responses (for debugging). Omit or leave unset for production. |
 
@@ -532,4 +529,4 @@ By default, unhandled errors return a generic "Internal server error" message. T
 | Stream logs | `make logs` |
 | Simulate auth | `make simulate` |
 | Seed data | `make seed` |
-| Query remote D1 | `npx wrangler d1 execute when2play-db --remote --command "SELECT ..."` |
+| Query remote D1 | `npx wrangler d1 execute when2play-<guild-name> --remote --command "SELECT ..."` |

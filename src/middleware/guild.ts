@@ -25,12 +25,10 @@ export const guildDb = createMiddleware<{ Bindings: Bindings }>(async (c, next) 
 	}
 
 	const db = c.env[`DB_${guildId}`];
-	if (db) {
-		c.env.DB = db;
-	} else if (!c.env.DB) {
+	if (!db) {
 		return c.json({ ok: false, error: { code: 'UNKNOWN_GUILD', message: 'No DB binding for guild' } }, 404);
 	}
-	// If no guild-specific binding but c.env.DB exists, fall through (default DB)
+	c.env.DB = db;
 
 	await next();
 });

@@ -4,6 +4,11 @@ import path from 'path';
 
 export const TEST_GUILD_ID = '12345678901234567';
 
+/** Build a test env object with the DB bound to the test guild. */
+export function testEnv(db: D1Database, extras?: Record<string, unknown>): Record<string, unknown> {
+	return { [`DB_${TEST_GUILD_ID}`]: db, ...extras };
+}
+
 /** Append ?guild=TEST_GUILD_ID to a path (handles existing query strings). */
 export function guildUrl(urlPath: string): string {
 	const sep = urlPath.includes('?') ? '&' : '?';

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie } from '../setup';
+import { createTestDb, guildUrl, guildCookie, testEnv } from '../setup';
 
 async function createAuthenticatedUser(db: D1Database, discordId: string, username: string) {
 	const tokenRes = await app.request(
@@ -10,10 +10,10 @@ async function createAuthenticatedUser(db: D1Database, discordId: string, userna
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ discord_id: discordId, discord_username: username }),
 		},
-		{ DB: db },
+		testEnv(db),
 	);
 	const { data } = await tokenRes.json();
-	const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+	const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 	const cookie = callbackRes.headers.get('set-cookie')!;
 	const sessionId = cookie.match(/session_id=([^;]+)/)![1];
 	return `session_id=${sessionId}`;
@@ -38,7 +38,7 @@ describe('Vote routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({ name: 'Test Game' }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		const { data } = await res.json();
 		gameId = data.id;
@@ -53,7 +53,7 @@ describe('Vote routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({ rank: 1 }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		expect(voteRes.status).toBe(200);
 		const vote = await voteRes.json();
@@ -61,7 +61,7 @@ describe('Vote routes', () => {
 		expect(vote.data.is_approved).toBe(true);
 
 		// Get votes for game
-		const votesRes = await app.request(guildUrl(`/api/games/${gameId}/votes`), { headers: { Cookie: guildCookie(cookie1) } }, { DB: db });
+		const votesRes = await app.request(guildUrl(`/api/games/${gameId}/votes`), { headers: { Cookie: guildCookie(cookie1) } }, testEnv(db));
 		const votes = await votesRes.json();
 		expect(votes.data).toHaveLength(1);
 	});
@@ -75,7 +75,7 @@ describe('Vote routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({ rank: 1 }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 
 		// Update
@@ -86,7 +86,7 @@ describe('Vote routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({ rank: 3, is_approved: false }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		const updated = await updateRes.json();
 		expect(updated.data.rank).toBe(3);
@@ -102,7 +102,7 @@ describe('Vote routes', () => {
 				headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) },
 				body: JSON.stringify({ name: 'Game 2' }),
 			},
-			{ DB: db },
+			testEnv(db),
 		);
 		const game2Id = (await game2Res.json()).data.id;
 
@@ -110,28 +110,28 @@ describe('Vote routes', () => {
 		await app.request(
 			guildUrl(`/api/games/${gameId}/vote`),
 			{ method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) }, body: JSON.stringify({ rank: 1 }) },
-			{ DB: db },
+			testEnv(db),
 		);
 		await app.request(
 			guildUrl(`/api/games/${game2Id}/vote`),
 			{ method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) }, body: JSON.stringify({ rank: 2 }) },
-			{ DB: db },
+			testEnv(db),
 		);
 
 		// User2: rank 1 = Game 2, rank 2 = Test Game
 		await app.request(
 			guildUrl(`/api/games/${game2Id}/vote`),
 			{ method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie2) }, body: JSON.stringify({ rank: 1 }) },
-			{ DB: db },
+			testEnv(db),
 		);
 		await app.request(
 			guildUrl(`/api/games/${gameId}/vote`),
 			{ method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie2) }, body: JSON.stringify({ rank: 2 }) },
-			{ DB: db },
+			testEnv(db),
 		);
 
 		// Both should tie: each gets 2+1 = 3 points total
-		const rankRes = await app.request(guildUrl('/api/games/ranking'), { headers: { Cookie: guildCookie(cookie1) } }, { DB: db });
+		const rankRes = await app.request(guildUrl('/api/games/ranking'), { headers: { Cookie: guildCookie(cookie1) } }, testEnv(db));
 		const ranking = await rankRes.json();
 		expect(ranking.data).toHaveLength(2);
 		expect(ranking.data[0].total_score).toBe(ranking.data[1].total_score);
@@ -141,17 +141,17 @@ describe('Vote routes', () => {
 		await app.request(
 			guildUrl(`/api/games/${gameId}/vote`),
 			{ method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie1) }, body: JSON.stringify({ rank: 1 }) },
-			{ DB: db },
+			testEnv(db),
 		);
 
 		const deleteRes = await app.request(
 			guildUrl(`/api/games/${gameId}/vote`),
 			{ method: 'DELETE', headers: { Cookie: guildCookie(cookie1) } },
-			{ DB: db },
+			testEnv(db),
 		);
 		expect(deleteRes.status).toBe(200);
 
-		const votesRes = await app.request(guildUrl(`/api/games/${gameId}/votes`), { headers: { Cookie: guildCookie(cookie1) } }, { DB: db });
+		const votesRes = await app.request(guildUrl(`/api/games/${gameId}/votes`), { headers: { Cookie: guildCookie(cookie1) } }, testEnv(db));
 		const votes = await votesRes.json();
 		expect(votes.data).toHaveLength(0);
 	});

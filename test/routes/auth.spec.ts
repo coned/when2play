@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie, TEST_GUILD_ID } from '../setup';
+import { createTestDb, guildUrl, guildCookie, TEST_GUILD_ID, testEnv } from '../setup';
 
 describe('Auth routes', () => {
 	let db: D1Database;
@@ -18,7 +18,7 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(res.status).toBe(201);
@@ -36,7 +36,7 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_username: 'TestUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(res.status).toBe(400);
@@ -50,7 +50,7 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: 'a'.repeat(31), discord_username: 'TestUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(res.status).toBe(400);
@@ -64,7 +64,7 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '123', discord_username: 'a'.repeat(51) }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(res.status).toBe(400);
@@ -78,7 +78,7 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json', 'X-Bot-Token': 'wrong' },
 					body: JSON.stringify({ discord_id: '123', discord_username: 'TestUser' }),
 				},
-				{ DB: db, BOT_API_KEY: 'correct-key' },
+				testEnv(db, { BOT_API_KEY: 'correct-key' }),
 			);
 
 			expect(res.status).toBe(403);
@@ -92,7 +92,7 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json', 'X-Bot-Token': 'my-secret', 'X-Guild-Id': TEST_GUILD_ID },
 					body: JSON.stringify({ discord_id: '123', discord_username: 'TestUser' }),
 				},
-				{ DB: db, BOT_API_KEY: 'my-secret' },
+				testEnv(db, { BOT_API_KEY: 'my-secret' }),
 			);
 
 			expect(res.status).toBe(201);
@@ -109,12 +109,12 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 			const { data } = await tokenRes.json();
 
 			// Exchange token
-			const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+			const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 
 			expect(callbackRes.status).toBe(302);
 			const setCookie = callbackRes.headers.get('set-cookie');
@@ -123,7 +123,7 @@ describe('Auth routes', () => {
 		});
 
 		it('rejects invalid token', async () => {
-			const res = await app.request(guildUrl('/api/auth/callback/invalidtoken'), {}, { DB: db });
+			const res = await app.request(guildUrl('/api/auth/callback/invalidtoken'), {}, testEnv(db));
 			expect(res.status).toBe(401);
 		});
 
@@ -135,15 +135,15 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 			const { data } = await tokenRes.json();
 
 			// Use token once
-			await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+			await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 
 			// Try again
-			const res = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+			const res = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 			expect(res.status).toBe(401);
 		});
 	});
@@ -157,7 +157,7 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(res.status).toBe(201);
@@ -175,11 +175,11 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 			const { data } = await tokenRes.json();
 
-			const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+			const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 			expect(callbackRes.status).toBe(302);
 
 			const setCookieHeader = callbackRes.headers.get('set-cookie');
@@ -187,7 +187,7 @@ describe('Auth routes', () => {
 			expect(setCookieHeader?.toLowerCase()).not.toContain('max-age');
 
 			const sessionId = setCookieHeader!.match(/session_id=([^;]+)/)![1];
-			const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, { DB: db });
+			const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, testEnv(db));
 			const me = await meRes.json();
 			expect(me.data.is_admin).toBe(true);
 		});
@@ -200,16 +200,16 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '789', discord_username: 'RegularUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 			const { data } = await tokenRes.json();
 
-			const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+			const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 			const setCookieHeader = callbackRes.headers.get('set-cookie');
 			expect(setCookieHeader?.toLowerCase()).toContain('max-age');
 
 			const sessionId = setCookieHeader!.match(/session_id=([^;]+)/)![1];
-			const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, { DB: db });
+			const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, testEnv(db));
 			const me = await meRes.json();
 			expect(me.data.is_admin).toBe(false);
 		});
@@ -228,7 +228,7 @@ describe('Auth routes', () => {
 					},
 					body: JSON.stringify({ discord_id: '123', discord_username: 'TestUser' }),
 				},
-				{ DB: db, BOT_API_KEY: 'testkey' },
+				testEnv(db, { BOT_API_KEY: 'testkey' }),
 			);
 
 			expect(res.status).toBe(201);
@@ -248,7 +248,7 @@ describe('Auth routes', () => {
 					},
 					body: JSON.stringify({ discord_id: '123', discord_username: 'AdminUser' }),
 				},
-				{ DB: db, BOT_API_KEY: 'testkey' },
+				testEnv(db, { BOT_API_KEY: 'testkey' }),
 			);
 
 			expect(res.status).toBe(201);
@@ -264,14 +264,14 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '456', discord_username: 'GuildUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 			const { data } = await tokenRes.json();
 
 			const callbackRes = await app.request(
 				`/api/auth/callback/${data.token}?guild=${TEST_GUILD_ID}`,
 				{},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(callbackRes.status).toBe(302);
@@ -288,7 +288,7 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '789', discord_username: 'NoGuildUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 			const { data } = await tokenRes.json();
 
@@ -297,7 +297,7 @@ describe('Auth routes', () => {
 			const callbackRes = await app.request(
 				`/api/auth/callback/${data.token}`,
 				{ headers: { Cookie: `guild_id=${TEST_GUILD_ID}` } },
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(callbackRes.status).toBe(302);
@@ -314,13 +314,13 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '321', discord_username: 'LogoutUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 			const { data } = await tokenRes.json();
 			const callbackRes = await app.request(
 				`/api/auth/callback/${data.token}?guild=${TEST_GUILD_ID}`,
 				{},
-				{ DB: db },
+				testEnv(db),
 			);
 			const cookie = callbackRes.headers.get('set-cookie')!;
 			const sessionId = cookie.match(/session_id=([^;]+)/)![1];
@@ -331,7 +331,7 @@ describe('Auth routes', () => {
 					method: 'POST',
 					headers: { Cookie: guildCookie(`session_id=${sessionId}`) },
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(logoutRes.status).toBe(200);
@@ -350,11 +350,11 @@ describe('Auth routes', () => {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser' }),
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 			const { data } = await tokenRes.json();
 
-			const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, { DB: db });
+			const callbackRes = await app.request(guildUrl(`/api/auth/callback/${data.token}`), {}, testEnv(db));
 			const cookie = callbackRes.headers.get('set-cookie')!;
 			const sessionId = cookie.match(/session_id=([^;]+)/)![1];
 
@@ -365,13 +365,13 @@ describe('Auth routes', () => {
 					method: 'POST',
 					headers: { Cookie: guildCookie(`session_id=${sessionId}`) },
 				},
-				{ DB: db },
+				testEnv(db),
 			);
 
 			expect(logoutRes.status).toBe(200);
 
 			// Verify session is invalid now
-			const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, { DB: db });
+			const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, testEnv(db));
 			expect(meRes.status).toBe(401);
 		});
 	});
