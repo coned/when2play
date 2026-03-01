@@ -8,6 +8,7 @@ interface SettingsState {
 	gather_hourly_limit: number;
 	avail_start_hour_et: number;
 	avail_end_hour_et: number;
+	day_cutoff_hour_et: number;
 	rally_button_labels: Record<string, string>;
 	rally_suggested_phrases: Record<string, string[]>;
 	rally_show_discord_command: boolean;
@@ -261,6 +262,7 @@ export function AdminPanel() {
 		gather_hourly_limit: 30,
 		avail_start_hour_et: 17,
 		avail_end_hour_et: 3,
+		day_cutoff_hour_et: 5,
 		rally_button_labels: {},
 		rally_suggested_phrases: {},
 		rally_show_discord_command: true,
@@ -281,6 +283,7 @@ export function AdminPanel() {
 					gather_hourly_limit: (s.gather_hourly_limit as number) ?? 30,
 					avail_start_hour_et: (s.avail_start_hour_et as number) ?? 17,
 					avail_end_hour_et: (s.avail_end_hour_et as number) ?? 3,
+					day_cutoff_hour_et: (s.day_cutoff_hour_et as number) ?? 5,
 					rally_button_labels: (s.rally_button_labels as Record<string, string>) ?? {},
 					rally_suggested_phrases: (s.rally_suggested_phrases as Record<string, string[]>) ?? {},
 					rally_show_discord_command: s.rally_show_discord_command !== false,
@@ -352,6 +355,14 @@ export function AdminPanel() {
 					min={0}
 					max={23}
 					onChange={set('avail_end_hour_et')}
+				/>
+				<Field
+					label="Day cutoff hour (ET, 0-23)"
+					hint="Before this hour (ET), 'today' still means yesterday's session. Default: 5 (5 AM ET)."
+					value={settings.day_cutoff_hour_et}
+					min={0}
+					max={23}
+					onChange={set('day_cutoff_hour_et')}
 				/>
 			</SectionCard>
 
