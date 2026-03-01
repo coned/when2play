@@ -252,4 +252,211 @@ describe('Guild DB routing middleware', () => {
 		expect(body.ok).toBe(true);
 		expect(body.data.status).toBe('healthy');
 	});
+
+	// ---------------------------------------------------------------
+	// 9. Multi-guild auth: bot creates token, browser callback consumes
+	//    it via ?guild= query param falling back to default DB
+	// ---------------------------------------------------------------
+	it('auth token created by bot (default DB) is consumable via browser callback with ?guild= param', async () => {
+		const UNKNOWN_GUILD = '99999999999999999'; // no DB_<id> binding
+		const env = {
+			DB: defaultDb,
+			BOT_API_KEY: 'testkey',
+			[`DB_${TEST_GUILD_ID}`]: guildDb,
+		} as any;
+
+		// Step 1: Bot creates auth token (routed to default DB via fallback)
+		const tokenRes = await app.request(
+			'/api/auth/token',
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-Bot-Token': 'testkey',
+					'X-Guild-Id': UNKNOWN_GUILD,
+				},
+				body: JSON.stringify({
+					discord_id: '600600600600600600',
+					discord_username: 'MultiGuildUser',
+				}),
+			},
+			env,
+		);
+		expect(tokenRes.status).toBe(201);
+		const { data: tokenData } = await tokenRes.json() as any;
+		expect(tokenData.token).toBeTruthy();
+
+		// Step 2: Browser callback with ?guild= param (same unknown guild, fallback to default DB)
+		const callbackRes = await app.request(
+			`/api/auth/callback/${tokenData.token}?guild=${UNKNOWN_GUILD}`,
+			{},
+			env,
+		);
+		// Should redirect (302), not return INVALID_TOKEN
+		expect(callbackRes.status).toBe(302);
+		const setCookieHeader = callbackRes.headers.get('set-cookie');
+		expect(setCookieHeader).toContain('session_id=');
+	});
+
+	// ---------------------------------------------------------------
+	// 10. Multi-guild: token created via guild-specific DB is NOT
+	//     consumable via fallback default DB (cross-guild isolation)
+	// ---------------------------------------------------------------
+	it('auth token created in guild-specific DB is not consumable via default DB', async () => {
+		const UNKNOWN_GUILD = '99999999999999999';
+
+		// Bot creates token routed to guild-specific DB
+		const tokenRes = await app.request(
+			'/api/auth/token',
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-Bot-Token': 'testkey',
+					'X-Guild-Id': TEST_GUILD_ID,
+				},
+				body: JSON.stringify({
+					discord_id: '700700700700700700',
+					discord_username: 'GuildSpecificUser',
+				}),
+			},
+			{
+				DB: defaultDb,
+				BOT_API_KEY: 'testkey',
+				[`DB_${TEST_GUILD_ID}`]: guildDb,
+			} as any,
+		);
+		expect(tokenRes.status).toBe(201);
+		const { data: tokenData } = await tokenRes.json() as any;
+
+		// Use a FRESH env to simulate a separate production request
+		// (env is per-request in Cloudflare Workers)
+		const callbackRes = await app.request(
+			`/api/auth/callback/${tokenData.token}?guild=${UNKNOWN_GUILD}`,
+			{},
+			{
+				DB: defaultDb,
+				BOT_API_KEY: 'testkey',
+				[`DB_${TEST_GUILD_ID}`]: guildDb,
+			} as any,
+		);
+		// Should fail - token is in guildDb, but callback looks in defaultDb
+		expect(callbackRes.status).toBe(401);
+	});
+
+	// ---------------------------------------------------------------
+	// 11. Sequential guild requests don't pollute env
+	// ---------------------------------------------------------------
+	it('sequential guild requests do not pollute env across requests', async () => {
+		const { sessionId: g2Session } = await seedUserSession(guildDb, {
+			discordId: '222222222222222222',
+			username: 'Guild2User',
+		});
+		const { sessionId: g1Session } = await seedUserSession(defaultDb, {
+			discordId: '111111111111111111',
+			username: 'Guild1User',
+		});
+
+		// Single shared env object simulates Workers isolate reuse
+		const sharedEnv = {
+			DB: defaultDb,
+			BOT_API_KEY: 'testkey',
+			[`DB_${TEST_GUILD_ID}`]: guildDb,
+		};
+
+		// Request 1: guild-specific DB (mutates c.env.DB to guildDb)
+		const res1 = await app.request('/api/users/me', {
+			headers: {
+				'X-Bot-Token': 'testkey',
+				'X-Guild-Id': TEST_GUILD_ID,
+				Cookie: `session_id=${g2Session}`,
+			},
+		}, sharedEnv as any);
+		expect(res1.status).toBe(200);
+		expect((await res1.json() as any).data.discord_username).toBe('Guild2User');
+
+		// Request 2: fallback to default DB -- must NOT see guild 2's DB
+		const GUILD_1 = '99999999999999999'; // no binding, falls back to default
+		const res2 = await app.request('/api/users/me', {
+			headers: {
+				'X-Bot-Token': 'testkey',
+				'X-Guild-Id': GUILD_1,
+				Cookie: `session_id=${g1Session}`,
+			},
+		}, sharedEnv as any);
+		expect(res2.status).toBe(200);
+		expect((await res2.json() as any).data.discord_username).toBe('Guild1User');
+	});
+
+	// ---------------------------------------------------------------
+	// 12. Full multi-guild auth flow (token create -> consume across guilds)
+	// ---------------------------------------------------------------
+	it('full multi-guild auth flow: guild1 -> guild2 -> guild1 login works', async () => {
+		const GUILD_1 = '99999999999999999'; // falls back to default DB
+		const sharedEnv = {
+			DB: defaultDb,
+			BOT_API_KEY: 'testkey',
+			[`DB_${TEST_GUILD_ID}`]: guildDb,
+		} as any;
+
+		// Step 1: Bot creates token for guild 1 (default DB)
+		const token1Res = await app.request('/api/auth/token', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', 'X-Bot-Token': 'testkey', 'X-Guild-Id': GUILD_1 },
+			body: JSON.stringify({ discord_id: '111', discord_username: 'User1' }),
+		}, sharedEnv);
+		expect(token1Res.status).toBe(201);
+		const token1 = (await token1Res.json() as any).data.token;
+
+		// Step 2: Bot creates token for guild 2 (guild-specific DB)
+		const token2Res = await app.request('/api/auth/token', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', 'X-Bot-Token': 'testkey', 'X-Guild-Id': TEST_GUILD_ID },
+			body: JSON.stringify({ discord_id: '222', discord_username: 'User2' }),
+		}, sharedEnv);
+		expect(token2Res.status).toBe(201);
+		const token2 = (await token2Res.json() as any).data.token;
+
+		// Step 3: User 2 consumes token (guild 2) -- this would pollute env without fix
+		const cb2 = await app.request(`/api/auth/callback/${token2}?guild=${TEST_GUILD_ID}`, {}, sharedEnv);
+		expect(cb2.status).toBe(302);
+
+		// Step 4: User 1 consumes token (guild 1, default DB) -- THIS was failing before
+		const cb1 = await app.request(`/api/auth/callback/${token1}?guild=${GUILD_1}`, {}, sharedEnv);
+		expect(cb1.status).toBe(302);
+		expect(cb1.headers.get('set-cookie')).toContain('session_id=');
+	});
+
+	// ---------------------------------------------------------------
+	// 13. Cross-guild data isolation for games
+	// ---------------------------------------------------------------
+	it('games created in one guild are not visible in another', async () => {
+		const { sessionId: s1 } = await seedUserSession(defaultDb, {
+			discordId: '100100100100100100',
+			username: 'U1',
+			sessionId: 'sess_g1',
+		});
+		const { sessionId: s2 } = await seedUserSession(guildDb, {
+			discordId: '200200200200200200',
+			username: 'U2',
+			sessionId: 'sess_g2',
+		});
+		const sharedEnv = { DB: defaultDb, [`DB_${TEST_GUILD_ID}`]: guildDb } as any;
+		const GUILD_1 = '99999999999999999';
+
+		// Create a game in guild 1 (default DB)
+		const createRes = await app.request('/api/games', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Cookie: `session_id=${s1}; guild_id=${GUILD_1}` },
+			body: JSON.stringify({ name: 'Guild1Game' }),
+		}, sharedEnv);
+		expect(createRes.status).toBe(201);
+
+		// List games in guild 2 -- should be empty
+		const listRes = await app.request('/api/games', {
+			headers: { Cookie: `session_id=${s2}; guild_id=${TEST_GUILD_ID}` },
+		}, sharedEnv);
+		expect(listRes.status).toBe(200);
+		expect((await listRes.json() as any).data).toHaveLength(0);
+	});
 });

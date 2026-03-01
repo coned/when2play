@@ -52,6 +52,11 @@ export function createTestDb(): D1Database {
 		dump() {
 			return Promise.resolve(new ArrayBuffer(0));
 		},
+		withSession() {
+			// In-memory SQLite has no replication; return self so
+			// session.prepare() uses the same DB.
+			return d1 as any;
+		},
 	} as any;
 
 	return d1;

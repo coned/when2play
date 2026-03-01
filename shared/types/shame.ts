@@ -23,5 +23,6 @@ export interface ShameLeaderboardEntry {
 	user_id: string;
 	discord_username: string;
 	avatar_url: string | null;
-	shame_count: number;
+	shame_count_today: number;
+	shame_count_week: number;
 }

@@ -62,7 +62,7 @@ describe('Shame routes', () => {
 		const res = await app.request(guildUrl('/api/shame/leaderboard'), { headers: { Cookie: guildCookie(cookie1) } }, { DB: db });
 		const body = await res.json();
 		expect(body.data).toHaveLength(1);
-		expect(body.data[0].shame_count).toBe(1);
+		expect(body.data[0].shame_count_today).toBe(1);
 		expect(body.data[0].discord_username).toBe('User2');
 	});
 });
