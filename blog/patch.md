@@ -44,3 +44,38 @@ This release introduces the Rally coordination system, cross-platform Discord + 
 - Schedule grouped slot layout alignment corrected
 - Shame Wall correctly scopes today/week columns to current date window
 - `+1` badge rendered without layout shift alongside time ranges
+
+## v0.3
+
+This release adds multi-guild support -- one bot instance and one API deployment now serve multiple Discord servers, each with a fully isolated database. Also includes admin tooling improvements and UX refinements.
+
+### New (feat)
+
+- Multi-guild architecture -- dynamic D1 database routing via `X-Guild-Id` header; each Discord server gets its own isolated data store
+- Guild DB routing middleware -- API resolves the correct database binding per request based on guild context
+- `/setchannel` persistence in D1 -- channel configuration survives bot restarts and redeploys (previously stored in local JSON)
+- `/welcome` admin command -- posts a public introduction message explaining when2play and how to get started
+- `/play` now replies as an ephemeral channel message instead of a DM -- fewer clicks for the user
+- Day cutoff setting -- admin-configurable "today's cutoff" (default 5 AM ET) so late-night sessions still count as the previous day on the Availability page
+- Settings export/import -- admin can export the full settings JSON and re-import it on the Settings page, with server-side validation against injection
+- Schedule tab renamed to Dashboard
+
+### New (qol)
+
+- Guild name displayed in the Dashboard header so users know which server they are viewing
+- Local timezone dates shown throughout the UI
+- Guild-scoped slash command registration -- commands appear instantly in new guilds (no 1-hour global propagation delay)
+- Stale global commands auto-cleared when guild-scoped registration is active
+
+### Fix
+
+- Multi-guild token isolation -- auth tokens are scoped per guild; using a token from one guild in another is rejected
+- Bot fetch error handling -- all API responses guarded against non-JSON error bodies (fixes "Internal Server Error" parse crashes)
+- Debug info stripped from production error responses; developers can opt in via `VERBOSE_ERRORS` environment variable
+- Large integer precision preserved in settings retrieval
+- Passed availability time slots show a deletion line instead of being hidden
+
+### Style
+
+- 18 historical migration files consolidated into a single init schema
+- Default DB binding renamed to guild-specific format (`DB_<guild_id>`)
