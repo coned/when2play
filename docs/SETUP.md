@@ -196,6 +196,7 @@ In the Cloudflare dashboard: **Workers & Pages** → your worker → **Settings*
 | `DB` | D1 Binding | Yes | Default D1 database, configured in `wrangler.jsonc` |
 | `DB_<guild_id>` | D1 Binding | No | Per-guild D1 database. Named `DB_` + Discord guild snowflake (e.g. `DB_123456789012345678`). Falls back to `DB` if not configured |
 | `BOT_API_KEY` | Secret | Recommended | Shared secret for bot auth. Set via `wrangler secret put`. When unset, bot auth is skipped. |
+| `VERBOSE_ERRORS` | Secret/Var | No | Set to `1` to include full error messages in 500 responses (for debugging). Omit or leave unset for production. |
 
 | Limit | Detail |
 |-------|--------|
@@ -239,13 +240,15 @@ X-Bot-Token: <your-bot-api-key>
 ```
 
 Protected endpoints:
-- `POST /api/auth/token` — create login tokens for Discord users
-- `GET /api/gather/pending` — poll for undelivered gather pings
-- `PATCH /api/gather/:id/delivered` — mark gather ping as delivered
-- `GET /api/rally/pending` — poll for undelivered rally actions
-- `PATCH /api/rally/:id/delivered` — mark rally action as delivered
-- `GET /api/rally/tree/share/pending` — poll for pending tree images
-- `PATCH /api/rally/tree/share/:id/delivered` — mark tree share as delivered
+- `POST /api/auth/token` -- create login tokens for Discord users
+- `GET /api/gather/pending` -- poll for undelivered gather pings
+- `PATCH /api/gather/:id/delivered` -- mark gather ping as delivered
+- `GET /api/rally/pending` -- poll for undelivered rally actions
+- `PATCH /api/rally/:id/delivered` -- mark rally action as delivered
+- `GET /api/rally/tree/share/pending` -- poll for pending tree images
+- `PATCH /api/rally/tree/share/:id/delivered` -- mark tree share as delivered
+- `GET /api/settings/bot` -- read guild settings (channel_id, guild_name)
+- `PATCH /api/settings/bot` -- update guild settings
 
 ### Create a Discord Application
 
@@ -505,7 +508,7 @@ All responses include:
 
 ### Error Redaction
 
-In production (HTTPS), unhandled errors return generic "Internal server error". In development, the full error message is returned.
+By default, unhandled errors return a generic "Internal server error" message. To expose full error details for debugging, set `VERBOSE_ERRORS=1` as a Cloudflare Worker secret or environment variable. This should never be enabled in production.
 
 ### Data Privacy
 
