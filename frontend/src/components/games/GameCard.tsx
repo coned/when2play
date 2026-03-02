@@ -15,6 +15,7 @@ interface GameCardProps {
 	likeCount: number;
 	dislikeCount: number;
 	reactionUsers: ReactionUser[];
+	currentUser: { id: string; display_name: string | null; avatar_url: string | null; discord_username: string };
 	isArchived?: boolean;
 }
 
@@ -72,29 +73,42 @@ function AvatarStack({ users, maxShow = 4 }: { users: ReactionUser[]; maxShow?: 
 	);
 }
 
-export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount, reactionUsers, isArchived }: GameCardProps) {
+export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount, reactionUsers, currentUser, isArchived }: GameCardProps) {
 	const [reaction, setReaction] = useState(userReaction);
 	const [likes, setLikes] = useState(likeCount);
 	const [dislikes, setDislikes] = useState(dislikeCount);
+	const [users, setUsers] = useState<ReactionUser[]>(reactionUsers);
 	const [busy, setBusy] = useState(false);
+
+	const currentUserAsReaction = (type: 'like' | 'dislike'): ReactionUser => ({
+		user_id: currentUser.id,
+		type,
+		display_name: currentUser.display_name ?? currentUser.discord_username,
+		avatar_url: currentUser.avatar_url,
+	});
 
 	const handleReact = async (type: 'like' | 'dislike') => {
 		if (busy) return;
 		setBusy(true);
 		if (reaction === type) {
 			// Remove reaction
-			await api.removeReaction(game.id);
 			if (type === 'like') setLikes((c: number) => Math.max(0, c - 1));
 			else setDislikes((c: number) => Math.max(0, c - 1));
+			setUsers((prev) => prev.filter((u) => u.user_id !== currentUser.id));
 			setReaction(null);
+			await api.removeReaction(game.id);
 		} else {
 			// Set or change reaction
 			if (reaction === 'like') setLikes((c: number) => Math.max(0, c - 1));
 			if (reaction === 'dislike') setDislikes((c: number) => Math.max(0, c - 1));
-			await api.reactToGame(game.id, type);
 			if (type === 'like') setLikes((c: number) => c + 1);
 			else setDislikes((c: number) => c + 1);
+			setUsers((prev) => [
+				...prev.filter((u) => u.user_id !== currentUser.id),
+				currentUserAsReaction(type),
+			]);
 			setReaction(type);
+			await api.reactToGame(game.id, type);
 		}
 		setBusy(false);
 	};
@@ -111,8 +125,8 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 
 	const steamUrl = game.steam_app_id ? `https://store.steampowered.com/app/${game.steam_app_id}/` : null;
 	const netScore = likes - dislikes;
-	const likeUsers = reactionUsers.filter((u) => u.type === 'like');
-	const dislikeUsers = reactionUsers.filter((u) => u.type === 'dislike');
+	const likeUsers = users.filter((u) => u.type === 'like');
+	const dislikeUsers = users.filter((u) => u.type === 'dislike');
 
 	return (
 		<div class="card" style={{ overflow: 'hidden', padding: 0 }}>
@@ -154,8 +168,8 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 							alignItems: 'center',
 							gap: '3px',
 							background: 'transparent',
-							border: reaction === 'like' ? '1.5px solid var(--success)' : '1px solid var(--border)',
-							color: reaction === 'like' ? 'var(--success)' : 'var(--text-muted)',
+							border: reaction === 'like' ? '1.5px solid #e74c4c' : '1px solid var(--border)',
+							color: reaction === 'like' ? '#e74c4c' : 'var(--text-muted)',
 							cursor: 'pointer',
 							padding: '4px 8px',
 							borderRadius: 'var(--radius)',
@@ -164,7 +178,7 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 						}}
 						title="Like"
 					>
-						<span style={{ fontSize: '14px' }}>&#x1F44D;</span>
+						<span style={{ fontSize: '14px' }}>{reaction === 'like' ? '\u2764\uFE0F' : '\u2661'}</span>
 						{likes > 0 && <span>{likes}</span>}
 					</button>
 
@@ -207,7 +221,7 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 					<div style={{ display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'center' }}>
 						{likeUsers.length > 0 && (
 							<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-								<span style={{ fontSize: '11px', color: 'var(--success)' }}>&#x1F44D;</span>
+								<span style={{ fontSize: '11px', color: '#e74c4c' }}>{'\u2764\uFE0F'}</span>
 								<AvatarStack users={likeUsers} />
 							</div>
 						)}
@@ -239,8 +253,17 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 				) : (
 					<div style={{ display: 'flex', gap: '6px' }}>
 						<button
-							class="btn btn-secondary"
-							style={{ padding: '4px 10px', fontSize: '11px', flex: 1 }}
+							style={{
+								padding: '4px 10px',
+								fontSize: '11px',
+								flex: 1,
+								cursor: 'pointer',
+								borderRadius: 'var(--radius)',
+								border: '1px solid var(--warning)',
+								background: 'rgba(234, 179, 8, 0.12)',
+								color: 'var(--warning)',
+								fontWeight: 600,
+							}}
 							onClick={() => handleArchive('save_for_later')}
 						>
 							Save for later

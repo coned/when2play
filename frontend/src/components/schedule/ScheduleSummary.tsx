@@ -250,6 +250,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
 						{topGames.map((item, i) => {
 							const likeUsers = (item.reaction_users ?? []).filter((u: any) => u.type === 'like');
+							const dislikeUsers = (item.reaction_users ?? []).filter((u: any) => u.type === 'dislike');
 							return (
 								<div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 									<span style={{ color: 'var(--accent)', fontWeight: 700, minWidth: '24px' }}>#{i + 1}</span>
@@ -263,7 +264,18 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 											{item.net_score > 0 ? `+${item.net_score}` : item.net_score}
 										</span>
 									)}
-									{likeUsers.length > 0 && <AvatarRow users={likeUsers} />}
+									{likeUsers.length > 0 && (
+										<div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+											<span style={{ fontSize: '10px' }}>{'\u2764\uFE0F'}</span>
+											<AvatarRow users={likeUsers} />
+										</div>
+									)}
+									{dislikeUsers.length > 0 && (
+										<div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+											<span style={{ fontSize: '10px' }}>&#x1F44E;</span>
+											<AvatarRow users={dislikeUsers} />
+										</div>
+									)}
 								</div>
 							);
 						})}

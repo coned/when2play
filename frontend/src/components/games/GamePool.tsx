@@ -7,10 +7,10 @@ import { VoteRanking } from './VoteRanking';
 import { GameActivity } from './GameActivity';
 
 interface GamePoolProps {
-	userId: string;
+	user: { id: string; display_name: string | null; avatar_url: string | null; discord_username: string };
 }
 
-export function GamePool({ userId }: GamePoolProps) {
+export function GamePool({ user }: GamePoolProps) {
 	const [games, setGames] = useState<any[]>([]);
 	const [archivedGames, setArchivedGames] = useState<any[]>([]);
 	const [showPropose, setShowPropose] = useState(false);
@@ -82,6 +82,7 @@ export function GamePool({ userId }: GamePoolProps) {
 								likeCount={game.like_count}
 								dislikeCount={game.dislike_count}
 								reactionUsers={game.reaction_users}
+								currentUser={user}
 							/>
 						))}
 					</div>
@@ -130,6 +131,7 @@ export function GamePool({ userId }: GamePoolProps) {
 								likeCount={game.like_count}
 								dislikeCount={game.dislike_count}
 								reactionUsers={game.reaction_users}
+								currentUser={user}
 								isArchived
 							/>
 						))}
@@ -176,6 +178,7 @@ export function GamePool({ userId }: GamePoolProps) {
 								likeCount={game.like_count}
 								dislikeCount={game.dislike_count}
 								reactionUsers={game.reaction_users}
+								currentUser={user}
 								isArchived
 							/>
 						))}
