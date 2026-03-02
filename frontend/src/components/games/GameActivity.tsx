@@ -31,6 +31,8 @@ function formatDetail(action: string, detail: string | null): string {
 	return '';
 }
 
+const PAGE_SIZE = 30;
+
 export function GameActivity() {
 	const [entries, setEntries] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -39,10 +41,10 @@ export function GameActivity() {
 
 	useEffect(() => {
 		(async () => {
-			const result = await api.getGameActivity(20);
+			const result = await api.getGameActivity(PAGE_SIZE);
 			if (result.ok) {
 				setEntries(result.data);
-				setHasMore(result.data.length === 20);
+				setHasMore(result.data.length === PAGE_SIZE);
 			}
 			setLoading(false);
 		})();
@@ -52,10 +54,10 @@ export function GameActivity() {
 		if (loadingMore || entries.length === 0) return;
 		setLoadingMore(true);
 		const last = entries[entries.length - 1];
-		const result = await api.getGameActivity(20, last.created_at);
+		const result = await api.getGameActivity(PAGE_SIZE, last.created_at);
 		if (result.ok) {
 			setEntries((prev) => [...prev, ...result.data]);
-			setHasMore(result.data.length === 20);
+			setHasMore(result.data.length === PAGE_SIZE);
 		}
 		setLoadingMore(false);
 	};
@@ -103,7 +105,7 @@ export function GameActivity() {
 					onClick={loadMore}
 					disabled={loadingMore}
 				>
-					{loadingMore ? 'Loading...' : 'Load more'}
+					{loadingMore ? 'Loading...' : 'Show more'}
 				</button>
 			)}
 		</div>
