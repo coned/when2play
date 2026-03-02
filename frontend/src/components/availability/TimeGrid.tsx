@@ -10,6 +10,8 @@ interface TimeGridProps {
 	onSave: (slots: Array<{ start_time: string; end_time: string }>) => Promise<void>;
 	availStartHourET?: number;
 	availEndHourET?: number;
+	totalParticipants: number;
+	userMap: Map<string, { display_name: string | null; avatar_url: string | null }>;
 }
 
 const GRANULARITY = 15;
@@ -40,17 +42,12 @@ function getNextDate(dateStr: string): string {
 
 /** Convert an ET hour to a UTC HH:MM slot for a given date, accounting for DST. */
 function etHourToUtcSlot(etHour: number, dateStr: string): string {
-	// Build a date in America/New_York at the given hour
-	// We use a trial-and-error approach: construct UTC, then check what ET hour it maps to
-	// Start with a rough estimate (ET is UTC-5 or UTC-4)
 	const estimateUtcHour = (etHour + 5) % 24;
 	const trial = new Date(`${dateStr}T${String(estimateUtcHour).padStart(2, '0')}:00:00Z`);
 
-	// Get the actual ET hour for this UTC time
 	const etStr = trial.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
 	const actualEtHour = parseInt(etStr, 10) % 24;
 
-	// Adjust if needed
 	const diff = ((etHour - actualEtHour) % 24 + 24) % 24;
 	if (diff !== 0) {
 		trial.setUTCHours(trial.getUTCHours() + diff);
@@ -67,7 +64,6 @@ interface FilteredSlot {
 	dateOffset: 0 | 1;
 }
 
-/** Generate only slots within the ET time range for a given date, with dateOffset for midnight-crossing. */
 function generateFilteredSlots(startHourET: number, endHourET: number, dateStr: string): FilteredSlot[] {
 	const startUtc = etHourToUtcSlot(startHourET, dateStr);
 	const endUtc = etHourToUtcSlot(endHourET, dateStr);
@@ -81,21 +77,102 @@ function generateFilteredSlots(startHourET: number, endHourET: number, dateStr: 
 	if (endIdx > startIdx) {
 		return ALL_SLOTS.slice(startIdx, endIdx).map((s) => ({ ...s, dateOffset: 0 as const }));
 	}
-	// Wraps around midnight: slots from startIdx onward are day 0, slots from 0 to endIdx are day 1
 	return [
 		...ALL_SLOTS.slice(startIdx).map((s) => ({ ...s, dateOffset: 0 as const })),
 		...ALL_SLOTS.slice(0, endIdx).map((s) => ({ ...s, dateOffset: 1 as const })),
 	];
 }
 
+/** Compute consensus background opacity. Exported for testing. */
+export function consensusOpacity(overlapCount: number, totalParticipants: number): number {
+	if (totalParticipants <= 0 || overlapCount <= 0) return 0;
+	const ratio = Math.min(overlapCount / totalParticipants, 1);
+	return 0.08 + ratio * 0.42;
+}
+
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHourET, availEndHourET }: TimeGridProps) {
+function SlotPopover({ userIds, userMap }: { userIds: string[]; userMap: Map<string, { display_name: string | null; avatar_url: string | null }> }) {
+	const shown = userIds.slice(0, 5);
+	const overflow = userIds.length - shown.length;
+
+	return (
+		<div
+			style={{
+				position: 'absolute',
+				bottom: '100%',
+				left: '50%',
+				transform: 'translateX(-50%)',
+				marginBottom: '4px',
+				background: 'var(--bg-card)',
+				border: '1px solid var(--border)',
+				borderRadius: '6px',
+				padding: '6px 10px',
+				zIndex: 100,
+				minWidth: '120px',
+				maxWidth: '200px',
+				boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+				pointerEvents: 'none',
+			}}
+		>
+			<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+				{shown.map((uid) => {
+					const user = userMap.get(uid);
+					const name = user?.display_name ?? uid.slice(0, 8);
+					return (
+						<div key={uid} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+							{user?.avatar_url ? (
+								<img
+									src={user.avatar_url}
+									alt={name}
+									style={{
+										width: '18px',
+										height: '18px',
+										borderRadius: '50%',
+										flexShrink: 0,
+									}}
+								/>
+							) : (
+								<span
+									style={{
+										width: '18px',
+										height: '18px',
+										borderRadius: '50%',
+										background: 'var(--accent)',
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+										fontSize: '9px',
+										color: '#fff',
+										flexShrink: 0,
+									}}
+								>
+									{name[0].toUpperCase()}
+								</span>
+							)}
+							<span style={{ fontSize: '11px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+								{name}
+							</span>
+						</div>
+					);
+				})}
+				{overflow > 0 && (
+					<span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+						+{overflow} more
+					</span>
+				)}
+			</div>
+		</div>
+	);
+}
+
+export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHourET, availEndHourET, totalParticipants, userMap }: TimeGridProps) {
 	const [selected, setSelected] = useState<Set<string>>(new Set(mySlots.map((s) => s.start_time)));
 	const [isDragging, setIsDragging] = useState(false);
 	const [dragValue, setDragValue] = useState(true);
 	const [touchMode, setTouchMode] = useState<'select' | 'scroll'>('scroll');
 	const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+	const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [containerHeight, setContainerHeight] = useState(400);
 	const isMobile = useMediaQuery(768);
@@ -164,7 +241,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 		};
 	}, []);
 
-	// Always start from index 0 — past slots remain visible (dimmed + strikethrough)
+	// Always start from index 0 -- past slots remain visible (dimmed + strikethrough)
 	const startIndex = 0;
 
 	const nextDate = useMemo(() => getNextDate(date), [date]);
@@ -185,8 +262,6 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 			const raw = startIndex + i;
 			const wrapped = raw % total;
 			const slot = filteredSlots[wrapped];
-			// dateOffset=1 means this slot is already next-day in the filtered range;
-			// wrapping past total adds another day
 			const slotDate = (slot.dateOffset > 0 || raw >= total) ? nextDate : date;
 			return { ...slot, slotDate };
 		});
@@ -238,7 +313,6 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 		const dateLabel = formatDateLabel(firstSlot.slotDate);
 		const first = formatLocalTimeClean(firstSlot.start_time, firstSlot.slotDate);
 		const last = formatLocalTimeClean(lastSlot.start_time, lastSlot.slotDate);
-		// Check if range crosses local midnight (compare local dates, not UTC dates)
 		const firstLocalDate = new Date(`${firstSlot.slotDate}T${firstSlot.start_time}:00Z`).toLocaleDateString('en-CA');
 		const lastLocalDate = new Date(`${lastSlot.slotDate}T${lastSlot.start_time}:00Z`).toLocaleDateString('en-CA');
 		const crossesMidnight = firstLocalDate !== lastLocalDate;
@@ -286,7 +360,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 						</button>
 					)}
 					<span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-						{isMobile ? 'Tap to toggle · drag to range' : 'Click or drag to select'}
+						{isMobile ? 'Tap to toggle · drag to range' : 'Click or drag to select · hover for details'}
 					</span>
 				</div>
 				<span style={{ fontSize: '12px', color: statusColor, minWidth: '70px', textAlign: 'right' }}>
@@ -298,7 +372,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 			<div
 				ref={containerRef}
 				onMouseUp={() => setIsDragging(false)}
-				onMouseLeave={() => setIsDragging(false)}
+				onMouseLeave={() => { setIsDragging(false); setHoveredSlot(null); }}
 				onTouchMove={handleTouchMove}
 				onTouchEnd={() => setIsDragging(false)}
 				style={{
@@ -338,11 +412,20 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 
 						{col.map((slot) => {
 							const isSelected = selected.has(slot.start_time);
-							const overlapCount = otherUsers.get(slot.start_time)?.size ?? 0;
+							const slotOtherUsers = otherUsers.get(slot.start_time);
+							const overlapCount = slotOtherUsers?.size ?? 0;
 							const isHourStart = slot.start_time.endsWith(':00');
 							const isPast = isSlotPast(slot.start_time, slot.slotDate);
 							const slotLocalDate = new Date(`${slot.slotDate}T${slot.start_time}:00Z`).toLocaleDateString('en-CA');
 							const isNextLocalDay = slotLocalDate !== baseLocalDate;
+							const showPopover = hoveredSlot === slot.start_time && overlapCount > 0 && !isDragging;
+
+							// Scale background opacity by consensus ratio
+							const bgNotSelected = overlapCount > 0
+								? `rgba(34, 197, 94, ${consensusOpacity(overlapCount, totalParticipants).toFixed(2)})`
+								: isHourStart
+									? 'var(--bg-card)'
+									: 'var(--bg-tertiary)';
 
 							return (
 								<div
@@ -355,6 +438,10 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 									}}
 									onMouseEnter={() => {
 										if (isDragging) toggleSlot(slot.start_time, dragValue);
+										else if (overlapCount > 0) setHoveredSlot(slot.start_time);
+									}}
+									onMouseLeave={() => {
+										if (hoveredSlot === slot.start_time) setHoveredSlot(null);
 									}}
 									onTouchStart={() => {
 										if (touchMode !== 'select') return;
@@ -373,15 +460,12 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 										borderRadius: '3px',
 										flexShrink: 0,
 										opacity: isPast ? 0.45 : 1,
+										position: 'relative',
 										background: isSelected
 											? overlapCount > 0
 												? 'var(--success)'
 												: 'var(--accent)'
-											: overlapCount > 0
-												? 'rgba(34, 197, 94, 0.15)'
-												: isHourStart
-													? 'var(--bg-card)'
-													: 'var(--bg-tertiary)',
+											: bgNotSelected,
 										color: isSelected ? '#fff' : 'var(--text-secondary)',
 										borderTop: isHourStart ? '1px solid var(--border)' : 'none',
 									}}
@@ -417,6 +501,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 											+{overlapCount}
 										</span>
 									)}
+									{showPopover && (
+										<SlotPopover userIds={Array.from(slotOtherUsers!)} userMap={userMap} />
+									)}
 								</div>
 							);
 						})}
@@ -424,7 +511,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 				))}
 			</div>
 			<p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-				Changes save automatically · Green = overlap with others
+				Changes save automatically · Darker green = more people available
 			</p>
 		</div>
 	);
