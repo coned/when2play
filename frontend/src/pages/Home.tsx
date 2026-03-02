@@ -23,7 +23,7 @@ export function Home({ user, onLogout, onUserUpdate }: HomeProps) {
 	return (
 		<Shell user={user} activeTab={activeTab} onTabChange={setActiveTab} onLogout={onLogout} onUserUpdate={onUserUpdate}>
 			{activeTab === 'dashboard' && <ScheduleSummary userId={user.id} />}
-			{activeTab === 'games' && <GamePool userId={user.id} />}
+			{activeTab === 'games' && <GamePool user={user} />}
 			{activeTab === 'availability' && <AvailabilityView userId={user.id} />}
 			{activeTab === 'gather' && <GatherBell />}
 			{activeTab === 'rally' && <RallyPanel userId={user.id} />}

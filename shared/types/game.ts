@@ -7,6 +7,7 @@ export interface Game {
 	is_archived: boolean;
 	created_at: string;
 	archived_at: string | null;
+	archive_reason: string | null;
 }
 
 export interface CreateGameRequest {
@@ -38,6 +39,7 @@ export interface GameRanking {
 	game: Game;
 	total_score: number;
 	vote_count: number;
+	like_count: number;
 	votes: GameVote[];
 }
 
@@ -49,4 +51,34 @@ export interface SteamSearchResult {
 
 export interface ReorderVotesRequest {
 	rankings: Array<{ game_id: string; rank: number }>;
+}
+
+export type ReactionType = 'like' | 'dislike';
+
+export interface GameReaction {
+	game_id: string;
+	user_id: string;
+	type: ReactionType;
+	created_at: string;
+}
+
+export interface ReactionUser {
+	user_id: string;
+	type: ReactionType;
+	display_name: string | null;
+	avatar_url: string | null;
+}
+
+export type GameActivityAction = 'propose' | 'like' | 'dislike' | 'unreact' | 'archive' | 'restore';
+
+export interface GameActivity {
+	id: string;
+	game_id: string;
+	user_id: string;
+	action: GameActivityAction;
+	detail: string | null;
+	created_at: string;
+	game_name: string;
+	user_display_name: string | null;
+	discord_username: string;
 }

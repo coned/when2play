@@ -156,9 +156,9 @@ export function VoteRanking({ games, onVoteChange }: VoteRankingProps) {
 
 	return (
 		<div>
-			<h3 style={{ marginBottom: '8px' }}>My Ranking</h3>
+			<h3 style={{ marginBottom: '8px' }}>Vote for what to play today</h3>
 			<p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-				{rankedVotes.length === 0 ? 'Add games below to start ranking.' : 'Drag to reorder · drag to the zone below to unrank'}
+				{rankedVotes.length === 0 ? 'Add games below to cast your vote.' : 'Drag to reorder · drag to the zone below to unrank'}
 			</p>
 
 			{/* Ranked list */}
