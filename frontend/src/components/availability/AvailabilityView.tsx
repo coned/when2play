@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'preact/hooks';
+import { useState, useEffect, useCallback, useMemo } from 'preact/hooks';
 import { api } from '../../api/client';
 import { TimeGrid } from './TimeGrid';
 import { getTimezoneAbbreviation, availabilityToday, availabilityTomorrow } from '../../lib/time';
@@ -15,13 +15,15 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 	const [loading, setLoading] = useState(true);
 	const [availStartHourET, setAvailStartHourET] = useState<number | undefined>(undefined);
 	const [availEndHourET, setAvailEndHourET] = useState<number | undefined>(undefined);
+	const [userMap, setUserMap] = useState<Map<string, { display_name: string | null; avatar_url: string | null }>>(new Map());
 
 	const fetchSlots = useCallback(async () => {
 		setLoading(true);
-		const [myResult, allResult, settingsResult] = await Promise.all([
+		const [myResult, allResult, settingsResult, usersResult] = await Promise.all([
 			api.getAvailability({ user_id: userId, date: selectedDate }),
 			api.getAvailability({ date: selectedDate }),
 			api.getSettings(),
+			api.getUsers(),
 		]);
 
 		if (myResult.ok) setMySlots(myResult.data);
@@ -31,6 +33,11 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 			if (s.avail_start_hour_et !== undefined) setAvailStartHourET(s.avail_start_hour_et as number);
 			if (s.avail_end_hour_et !== undefined) setAvailEndHourET(s.avail_end_hour_et as number);
 			if (s.day_cutoff_hour_et !== undefined) setCutoffHourET(s.day_cutoff_hour_et as number);
+		}
+		if (usersResult.ok) {
+			const map = new Map<string, { display_name: string | null; avatar_url: string | null }>();
+			for (const u of usersResult.data) map.set(u.id, { display_name: u.display_name ?? u.discord_username, avatar_url: u.avatar_url });
+			setUserMap(map);
 		}
 		setLoading(false);
 	}, [userId, selectedDate]);
@@ -48,6 +55,15 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 			if (allResult.ok) setAllSlots(allResult.data);
 		}
 	};
+
+	// Count distinct other users who have any availability for this date
+	const totalParticipants = useMemo(() => {
+		const others = new Set<string>();
+		for (const slot of allSlots) {
+			if (slot.user_id !== userId) others.add(slot.user_id);
+		}
+		return others.size;
+	}, [allSlots, userId]);
 
 	const today = availabilityToday(cutoffHourET);
 	const tomorrow = availabilityTomorrow(cutoffHourET);
@@ -88,6 +104,8 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 					onSave={handleSave}
 					availStartHourET={availStartHourET}
 					availEndHourET={availEndHourET}
+					totalParticipants={totalParticipants}
+					userMap={userMap}
 				/>
 			)}
 		</div>
