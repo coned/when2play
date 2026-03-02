@@ -44,12 +44,30 @@ export const api = {
 	updateMe: (data: Record<string, unknown>) => request<any>('/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
 
 	// Games
-	getGames: (includeArchived = false) => request<any[]>(`/games${includeArchived ? '?include_archived=true' : ''}`),
+	getGames: (includeArchived = false, pool?: 'active' | 'archive' | 'all') => {
+		if (pool) return request<any[]>(`/games?pool=${pool}`);
+		return request<any[]>(`/games${includeArchived ? '?include_archived=true' : ''}`);
+	},
 	createGame: (data: { name: string; steam_app_id?: string; image_url?: string }) =>
 		request<any>('/games', { method: 'POST', body: JSON.stringify(data) }),
 	updateGame: (id: string, data: Record<string, unknown>) =>
 		request<any>(`/games/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-	archiveGame: (id: string) => request<null>(`/games/${id}`, { method: 'DELETE' }),
+	archiveGame: (id: string, reason?: string) =>
+		request<null>(`/games/${id}`, {
+			method: 'DELETE',
+			body: JSON.stringify({ reason: reason ?? 'not_interested' }),
+		}),
+	reactToGame: (id: string, type: 'like' | 'dislike') =>
+		request<null>(`/games/${id}/react`, { method: 'PUT', body: JSON.stringify({ type }) }),
+	removeReaction: (id: string) => request<null>(`/games/${id}/react`, { method: 'DELETE' }),
+	restoreGame: (id: string) => request<null>(`/games/${id}/restore`, { method: 'POST' }),
+	getGameActivity: (limit?: number, before?: string) => {
+		const params = new URLSearchParams();
+		if (limit) params.set('limit', String(limit));
+		if (before) params.set('before', before);
+		const qs = params.toString();
+		return request<any[]>(`/games/activity${qs ? `?${qs}` : ''}`);
+	},
 
 	// Votes
 	getGameRanking: () => request<any[]>('/games/ranking'),

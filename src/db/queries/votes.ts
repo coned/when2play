@@ -18,6 +18,7 @@ export interface RankingRow {
 	proposed_by: string;
 	total_score: number;
 	vote_count: number;
+	like_count: number;
 }
 
 export async function setVote(db: D1Database, gameId: string, userId: string, rank: number, isApproved: boolean = true): Promise<VoteRow> {
@@ -107,9 +108,11 @@ export async function getGameRanking(db: D1Database): Promise<RankingRow[]> {
 						(SELECT COUNT(*) FROM game_votes gv2 WHERE gv2.user_id = gv.user_id) - gv.rank + 1
 					ELSE 0 END
 				), 0) as total_score,
-				COUNT(gv.id) as vote_count
+				COUNT(gv.id) as vote_count,
+				COALESCE(lk.like_count, 0) as like_count
 			FROM games g
 			LEFT JOIN game_votes gv ON g.id = gv.game_id
+			LEFT JOIN (SELECT game_id, COUNT(*) as like_count FROM game_reactions WHERE type = 'like' GROUP BY game_id) lk ON g.id = lk.game_id
 			WHERE g.is_archived = 0
 			GROUP BY g.id
 			ORDER BY total_score DESC, vote_count DESC`,
