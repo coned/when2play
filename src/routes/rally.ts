@@ -138,10 +138,14 @@ rally.post('/judge/time', requireAuth, async (c) => {
 // POST /api/rally/judge/avail — nudge user to set availability
 rally.post('/judge/avail', requireAuth, async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ target_user_ids: string[] }>().catch(() => ({ target_user_ids: [] as string[] }));
+	const body = await c.req.json<{ target_user_ids: string[]; message?: string }>().catch(() => ({ target_user_ids: [] as string[], message: undefined as string | undefined }));
 
 	if (!body.target_user_ids || body.target_user_ids.length === 0) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'target_user_ids required' } }, 400);
+	}
+
+	if (body.message && body.message.length > 500) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Message must be 500 characters or less' } }, 400);
 	}
 
 	const dayKey = await getDayKey(c.env.DB);
@@ -150,6 +154,7 @@ rally.post('/judge/avail', requireAuth, async (c) => {
 	const action = await createRallyAction(c.env.DB, user.id, 'judge_avail', {
 		rallyId: activeRally?.id,
 		targetUserIds: body.target_user_ids,
+		message: body.message || undefined,
 		dayKey,
 	});
 

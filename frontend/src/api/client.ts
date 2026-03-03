@@ -122,7 +122,7 @@ export const api = {
 	rallyAction: (data: { action_type: string; target_user_ids?: string[]; message?: string }) =>
 		request<any>('/rally/action', { method: 'POST', body: JSON.stringify(data) }),
 	judgeTime: () => request<any>('/rally/judge/time', { method: 'POST' }),
-	judgeAvail: (data: { target_user_ids: string[] }) =>
+	judgeAvail: (data: { target_user_ids: string[]; message?: string }) =>
 		request<any>('/rally/judge/avail', { method: 'POST', body: JSON.stringify(data) }),
 	getActiveRally: () => request<any>('/rally/active'),
 	getTreeData: (dayKey?: string) => request<any>(`/rally/tree${dayKey ? `?day_key=${dayKey}` : ''}`),

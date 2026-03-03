@@ -195,7 +195,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 					setLoading(false);
 					return;
 				}
-				const result = await api.judgeAvail({ target_user_ids: [...selectedUserIds] });
+				const result = await api.judgeAvail({ target_user_ids: [...selectedUserIds], message: composeMessage || undefined });
 				if (result.ok) {
 					const names = [...selectedUserIds]
 						.map((id) => { const u = userMap.get(id); return u?.display_name ?? u?.discord_username ?? 'user'; })
