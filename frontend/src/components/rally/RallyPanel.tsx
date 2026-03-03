@@ -225,7 +225,6 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 		});
 	};
 
-	const otherUsers = users.filter((u) => u.id !== userId);
 	const needsUserSelect = expandedButton === 'ping' || expandedButton === 'where' || expandedButton === 'judge_avail';
 	const needsCallOptions = expandedButton === 'call';
 	const phrases = expandedButton ? getSuggestedPhrases(expandedButton) : [];
@@ -304,7 +303,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 									Select user(s):
 								</p>
 								<div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-									{otherUsers.map((u) => (
+									{users.map((u) => (
 										<button
 											key={u.id}
 											class={`btn ${selectedUserIds.has(u.id) ? 'btn-primary' : 'btn-secondary'}`}
@@ -313,10 +312,11 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 										>
 											{u.avatar_url && <img src={u.avatar_url} alt="" style={{ width: '18px', height: '18px', borderRadius: '50%' }} />}
 											{u.display_name ?? u.discord_username}
+											{u.id === userId && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(you)</span>}
 										</button>
 									))}
-									{otherUsers.length === 0 && (
-										<p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No other users yet.</p>
+									{users.length === 0 && (
+										<p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No users yet.</p>
 									)}
 								</div>
 							</div>
