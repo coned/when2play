@@ -113,7 +113,8 @@ const commands = [
     new SlashCommandBuilder()
         .setName('call2select')
         .setDescription('Nudge someone to set their availability on when2play')
-        .addUserOption(o => o.setName('user').setDescription('Who to nudge').setRequired(true)),
+        .addUserOption(o => o.setName('user').setDescription('Who to nudge').setRequired(true))
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
     new SlashCommandBuilder()
         .setName('post')
         .setDescription('Post information to the channel')
@@ -342,6 +343,7 @@ client.on('interactionCreate', async (interaction) => {
 
         else if (commandName === 'call2select') {
             const targetDiscordUser = interaction.options.getUser('user', true);
+            const message = interaction.options.getString('message') ?? undefined;
             const targetAuth = await ensureUser(targetDiscordUser, null, interaction.guildId);
             if (!targetAuth) {
                 await interaction.editReply('Could not find that user. They may need to use `/play` first.');
@@ -349,7 +351,7 @@ client.on('interactionCreate', async (interaction) => {
             }
             const json = await apiCallWithSession(session.session_id, '/api/rally/judge/avail', {
                 method: 'POST',
-                body: JSON.stringify({ target_user_ids: [targetAuth.user.id] }),
+                body: JSON.stringify({ target_user_ids: [targetAuth.user.id], message }),
             }, interaction.guildId);
             if (!json.ok) {
                 await interaction.editReply(`Failed: ${json.error.message}`);
@@ -490,7 +492,8 @@ async function pollRallyActions(guildId, config) {
             }
             case 'judge_avail': {
                 const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
-                text = `🤖 ${actor} → ${targets}: Please set your availability!`;
+                const nudgeMsg = action.message || 'Please set your availability!';
+                text = `🤖 ${actor} → ${targets}: ${nudgeMsg}`;
                 break;
             }
             case 'brb':
