@@ -163,17 +163,21 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 	const [guildName, setGuildName] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [today, setToday] = useState(availabilityToday(5));
+	const [otherGuilds, setOtherGuilds] = useState<Array<{ guild_id: string; guild_name: string | null }>>([]);
+	const [guildDropdownOpen, setGuildDropdownOpen] = useState(false);
+	const [switching, setSwitching] = useState(false);
 
 	const todayDate = new Date(today + 'T12:00:00Z');
 	const todayLabel = todayDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
 	useEffect(() => {
 		(async () => {
-			const [gamesResult, rankResult, usersResult, settingsResult] = await Promise.all([
+			const [gamesResult, rankResult, usersResult, settingsResult, guildsResult] = await Promise.all([
 				api.getGames(),
 				api.getGameRanking(),
 				api.getUsers(),
 				api.getSettings(),
+				api.getMyGuilds(),
 			]);
 
 			let effectiveToday = availabilityToday(5);
@@ -187,6 +191,11 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 				}
 			}
 			setToday(effectiveToday);
+
+			if (guildsResult.ok) {
+				const current = guildsResult.data.current_guild_id;
+				setOtherGuilds(guildsResult.data.guilds.filter(g => g.guild_id !== current));
+			}
 
 			const availResult = await api.getAvailability({ date: effectiveToday });
 
@@ -235,7 +244,80 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 		<div>
 			<h2 style={{ marginBottom: guildName ? '2px' : '8px' }}>Dashboard</h2>
 			{guildName && (
-				<p style={{ marginBottom: '4px', fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 600 }}>{guildName}</p>
+				<div style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px', position: 'relative' }}>
+					<p style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: 600, margin: 0 }}>{guildName}</p>
+					{otherGuilds.length > 0 && (
+						<>
+							<button
+								onClick={() => setGuildDropdownOpen(v => !v)}
+								disabled={switching}
+								title="Switch guild"
+								style={{
+									background: 'none',
+									border: '1px solid var(--border)',
+									borderRadius: '4px',
+									padding: '2px 5px',
+									cursor: switching ? 'wait' : 'pointer',
+									color: 'var(--text-muted)',
+									fontSize: '12px',
+									lineHeight: 1,
+									display: 'flex',
+									alignItems: 'center',
+								}}
+							>
+								{switching ? '...' : '\u21C5'}
+							</button>
+							{guildDropdownOpen && (
+								<div
+									style={{
+										position: 'absolute',
+										top: '100%',
+										left: 0,
+										marginTop: '4px',
+										background: 'var(--bg-secondary)',
+										border: '1px solid var(--border)',
+										borderRadius: 'var(--radius)',
+										padding: '4px 0',
+										zIndex: 100,
+										minWidth: '160px',
+										boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+									}}
+								>
+									{otherGuilds.map(g => (
+										<button
+											key={g.guild_id}
+											onClick={async () => {
+												setSwitching(true);
+												setGuildDropdownOpen(false);
+												const res = await api.switchGuild(g.guild_id);
+												if (res.ok) {
+													window.location.reload();
+												} else {
+													setSwitching(false);
+												}
+											}}
+											style={{
+												display: 'block',
+												width: '100%',
+												background: 'none',
+												border: 'none',
+												padding: '6px 12px',
+												textAlign: 'left',
+												color: 'var(--text-primary)',
+												fontSize: '13px',
+												cursor: 'pointer',
+											}}
+											onMouseEnter={(e) => { (e.target as HTMLElement).style.background = 'var(--bg-tertiary)'; }}
+											onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'none'; }}
+										>
+											{g.guild_name ?? g.guild_id}
+										</button>
+									))}
+								</div>
+							)}
+						</>
+					)}
+				</div>
 			)}
 			<p style={{ marginBottom: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
 				Times shown in {getTimezoneAbbreviation()} (local time)

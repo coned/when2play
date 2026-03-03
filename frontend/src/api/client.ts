@@ -111,6 +111,10 @@ export const api = {
 	lookupSteam: (appId: string) => request<{ name: string; header_image: string }>(`/steam/lookup/${appId}`),
 	searchSteam: (query: string) => request<Array<{ app_id: string; name: string; image_url: string }>>(`/steam/search?q=${encodeURIComponent(query)}`),
 
+	// Guilds
+	getMyGuilds: () => request<{ guilds: Array<{ guild_id: string; guild_name: string | null }>; current_guild_id: string | null }>('/guilds/mine'),
+	switchGuild: (guildId: string) => request<null>('/guilds/switch', { method: 'POST', body: JSON.stringify({ guild_id: guildId }) }),
+
 	// Rally
 	createRally: (data?: { message?: string; is_anonymous?: boolean }) =>
 		request<any>('/rally/call', { method: 'POST', body: JSON.stringify(data ?? {}) }),
