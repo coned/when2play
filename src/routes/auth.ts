@@ -64,7 +64,7 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 
 	// Per-guild admin account prevents cross-guild access via guild switcher
 	const guildId = c.req.header('X-Guild-Id');
-	if (!guildId) {
+	if (!guildId || !/^\d{17,20}$/.test(guildId)) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Missing guild context' } }, 400);
 	}
 	const adminDiscordId = `system-admin-${guildId}`;
