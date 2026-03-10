@@ -129,7 +129,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 
 		try {
 			if (expandedButton === 'call') {
-				const result = await api.createRally({ message: composeMessage || undefined, is_anonymous: actionAnonymous || undefined });
+				const result = await api.createRally({ message: composeMessage || undefined, is_anonymous: (shouldShowAnonymous('call') && actionAnonymous) || undefined });
 				if (result.ok) {
 					setSuccess('Rally started!');
 					setExpandedButton(null);
@@ -152,7 +152,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 				const result = await api.rallyAction({
 					action_type: expandedButton,
 					message: composeMessage || undefined,
-					is_anonymous: actionAnonymous || undefined,
+					is_anonymous: (shouldShowAnonymous(expandedButton) && actionAnonymous) || undefined,
 				});
 				if (result.ok) {
 					const labels = { in: "You're in!", out: "You're out.", brb: 'Marked as BRB.' };
@@ -174,7 +174,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 					action_type: expandedButton,
 					target_user_ids: [...selectedUserIds],
 					message: composeMessage || undefined,
-					is_anonymous: actionAnonymous || undefined,
+					is_anonymous: (shouldShowAnonymous(expandedButton) && actionAnonymous) || undefined,
 				});
 				if (result.ok) {
 					const names = [...selectedUserIds]
