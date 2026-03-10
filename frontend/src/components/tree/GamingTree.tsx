@@ -1,26 +1,93 @@
-import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'preact/hooks';
 import { api } from '../../api/client';
-import { localToday } from '../../lib/time';
-import { TreeVisualization } from './TreeVisualization';
+import type { TreeNode, TreeEdge, Participant } from './treeConstants';
+import { useTreeInteraction } from './useTreeInteraction';
+import { SequenceDiagram } from './SequenceDiagram';
+import { RadialGraph } from './RadialGraph';
+import { NodeDetailPanel } from './NodeDetailPanel';
+import { UserFilterBar } from './UserFilterBar';
 
 interface TreeData {
-	nodes: Array<{
-		id: string;
-		action_type: string;
-		actor_id: string;
-		actor_username: string;
-		actor_avatar: string | null;
-		target_user_ids: string[] | null;
-		message: string | null;
-		metadata: Record<string, unknown> | null;
-		created_at: string;
-	}>;
-	edges: Array<{ source: string; target: string; type: 'response' | 'ping' | 'sequence' }>;
+	nodes: TreeNode[];
+	edges: TreeEdge[];
 	rallies: Array<{ id: string; day_key: string; status: string }>;
+	participants: Record<string, Participant>;
 }
 
-async function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
-	const svgData = new XMLSerializer().serializeToString(svgElement);
+function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
+	// Clone SVG for export-safe processing
+	const clone = svgElement.cloneNode(true) as SVGSVGElement;
+
+	// Strip <animate> elements for clean static frame
+	for (const anim of Array.from(clone.querySelectorAll('animate'))) {
+		anim.remove();
+	}
+
+	// Replace <image> elements with colored circle + initials (cross-origin safe)
+	for (const img of Array.from(clone.querySelectorAll('image'))) {
+		const parent = img.parentElement;
+		if (!parent) { img.remove(); continue; }
+
+		// Find the sibling circle for sizing reference
+		const circle = parent.querySelector('circle');
+		if (circle) {
+			const cx = circle.getAttribute('cx') ?? '0';
+			const cy = circle.getAttribute('cy') ?? '0';
+			// Remove image, the initials text fallback (if any) or circle background will show through
+			img.remove();
+
+			// If there's no text sibling, add initials
+			if (!parent.querySelector('text')) {
+				const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+				text.setAttribute('x', cx);
+				text.setAttribute('y', String(Number(cy) + 4));
+				text.setAttribute('font-size', '12');
+				text.setAttribute('font-weight', '600');
+				text.setAttribute('fill', '#aaa');
+				text.setAttribute('text-anchor', 'middle');
+				text.textContent = '?';
+				parent.appendChild(text);
+			}
+		} else {
+			img.remove();
+		}
+	}
+
+	// Inline CSS custom properties
+	const computed = getComputedStyle(svgElement);
+	const cssVarMap: Record<string, string> = {
+		'var(--bg-primary)': computed.getPropertyValue('--bg-primary').trim() || '#1a1a2e',
+		'var(--bg-secondary)': computed.getPropertyValue('--bg-secondary').trim() || '#252540',
+		'var(--bg-tertiary)': computed.getPropertyValue('--bg-tertiary').trim() || '#2f2f50',
+		'var(--text-primary)': computed.getPropertyValue('--text-primary').trim() || '#e0e0e0',
+		'var(--text-secondary)': computed.getPropertyValue('--text-secondary').trim() || '#aaa',
+		'var(--text-muted)': computed.getPropertyValue('--text-muted').trim() || '#666',
+		'var(--border)': computed.getPropertyValue('--border').trim() || '#3a3a5c',
+		'var(--accent)': computed.getPropertyValue('--accent').trim() || '#4a9eff',
+	};
+
+	// Replace CSS vars in all attributes
+	const allElements = clone.querySelectorAll('*');
+	for (const el of Array.from(allElements)) {
+		for (const attr of Array.from(el.attributes)) {
+			let val = attr.value;
+			for (const [varRef, resolved] of Object.entries(cssVarMap)) {
+				if (val.includes(varRef)) {
+					val = val.replace(varRef, resolved);
+				}
+			}
+			if (val !== attr.value) el.setAttribute(attr.name, val);
+		}
+	}
+	// Also handle the root SVG
+	const bgStyle = clone.getAttribute('style') ?? '';
+	let updatedStyle = bgStyle;
+	for (const [varRef, resolved] of Object.entries(cssVarMap)) {
+		updatedStyle = updatedStyle.replaceAll(varRef, resolved);
+	}
+	clone.setAttribute('style', updatedStyle);
+
+	const svgData = new XMLSerializer().serializeToString(clone);
 	const canvas = document.createElement('canvas');
 	const ctx = canvas.getContext('2d')!;
 	const img = new Image();
@@ -31,7 +98,7 @@ async function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
 		img.onload = () => {
 			canvas.width = img.width || 800;
 			canvas.height = img.height || 600;
-			ctx.fillStyle = '#1a1a2e';
+			ctx.fillStyle = cssVarMap['var(--bg-primary)'];
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
 			ctx.drawImage(img, 0, 0);
 			URL.revokeObjectURL(url);
@@ -64,6 +131,17 @@ export function GamingTree() {
 		return () => clearInterval(interval);
 	}, [fetchTree]);
 
+	const rawNodes: TreeNode[] = data?.nodes ?? [];
+	const rawEdges: TreeEdge[] = data?.edges ?? [];
+	const participants: Record<string, Participant> = data?.participants ?? {};
+
+	const interaction = useTreeInteraction(rawNodes, rawEdges, participants);
+
+	const selectedNode = useMemo(() => {
+		if (!interaction.selectedNodeId) return null;
+		return interaction.processedNodes.find((n) => n.id === interaction.selectedNodeId) ?? null;
+	}, [interaction.selectedNodeId, interaction.processedNodes]);
+
 	const handleShare = async () => {
 		if (!getSvgRef.current) return;
 		const svg = getSvgRef.current();
@@ -80,14 +158,14 @@ export function GamingTree() {
 			} else {
 				setShareStatus(`Failed: ${result.error.message}`);
 			}
-		} catch (err) {
+		} catch {
 			setShareStatus('Failed to export tree image.');
 		}
 
 		setSharing(false);
 	};
 
-	// Generate day options (today + last 6 days)
+	// Day options: today + last 6 days
 	const dayOptions: string[] = [];
 	for (let i = 0; i < 7; i++) {
 		const d = new Date();
@@ -95,8 +173,11 @@ export function GamingTree() {
 		dayOptions.push(d.toLocaleDateString('en-CA'));
 	}
 
+	const emptyState = rawNodes.length === 0;
+
 	return (
-		<div>
+		<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+			{/* Header controls */}
 			<div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
 				<h2 style={{ margin: 0 }}>Gaming Tree</h2>
 				<select
@@ -109,11 +190,26 @@ export function GamingTree() {
 						<option key={d} value={d}>{d}</option>
 					))}
 				</select>
+
+				{/* Mode toggle */}
+				<div style={{ display: 'flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)' }}>
+					<ModeButton
+						label="Protocol"
+						active={interaction.viewMode === 'sequence'}
+						onClick={() => interaction.setViewMode('sequence')}
+					/>
+					<ModeButton
+						label="Social"
+						active={interaction.viewMode === 'radial'}
+						onClick={() => interaction.setViewMode('radial')}
+					/>
+				</div>
+
 				<button
 					class="btn btn-secondary"
 					style={{ padding: '4px 12px', fontSize: '12px' }}
 					onClick={handleShare}
-					disabled={sharing || !data?.nodes.length}
+					disabled={sharing || emptyState}
 				>
 					{sharing ? 'Sharing...' : 'Share to Discord'}
 				</button>
@@ -124,14 +220,61 @@ export function GamingTree() {
 				)}
 			</div>
 
-			<div class="card" style={{ padding: '0', overflow: 'hidden' }}>
-				<TreeVisualization
-					nodes={data?.nodes ?? []}
-					edges={data?.edges ?? []}
-					onExportRef={(fn) => { getSvgRef.current = fn; }}
+			{/* User filter bar */}
+			{!emptyState && (
+				<UserFilterBar
+					participantIds={interaction.participantIds}
+					participants={participants}
+					filterUserIds={interaction.filterUserIds}
+					onToggle={interaction.toggleFilterUser}
+					onClear={interaction.clearFilters}
 				/>
+			)}
+
+			{/* Visualization area - fill remaining viewport */}
+			<div class="card" style={{ padding: '0', overflow: 'hidden', position: 'relative', height: 'calc(100vh - 240px)', minHeight: '300px' }}>
+				{emptyState ? (
+					<div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+						<p style={{ fontSize: '18px', marginBottom: '8px' }}>{'\u{1F333}'} No actions yet</p>
+						<p style={{ fontSize: '14px' }}>Use <code>/call</code> to start a rally and the tree will grow!</p>
+					</div>
+				) : interaction.viewMode === 'sequence' ? (
+					<SequenceDiagram
+						nodes={interaction.processedNodes}
+						edges={interaction.processedEdges}
+						participants={participants}
+						hoveredNodeId={interaction.hoveredNodeId}
+						highlightedNodeIds={interaction.highlightedNodeIds}
+						highlightedEdgeIds={interaction.highlightedEdgeIds}
+						onHoverNode={interaction.setHoveredNodeId}
+						onClickNode={interaction.setSelectedNodeId}
+						onExportRef={(fn) => { getSvgRef.current = fn; }}
+					/>
+				) : (
+					<RadialGraph
+						nodes={interaction.processedNodes}
+						edges={interaction.processedEdges}
+						participants={participants}
+						hoveredNodeId={interaction.hoveredNodeId}
+						highlightedNodeIds={interaction.highlightedNodeIds}
+						highlightedEdgeIds={interaction.highlightedEdgeIds}
+						onHoverNode={interaction.setHoveredNodeId}
+						onClickNode={interaction.setSelectedNodeId}
+						onExportRef={(fn) => { getSvgRef.current = fn; }}
+					/>
+				)}
+
+				{/* Node detail overlay */}
+				{selectedNode && (
+					<NodeDetailPanel
+						node={selectedNode}
+						participants={participants}
+						onClose={() => interaction.setSelectedNodeId(null)}
+					/>
+				)}
 			</div>
 
+			{/* Footer metadata */}
 			{data && data.rallies.length > 0 && (
 				<div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text-muted)' }}>
 					{data.nodes.length} actions &middot; {data.edges.length} connections &middot;
@@ -139,5 +282,25 @@ export function GamingTree() {
 				</div>
 			)}
 		</div>
+	);
+}
+
+function ModeButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+	return (
+		<button
+			onClick={onClick}
+			style={{
+				padding: '4px 14px',
+				fontSize: '12px',
+				fontWeight: active ? 700 : 500,
+				background: active ? 'var(--accent, #4a9eff)' : 'var(--bg-secondary)',
+				color: active ? 'white' : 'var(--text-secondary)',
+				border: 'none',
+				cursor: 'pointer',
+				transition: 'background 0.15s',
+			}}
+		>
+			{label}
+		</button>
 	);
 }
