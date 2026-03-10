@@ -244,7 +244,20 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 		slotUsers.get(slot.start_time)!.add(slot.user_id);
 	}
 
-	const overlapSlots = Array.from(slotUsers.entries()).filter(([, users]) => users.size >= 2);
+	// Build user status map: if any slot is tentative, user is tentative
+	const userStatusMap = new Map<string, string>();
+	for (const slot of availability) {
+		const existing = userStatusMap.get(slot.user_id);
+		if (slot.status === 'tentative') {
+			userStatusMap.set(slot.user_id, 'tentative');
+		} else if (!existing) {
+			userStatusMap.set(slot.user_id, slot.status ?? 'manual');
+		}
+	}
+
+	const hasMultiUserOverlap = Array.from(slotUsers.values()).some((users) => users.size >= 2);
+	const minUsers = hasMultiUserOverlap ? 2 : 1;
+	const overlapSlots = Array.from(slotUsers.entries()).filter(([, users]) => users.size >= minUsers);
 	const overlapGroups = groupAdjacentSlots(overlapSlots);
 	overlapGroups.sort((a, b) => localSortKey(a.startTime, today) - localSortKey(b.startTime, today));
 
@@ -445,9 +458,9 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 									<div style={{ display: 'flex', alignItems: 'center' }}>
 										{shown.map((uid, i) => {
 											const user = userMap.get(uid);
-											return user?.avatar_url ? (
+											const isTentativeUser = userStatusMap.get(uid) === 'tentative';
+											const avatarEl = user?.avatar_url ? (
 												<img
-													key={uid}
 													src={user.avatar_url}
 													alt={user.display_name ?? user.discord_username}
 													title={user.display_name ?? user.discord_username}
@@ -456,13 +469,12 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 														height: '18px',
 														borderRadius: '50%',
 														border: '1px solid var(--bg-secondary)',
-														marginLeft: i > 0 ? '-4px' : 0,
 														flexShrink: 0,
+														display: 'block',
 													}}
 												/>
 											) : (
 												<span
-													key={uid}
 													title={user?.display_name ?? user?.discord_username ?? uid}
 													style={{
 														width: '18px',
@@ -470,7 +482,6 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 														borderRadius: '50%',
 														background: 'var(--accent)',
 														border: '1px solid var(--bg-secondary)',
-														marginLeft: i > 0 ? '-4px' : 0,
 														display: 'flex',
 														alignItems: 'center',
 														justifyContent: 'center',
@@ -480,6 +491,30 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 													}}
 												>
 													{(user?.display_name ?? user?.discord_username ?? '?')[0].toUpperCase()}
+												</span>
+											);
+											return (
+												<span
+													key={uid}
+													style={{
+														position: 'relative',
+														marginLeft: i > 0 ? '-4px' : 0,
+														flexShrink: 0,
+													}}
+												>
+													{avatarEl}
+													{isTentativeUser && (
+														<span style={{
+															position: 'absolute',
+															bottom: '-2px',
+															right: '-2px',
+															width: '7px',
+															height: '7px',
+															borderRadius: '50%',
+															background: 'var(--warning)',
+															border: '1px solid var(--bg-tertiary)',
+														}} />
+													)}
 												</span>
 											);
 										})}
