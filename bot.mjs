@@ -457,7 +457,9 @@ async function pollRallyActions(guildId, config) {
 
     for (const action of json.data) {
         // Use bold plaintext name instead of @mention to avoid pinging the sender
-        const actor = `**${action.actor_username}**`;
+        const isAnon = action.metadata?.is_anonymous === true;
+        const actor = isAnon ? '**Someone**' : `**${action.actor_username}**`;
+        const actorPlain = isAnon ? 'Someone' : action.actor_username;
         let text = '';
 
         switch (action.action_type) {
@@ -484,9 +486,9 @@ async function pollRallyActions(guildId, config) {
                     text = `📅 **Best window:** ${fmt(best.start)}--${fmt(best.end)} (${fmtNames(best)})`;
                     const allLines = meta.windows.slice(0, 8).map(w => `• ${fmt(w.start)}--${fmt(w.end)}: ${fmtNames(w)}`);
                     text += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
-                    text += `\n_On behalf of ${action.actor_username}_`;
+                    text += `\n_On behalf of ${actorPlain}_`;
                 } else {
-                    text = `🤖 No overlapping availability found today. Ask everyone to set their times!\n_On behalf of ${action.actor_username}_`;
+                    text = `🤖 No overlapping availability found today. Ask everyone to set their times!\n_On behalf of ${actorPlain}_`;
                 }
                 break;
             }
@@ -514,7 +516,7 @@ async function pollRallyActions(guildId, config) {
                         const likes = r.like_count ? `, ${r.like_count} likes` : '';
                         return `#${i + 1} ${name} (${r.total_score} pts, ${r.vote_count} votes${likes})`;
                     });
-                    text = `🏆 **Game Rankings:**\n${lines.join('\n')}\n_On behalf of ${action.actor_username}_`;
+                    text = `🏆 **Game Rankings:**\n${lines.join('\n')}\n_On behalf of ${actorPlain}_`;
                 } else {
                     text = `🏆 ${actor} shared rankings -- no games ranked yet`;
                 }
