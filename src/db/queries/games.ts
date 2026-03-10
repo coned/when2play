@@ -11,6 +11,7 @@ export interface GameRow {
 	created_at: string;
 	archived_at: string | null;
 	archive_reason: string | null;
+	image_checked_at: string | null;
 }
 
 export async function createGame(
@@ -22,13 +23,14 @@ export async function createGame(
 ): Promise<GameRow> {
 	const id = uuid();
 	const timestamp = now();
+	const imageCheckedAt = steamAppId ? timestamp : null;
 
 	await db
-		.prepare('INSERT INTO games (id, name, steam_app_id, image_url, proposed_by, is_archived, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)')
-		.bind(id, name, steamAppId ?? null, imageUrl ?? null, proposedBy, timestamp)
+		.prepare('INSERT INTO games (id, name, steam_app_id, image_url, proposed_by, is_archived, created_at, image_checked_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)')
+		.bind(id, name, steamAppId ?? null, imageUrl ?? null, proposedBy, timestamp, imageCheckedAt)
 		.run();
 
-	return { id, name, steam_app_id: steamAppId ?? null, image_url: imageUrl ?? null, proposed_by: proposedBy, is_archived: 0, created_at: timestamp, archived_at: null, archive_reason: null };
+	return { id, name, steam_app_id: steamAppId ?? null, image_url: imageUrl ?? null, proposed_by: proposedBy, is_archived: 0, created_at: timestamp, archived_at: null, archive_reason: null, image_checked_at: imageCheckedAt };
 }
 
 export async function getGames(db: D1Database, pool: 'active' | 'archive' | 'all' = 'active'): Promise<GameRow[]> {
@@ -48,7 +50,7 @@ export async function getGameById(db: D1Database, id: string): Promise<GameRow |
 	return db.prepare('SELECT * FROM games WHERE id = ?').bind(id).first<GameRow>();
 }
 
-export async function updateGame(db: D1Database, id: string, updates: { name?: string; image_url?: string }): Promise<GameRow | null> {
+export async function updateGame(db: D1Database, id: string, updates: { name?: string; image_url?: string; image_checked_at?: string }): Promise<GameRow | null> {
 	const setClauses: string[] = [];
 	const values: unknown[] = [];
 
@@ -59,6 +61,10 @@ export async function updateGame(db: D1Database, id: string, updates: { name?: s
 	if (updates.image_url !== undefined) {
 		setClauses.push('image_url = ?');
 		values.push(updates.image_url);
+	}
+	if (updates.image_checked_at !== undefined) {
+		setClauses.push('image_checked_at = ?');
+		values.push(updates.image_checked_at);
 	}
 
 	if (setClauses.length === 0) return getGameById(db, id);

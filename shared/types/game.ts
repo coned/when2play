@@ -8,6 +8,7 @@ export interface Game {
 	created_at: string;
 	archived_at: string | null;
 	archive_reason: string | null;
+	image_checked_at: string | null;
 }
 
 export interface CreateGameRequest {

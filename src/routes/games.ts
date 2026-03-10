@@ -5,6 +5,7 @@ import { createGame, getGames, getGameById, updateGame, archiveGame, restoreGame
 import { setReaction, removeReaction, getReactionCountsForGames, getUserReactions, getReactionUsersForGames } from '../db/queries/game-reactions';
 import { logActivity, getActivity } from '../db/queries/game-activity';
 import type { UserRow } from '../db/queries/users';
+import { refreshStaleImages } from '../lib/image-refresh';
 
 type GamesEnv = {
 	Bindings: Bindings;
@@ -39,6 +40,9 @@ games.get('/', async (c) => {
 		user_reaction: userReactions.get(g.id) ?? null,
 		reaction_users: reactionUsers.get(g.id) ?? [],
 	}));
+
+	c.executionCtx.waitUntil(refreshStaleImages(c.env.DB, results));
+
 	return c.json({ ok: true, data });
 });
 
