@@ -2,7 +2,7 @@
 
 This is the standalone Discord bot for [when2play](https://github.com/your-org/when2play). It provides:
 
-- `/play` — generates a one-time login link and DMs it to the user
+- `/when2play` — generates a one-time login link and DMs it to the user
 - `/when2play-admin` — generates a one-time admin link (requires Discord `ADMINISTRATOR` permission)
 - `/help` — shows all available commands (ephemeral)
 - `/url` — returns the when2play website URL
@@ -168,7 +168,7 @@ pm2 startup   # follow the printed instructions to auto-start on reboot
 
 ## Troubleshooting
 
-### `ConnectTimeoutError` when polling or handling `/play`
+### `ConnectTimeoutError` when polling or handling `/when2play`
 
 ```
 Error polling gather pings: TypeError: fetch failed
@@ -189,7 +189,7 @@ Either `DISCORD_TOKEN` or `WHEN2PLAY_API_URL` is missing from `.env`. Check that
 
 Commands are registered on bot startup via `registerCommands()`. This requires the bot to connect successfully at least once. If commands still don't appear after a minute, check the console for errors during startup.
 
-### `Failed: ...` reply to `/play`
+### `Failed: ...` reply to `/when2play`
 
 The Worker returned an error from `POST /api/auth/token`. Common causes:
 - `BOT_API_KEY` in `.env` doesn't match the secret set in the Worker (`npx wrangler secret put BOT_API_KEY`)

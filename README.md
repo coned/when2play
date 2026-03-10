@@ -70,14 +70,14 @@ Logged in as when2play#1234
 Slash commands registered.
 ```
 
-That's it — slash commands like `/call`, `/in`, `/play`, and `/help` are now live in your server.
+That's it — slash commands like `/call`, `/in`, `/when2play`, and `/help` are now live in your server.
 
 ## Commands at a Glance
 
 | Command | What it does |
 |---------|-------------|
 | `/help` | List all commands |
-| `/play` | Get a login link for the when2play dashboard |
+| `/when2play` | Get a login link for the when2play dashboard |
 | `/call` | Rally everyone to play |
 | `/in` / `/out` | Join or leave the rally |
 | `/ping @user` | Ping someone to come play |

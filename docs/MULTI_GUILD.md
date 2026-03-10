@@ -460,10 +460,10 @@ On startup, the bot fetches settings from D1 (`GET /api/settings/bot`) for each 
 
 ### User switching guilds
 
-A user may be in multiple guilds. When they authenticate through a different guild's `/play` link:
+A user may be in multiple guilds. When they authenticate through a different guild's `/when2play` link:
 - The new auth flow sets a new `guild_id` cookie, overwriting the old one
 - Stale browser tabs pointing at the old guild will get 401 on their next API call (session exists in a different DB)
-- The user re-authenticates via the new guild's `/play` link
+- The user re-authenticates via the new guild's `/when2play` link
 
 ### DM interactions
 

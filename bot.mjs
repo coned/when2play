@@ -81,7 +81,7 @@ function buildGuildHeaders(guildId) {
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const commands = [
-    new SlashCommandBuilder().setName('play').setDescription('Get a login link for when2play'),
+    new SlashCommandBuilder().setName('when2play').setDescription('Get a login link for when2play'),
     new SlashCommandBuilder()
         .setName('when2play-admin')
         .setDescription('Get a one-time admin link for when2play (requires ADMINISTRATOR)'),
@@ -153,9 +153,9 @@ async function registerCommands() {
     }
 }
 
-// /play handler
+// /when2play handler
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'play') return;
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'when2play') return;
     if (!interaction.guildId) {
         await interaction.reply({ content: 'This command can only be used in a server.', flags: 64 });
         return;
@@ -182,7 +182,7 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.editReply(`Click to open **when2play**: ${json.data.url}\n\nExpires in 10 minutes.`);
     } catch (err) {
-        console.error('Error handling /play:', err);
+        console.error('Error handling /when2play:', err);
         await interaction.editReply('Something went wrong. Is the when2play server running?');
     }
 });
@@ -247,7 +247,7 @@ client.on('interactionCreate', async (interaction) => {
     try {
         const authData = await ensureUser(interaction.user, interaction.member, interaction.guildId);
         if (!authData) {
-            await interaction.editReply('Could not authenticate. Try `/play` first to set up your account.');
+            await interaction.editReply('Could not authenticate. Try `/when2play` first to set up your account.');
             return;
         }
         const { session } = authData;
@@ -296,7 +296,7 @@ client.on('interactionCreate', async (interaction) => {
             const message = interaction.options.getString('message') ?? undefined;
             const targetAuth = await ensureUser(targetDiscordUser, null, interaction.guildId);
             if (!targetAuth) {
-                await interaction.editReply('Could not find that user. They may need to use `/play` first.');
+                await interaction.editReply('Could not find that user. They may need to use `/when2play` first.');
                 return;
             }
             const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
@@ -346,7 +346,7 @@ client.on('interactionCreate', async (interaction) => {
             const message = interaction.options.getString('message') ?? undefined;
             const targetAuth = await ensureUser(targetDiscordUser, null, interaction.guildId);
             if (!targetAuth) {
-                await interaction.editReply('Could not find that user. They may need to use `/play` first.');
+                await interaction.editReply('Could not find that user. They may need to use `/when2play` first.');
                 return;
             }
             const json = await apiCallWithSession(session.session_id, '/api/rally/judge/avail', {
@@ -605,7 +605,7 @@ client.on('interactionCreate', async (interaction) => {
     const helpText = [
         '**when2play** -- Gaming coordination bot\n',
         '**Getting Started**',
-        '`/play` -- Get a login link for the when2play dashboard',
+        '`/when2play` -- Get a login link for the when2play dashboard',
         '`/url` -- Get the when2play website URL\n',
         '**Rally -- Session Coordination**',
         '`/call [message]` -- Call everyone to play',
@@ -625,7 +625,7 @@ client.on('interactionCreate', async (interaction) => {
         '`/welcome` -- Post a welcome message introducing when2play',
         '`/when2play-admin` -- Get an admin link\n',
         '**Dashboard Features**',
-        'The web dashboard at the `/play` link also includes:',
+        'The web dashboard at the `/when2play` link also includes:',
         '- Schedule -- Set your daily availability grid',
         '- Games -- Vote and rank games to play',
         '- Shame Wall -- Call out friends who bailed',
@@ -770,7 +770,7 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.channel.send(
             '**when2play** -- Your group\'s gaming coordinator.\n\n'
             + '**Getting started:**\n'
-            + '`/play` -- Register and get your personal login link. Each server has its own profile, so use this once per server.\n'
+            + '`/when2play` -- Register and get your personal login link. Each server has its own profile, so use this once per server.\n'
             + '`/url` -- Revisit the website anytime (your session is remembered).\n\n'
             + 'Explore the web dashboard to set your availability, vote on games, and more. Type `/help` for a full list of Discord commands.'
         );

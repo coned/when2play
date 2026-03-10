@@ -12,7 +12,7 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        Discord                                   │
-│   User runs /in, /call, /post schedule, /play, etc.              │
+│   User runs /in, /call, /post schedule, /when2play, etc.              │
 └───────────────────────────────┬──────────────────────────────────┘
                             │ discord.js interactions
                             ▼
@@ -21,7 +21,7 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 │                                                                  │
 │   ┌──────────────────┐    ┌────────────────────────────────────┐ │
 │   │ Command handlers │    │ Per-guild polling loops (every 15s)│ │
-│   │ /play, /call,    │    │  For each guild in config:         │ │
+│   │ /when2play, /call,    │    │  For each guild in config:         │ │
 │   │ /in, /out, ...   │    │  * pollRallyActions(guildId, cfg)  │ │
 │   └────────┬─────────┘    │  * pollGatherPings(guildId, cfg)   │ │
 │            │              │  * pollTreeShares(guildId, cfg)    │ │
@@ -124,10 +124,10 @@ this way are identical to browser sessions in the database.
 
 ## User Registration and Login Flow
 
-This flow covers `/play` (and any command that needs a fresh user session).
+This flow covers `/when2play` (and any command that needs a fresh user session).
 
 ```
-User: /play (in guild 111...)
+User: /when2play (in guild 111...)
   |
 bot.mjs calls POST /api/auth/token
   headers: X-Bot-Token, X-Guild-Id: 111...
@@ -182,7 +182,7 @@ Bot replies to Discord user with confirmation
 
 | Command | API call | Auth type | Notes |
 |---------|----------|-----------|-------|
-| `/play` | `POST /api/auth/token` | X-Bot-Token | Generates login link, DMed to user |
+| `/when2play` | `POST /api/auth/token` | X-Bot-Token | Generates login link, DMed to user |
 | `/when2play-admin` | `POST /api/auth/admin-token` | X-Bot-Token | ADMINISTRATOR permission required; creates 1-hour admin session |
 | `/url` | *(none)* | — | Returns `WHEN2PLAY_API_URL` directly |
 | `/help` | *(none)* | — | Static text, ephemeral |
