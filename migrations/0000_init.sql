@@ -1,6 +1,8 @@
 -- when2play schema (consolidated from migrations 0000-0004)
+-- Uses IF NOT EXISTS / OR IGNORE so it is safe to apply on databases
+-- that already have some or all tables from the original migrations.
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
 	id TEXT PRIMARY KEY,
 	discord_id TEXT UNIQUE NOT NULL,
 	discord_username TEXT NOT NULL,
@@ -13,7 +15,7 @@ CREATE TABLE users (
 	updated_at TEXT NOT NULL
 );
 
-CREATE TABLE auth_tokens (
+CREATE TABLE IF NOT EXISTS auth_tokens (
 	id TEXT PRIMARY KEY,
 	token TEXT UNIQUE NOT NULL,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -22,10 +24,10 @@ CREATE TABLE auth_tokens (
 	is_admin INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL
 );
-CREATE INDEX idx_auth_tokens_token ON auth_tokens(token);
-CREATE INDEX idx_auth_tokens_user_id ON auth_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
 
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
 	id TEXT PRIMARY KEY,
 	session_id TEXT UNIQUE NOT NULL,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -33,10 +35,10 @@ CREATE TABLE sessions (
 	is_admin INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL
 );
-CREATE INDEX idx_sessions_session_id ON sessions(session_id);
-CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 
-CREATE TABLE games (
+CREATE TABLE IF NOT EXISTS games (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL,
 	steam_app_id TEXT,
@@ -47,10 +49,10 @@ CREATE TABLE games (
 	archived_at TEXT,
 	image_checked_at TEXT
 );
-CREATE INDEX idx_games_proposed_by ON games(proposed_by);
-CREATE INDEX idx_games_is_archived ON games(is_archived);
+CREATE INDEX IF NOT EXISTS idx_games_proposed_by ON games(proposed_by);
+CREATE INDEX IF NOT EXISTS idx_games_is_archived ON games(is_archived);
 
-CREATE TABLE game_votes (
+CREATE TABLE IF NOT EXISTS game_votes (
 	id TEXT PRIMARY KEY,
 	game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -59,10 +61,10 @@ CREATE TABLE game_votes (
 	created_at TEXT NOT NULL,
 	UNIQUE(game_id, user_id)
 );
-CREATE INDEX idx_game_votes_game_id ON game_votes(game_id);
-CREATE INDEX idx_game_votes_user_id ON game_votes(user_id);
+CREATE INDEX IF NOT EXISTS idx_game_votes_game_id ON game_votes(game_id);
+CREATE INDEX IF NOT EXISTS idx_game_votes_user_id ON game_votes(user_id);
 
-CREATE TABLE availability (
+CREATE TABLE IF NOT EXISTS availability (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	date TEXT NOT NULL,
@@ -71,10 +73,10 @@ CREATE TABLE availability (
 	created_at TEXT NOT NULL,
 	UNIQUE(user_id, date, start_time)
 );
-CREATE INDEX idx_availability_user_id ON availability(user_id);
-CREATE INDEX idx_availability_date ON availability(date);
+CREATE INDEX IF NOT EXISTS idx_availability_user_id ON availability(user_id);
+CREATE INDEX IF NOT EXISTS idx_availability_date ON availability(date);
 
-CREATE TABLE gather_pings (
+CREATE TABLE IF NOT EXISTS gather_pings (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	message TEXT,
@@ -83,10 +85,10 @@ CREATE TABLE gather_pings (
 	target_user_ids TEXT,
 	created_at TEXT NOT NULL
 );
-CREATE INDEX idx_gather_pings_user_id ON gather_pings(user_id);
-CREATE INDEX idx_gather_pings_delivered ON gather_pings(delivered);
+CREATE INDEX IF NOT EXISTS idx_gather_pings_user_id ON gather_pings(user_id);
+CREATE INDEX IF NOT EXISTS idx_gather_pings_delivered ON gather_pings(delivered);
 
-CREATE TABLE shame_votes (
+CREATE TABLE IF NOT EXISTS shame_votes (
 	id TEXT PRIMARY KEY,
 	voter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	target_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -95,16 +97,16 @@ CREATE TABLE shame_votes (
 	created_at TEXT NOT NULL,
 	UNIQUE(voter_id, target_id, created_at)
 );
-CREATE INDEX idx_shame_votes_voter_id ON shame_votes(voter_id);
-CREATE INDEX idx_shame_votes_target_id ON shame_votes(target_id);
+CREATE INDEX IF NOT EXISTS idx_shame_votes_voter_id ON shame_votes(voter_id);
+CREATE INDEX IF NOT EXISTS idx_shame_votes_target_id ON shame_votes(target_id);
 
-CREATE TABLE settings (
+CREATE TABLE IF NOT EXISTS settings (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
 
-INSERT INTO settings (key, value, updated_at) VALUES
+INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
 	('time_granularity_minutes', '15', datetime('now')),
 	('game_pool_lifespan_days', '7', datetime('now')),
 	('gather_cooldown_seconds', '10', datetime('now')),
@@ -118,7 +120,7 @@ INSERT INTO settings (key, value, updated_at) VALUES
 	('day_cutoff_hour_et', '5', datetime('now')),
 	('rally_anonymous_enabled', '{"call":true,"ping":true}', datetime('now'));
 
-CREATE TABLE rallies (
+CREATE TABLE IF NOT EXISTS rallies (
 	id TEXT PRIMARY KEY,
 	creator_id TEXT NOT NULL REFERENCES users(id),
 	timing TEXT NOT NULL DEFAULT 'now',
@@ -126,9 +128,9 @@ CREATE TABLE rallies (
 	status TEXT NOT NULL DEFAULT 'open',
 	created_at TEXT NOT NULL
 );
-CREATE INDEX idx_rallies_status ON rallies(status);
+CREATE INDEX IF NOT EXISTS idx_rallies_status ON rallies(status);
 
-CREATE TABLE rally_actions (
+CREATE TABLE IF NOT EXISTS rally_actions (
 	id TEXT PRIMARY KEY,
 	rally_id TEXT REFERENCES rallies(id),
 	actor_id TEXT NOT NULL REFERENCES users(id),
@@ -140,12 +142,12 @@ CREATE TABLE rally_actions (
 	day_key TEXT NOT NULL,
 	created_at TEXT NOT NULL
 );
-CREATE INDEX idx_rally_actions_rally ON rally_actions(rally_id);
-CREATE INDEX idx_rally_actions_day ON rally_actions(day_key);
-CREATE INDEX idx_rally_actions_delivered ON rally_actions(delivered);
-CREATE INDEX idx_rally_actions_type ON rally_actions(action_type, day_key);
+CREATE INDEX IF NOT EXISTS idx_rally_actions_rally ON rally_actions(rally_id);
+CREATE INDEX IF NOT EXISTS idx_rally_actions_day ON rally_actions(day_key);
+CREATE INDEX IF NOT EXISTS idx_rally_actions_delivered ON rally_actions(delivered);
+CREATE INDEX IF NOT EXISTS idx_rally_actions_type ON rally_actions(action_type, day_key);
 
-CREATE TABLE rally_tree_shares (
+CREATE TABLE IF NOT EXISTS rally_tree_shares (
 	id TEXT PRIMARY KEY,
 	requested_by TEXT NOT NULL REFERENCES users(id),
 	day_key TEXT NOT NULL,
@@ -153,4 +155,4 @@ CREATE TABLE rally_tree_shares (
 	delivered INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL
 );
-CREATE INDEX idx_tree_shares_delivered ON rally_tree_shares(delivered);
+CREATE INDEX IF NOT EXISTS idx_tree_shares_delivered ON rally_tree_shares(delivered);

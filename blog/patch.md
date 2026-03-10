@@ -79,3 +79,5 @@ This release adds multi-guild support -- one bot instance and one API deployment
 
 - 18 historical migration files consolidated into a single init schema
 - Default DB binding renamed to guild-specific format (`DB_<guild_id>`)
+
+## v0.4

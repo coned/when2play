@@ -26,11 +26,17 @@ deploy: build ## Build and deploy to Cloudflare
 deploy-only: ## Deploy without rebuilding
 	npx wrangler deploy
 
-migrate-local: ## Apply migrations locally
-	npx wrangler d1 migrations apply when2play-tmp-matrix --local
+migrate-local: ## Apply migrations locally (all databases)
+	@sed 's|//.*||' wrangler.jsonc | jq -r '.d1_databases[].database_name' | while read db; do \
+		echo "Migrating (local): $$db"; \
+		npx wrangler d1 migrations apply "$$db" --local; \
+	done
 
-migrate-remote: ## Apply migrations remotely
-	npx wrangler d1 migrations apply when2play-tmp-matrix --remote
+migrate-remote: ## Apply migrations remotely (all databases)
+	@sed 's|//.*||' wrangler.jsonc | jq -r '.d1_databases[].database_name' | while read db; do \
+		echo "Migrating (remote): $$db"; \
+		npx wrangler d1 migrations apply "$$db" --remote; \
+	done
 
 seed: ## Seed test data
 	bash scripts/seed-data.sh
