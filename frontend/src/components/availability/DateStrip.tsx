@@ -1,4 +1,4 @@
-import type { AvailabilityStatusMap } from '@when2play/shared';
+import type { AvailabilityStatusMap, AvailabilityStatusInfo } from '@when2play/shared';
 
 interface DateStripProps {
 	dates: string[];
@@ -9,25 +9,26 @@ interface DateStripProps {
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function ConfidenceDot({ status }: { status: 'tentative' | 'confirmed' | 'manual' | null }) {
+function ConfidenceDot({ info }: { info: AvailabilityStatusInfo | null }) {
 	const size = 8;
+	const status = info?.status ?? null;
+	const hasTentative = info?.hasTentativeSlots ?? false;
 
-	if (status === 'confirmed' || status === 'manual') {
+	if (status === null) {
+		// No data at all - invisible placeholder to keep layout stable
 		return (
 			<span
 				style={{
 					display: 'inline-block',
 					width: `${size}px`,
 					height: `${size}px`,
-					borderRadius: '50%',
-					background: 'var(--accent)',
 				}}
 			/>
 		);
 	}
 
 	if (status === 'tentative') {
-		// Half-filled amber dot using a gradient
+		// Auto-filled from last week, pending confirm - half-fill amber dot
 		return (
 			<span
 				style={{
@@ -43,7 +44,23 @@ function ConfidenceDot({ status }: { status: 'tentative' | 'confirmed' | 'manual
 		);
 	}
 
-	// null - empty outline
+	// manual or confirmed
+	if (hasTentative) {
+		// Has some tentative slots - solid amber dot
+		return (
+			<span
+				style={{
+					display: 'inline-block',
+					width: `${size}px`,
+					height: `${size}px`,
+					borderRadius: '50%',
+					background: 'var(--warning)',
+				}}
+			/>
+		);
+	}
+
+	// All slots available - solid accent dot
 	return (
 		<span
 			style={{
@@ -51,8 +68,7 @@ function ConfidenceDot({ status }: { status: 'tentative' | 'confirmed' | 'manual
 				width: `${size}px`,
 				height: `${size}px`,
 				borderRadius: '50%',
-				border: '1px solid var(--text-muted)',
-				boxSizing: 'border-box',
+				background: 'var(--accent)',
 			}}
 		/>
 	);
@@ -78,7 +94,7 @@ export function DateStrip({ dates, selectedDate, statusMap, onSelect }: DateStri
 				const dayNum = d.getUTCDate();
 				const isSelected = date === selectedDate;
 				const isToday = date === todayStr;
-				const status = statusMap[date] ?? null;
+				const info = statusMap[date] ?? null;
 
 				return (
 					<button
@@ -114,7 +130,7 @@ export function DateStrip({ dates, selectedDate, statusMap, onSelect }: DateStri
 						}}>
 							{dayNum}
 						</span>
-						<ConfidenceDot status={status} />
+						<ConfidenceDot info={info} />
 					</button>
 				);
 			})}

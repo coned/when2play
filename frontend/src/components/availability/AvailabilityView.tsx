@@ -20,6 +20,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 	const [availStartHourET, setAvailStartHourET] = useState<number | undefined>(undefined);
 	const [availEndHourET, setAvailEndHourET] = useState<number | undefined>(undefined);
 	const [userMap, setUserMap] = useState<Map<string, { display_name: string | null; avatar_url: string | null }>>(new Map());
+	const [totalGuildUsers, setTotalGuildUsers] = useState(0);
 
 	// Fetch settings + users + status map on mount
 	useEffect(() => {
@@ -46,6 +47,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 				const map = new Map<string, { display_name: string | null; avatar_url: string | null }>();
 				for (const u of usersResult.data) map.set(u.id, { display_name: u.display_name ?? u.discord_username, avatar_url: u.avatar_url });
 				setUserMap(map);
+				setTotalGuildUsers(usersResult.data.length);
 			}
 
 			// Fetch status map for all 10 dates (non-critical, degrade gracefully)
@@ -79,7 +81,9 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 
 	// Derive the status for the currently selected date
 	const dateStatus = useMemo(() => {
-		return (statusMap[selectedDate] as 'tentative' | 'confirmed' | 'manual' | null) ?? null;
+		const info = statusMap[selectedDate];
+		if (!info) return null;
+		return (info.status as 'tentative' | 'confirmed' | 'manual' | null) ?? null;
 	}, [statusMap, selectedDate]);
 
 	// For tentative dates, extract the user's auto-filled slots from allSlots
@@ -91,11 +95,12 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 	}, [dateStatus, mySlots, allSlots, userId]);
 
 	// Auto-save from TimeGrid: persist to API then refresh overlap data
-	const handleSave = async (slots: Array<{ start_time: string; end_time: string }>) => {
+	const handleSave = async (slots: Array<{ start_time: string; end_time: string; slot_status?: string }>) => {
 		const result = await api.setAvailability({ date: selectedDate, slots });
 		if (result.ok) {
 			// Update status map: user acted, so this becomes 'manual'
-			setStatusMap((prev) => ({ ...prev, [selectedDate]: 'manual' }));
+			const hasTentativeSlots = slots.some((s) => s.slot_status === 'tentative');
+			setStatusMap((prev) => ({ ...prev, [selectedDate]: { status: 'manual', hasTentativeSlots: hasTentativeSlots || undefined } }));
 			// Refresh allSlots (other users' overlap) without resetting TimeGrid
 			const allResult = await api.getAvailability({ date: selectedDate });
 			if (allResult.ok) setAllSlots(allResult.data);
@@ -106,7 +111,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 	const handleConfirm = async () => {
 		const result = await api.confirmAvailability(selectedDate);
 		if (result.ok) {
-			setStatusMap((prev) => ({ ...prev, [selectedDate]: 'confirmed' }));
+			setStatusMap((prev) => ({ ...prev, [selectedDate]: { status: 'confirmed' } }));
 			// Refresh slots to get the persisted data
 			const [myResult, allResult] = await Promise.all([
 				api.getAvailability({ user_id: userId, date: selectedDate }),
@@ -116,15 +121,6 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 			if (allResult.ok) setAllSlots(allResult.data);
 		}
 	};
-
-	// Count distinct other users who have any availability for this date
-	const totalParticipants = useMemo(() => {
-		const others = new Set<string>();
-		for (const slot of allSlots) {
-			if (slot.user_id !== userId) others.add(slot.user_id);
-		}
-		return others.size;
-	}, [allSlots, userId]);
 
 	return (
 		<div>
@@ -155,7 +151,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 					onSave={handleSave}
 					availStartHourET={availStartHourET}
 					availEndHourET={availEndHourET}
-					totalParticipants={totalParticipants}
+					totalGuildUsers={totalGuildUsers}
 					userMap={userMap}
 					dateStatus={dateStatus}
 					onConfirm={handleConfirm}

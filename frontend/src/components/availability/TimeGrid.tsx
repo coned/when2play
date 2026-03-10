@@ -9,10 +9,10 @@ interface TimeGridProps {
 	mySlots: any[];
 	allSlots: any[];
 	userId: string;
-	onSave: (slots: Array<{ start_time: string; end_time: string }>) => Promise<void>;
+	onSave: (slots: Array<{ start_time: string; end_time: string; slot_status?: string }>) => Promise<void>;
 	availStartHourET?: number;
 	availEndHourET?: number;
-	totalParticipants: number;
+	totalGuildUsers: number;
 	userMap: Map<string, { display_name: string | null; avatar_url: string | null }>;
 	dateStatus?: AvailabilityStatus | null;
 	onConfirm?: () => Promise<void>;
@@ -20,6 +20,7 @@ interface TimeGridProps {
 
 const GRANULARITY = 15;
 const SLOT_HEIGHT = 34;
+const MAX_INLINE_AVATARS = 4;
 
 function generateSlots() {
 	const slots: Array<{ start_time: string; end_time: string }> = [];
@@ -87,18 +88,50 @@ function generateFilteredSlots(startHourET: number, endHourET: number, dateStr: 
 	];
 }
 
-/** Compute consensus background opacity. Exported for testing. */
-export function consensusOpacity(overlapCount: number, totalParticipants: number): number {
-	if (totalParticipants <= 0 || overlapCount <= 0) return 0;
-	const ratio = Math.min(overlapCount / totalParticipants, 1);
-	return 0.08 + ratio * 0.42;
-}
-
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-function SlotPopover({ userIds, userMap }: { userIds: string[]; userMap: Map<string, { display_name: string | null; avatar_url: string | null }> }) {
-	const shown = userIds.slice(0, 5);
-	const overflow = userIds.length - shown.length;
+interface Voter {
+	userId: string;
+	status: string;
+	slotStatus: string;
+}
+
+function voterDotStyle(voter: Voter): Record<string, string | number> {
+	if (voter.status === 'tentative') {
+		// Auto-filled from last week: hollow dot with dashed gray border
+		return {
+			width: '10px', height: '10px', borderRadius: '50%',
+			border: '2px dashed var(--text-muted)', background: 'transparent',
+			flexShrink: 0, boxSizing: 'border-box',
+		};
+	}
+	if (voter.slotStatus === 'tentative') {
+		// Explicitly tentative: solid amber dot
+		return {
+			width: '10px', height: '10px', borderRadius: '50%',
+			background: 'var(--warning)', flexShrink: 0,
+		};
+	}
+	// Available: solid green dot
+	return {
+		width: '10px', height: '10px', borderRadius: '50%',
+		background: 'var(--success)', flexShrink: 0,
+	};
+}
+
+function voterRingStyle(voter: Voter): Record<string, string> {
+	if (voter.status === 'tentative') {
+		return { border: '2px dashed var(--text-muted)' };
+	}
+	if (voter.slotStatus === 'tentative') {
+		return { border: '2px solid var(--warning)' };
+	}
+	return { border: '2px solid var(--success)' };
+}
+
+function SlotPopover({ voters, userMap }: { voters: Voter[]; userMap: Map<string, { display_name: string | null; avatar_url: string | null }> }) {
+	const shown = voters.slice(0, 5);
+	const overflow = voters.length - shown.length;
 
 	return (
 		<div
@@ -120,11 +153,11 @@ function SlotPopover({ userIds, userMap }: { userIds: string[]; userMap: Map<str
 			}}
 		>
 			<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-				{shown.map((uid) => {
-					const user = userMap.get(uid);
-					const name = user?.display_name ?? uid.slice(0, 8);
+				{shown.map((voter) => {
+					const user = userMap.get(voter.userId);
+					const name = user?.display_name ?? voter.userId.slice(0, 8);
 					return (
-						<div key={uid} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+						<div key={voter.userId} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
 							{user?.avatar_url ? (
 								<img
 									src={user.avatar_url}
@@ -154,6 +187,7 @@ function SlotPopover({ userIds, userMap }: { userIds: string[]; userMap: Map<str
 									{name[0].toUpperCase()}
 								</span>
 							)}
+							<span style={voterDotStyle(voter)} />
 							<span style={{ fontSize: '11px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
 								{name}
 							</span>
@@ -170,13 +204,78 @@ function SlotPopover({ userIds, userMap }: { userIds: string[]; userMap: Map<str
 	);
 }
 
-export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHourET, availEndHourET, totalParticipants, userMap, dateStatus, onConfirm }: TimeGridProps) {
+function InlineAvatars({ voters, userMap }: { voters: Voter[]; userMap: Map<string, { display_name: string | null; avatar_url: string | null }> }) {
+	const shown = voters.slice(0, MAX_INLINE_AVATARS);
+	const overflow = voters.length - shown.length;
+
+	return (
+		<div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 1 }}>
+			{shown.map((voter, i) => {
+				const user = userMap.get(voter.userId);
+				const name = user?.display_name ?? voter.userId.slice(0, 8);
+				const ringStyle = voterRingStyle(voter);
+				return (
+					<div
+						key={voter.userId}
+						style={{
+							width: '18px',
+							height: '18px',
+							borderRadius: '50%',
+							...ringStyle,
+							boxSizing: 'border-box',
+							marginLeft: i > 0 ? '-5px' : '0',
+							flexShrink: 0,
+							overflow: 'hidden',
+							background: 'var(--bg-card)',
+							zIndex: MAX_INLINE_AVATARS - i,
+							position: 'relative',
+						}}
+					>
+						{user?.avatar_url ? (
+							<img
+								src={user.avatar_url}
+								alt={name}
+								style={{ width: '100%', height: '100%', display: 'block', borderRadius: '50%' }}
+							/>
+						) : (
+							<span
+								style={{
+									display: 'flex',
+									alignItems: 'center',
+									justifyContent: 'center',
+									width: '100%',
+									height: '100%',
+									fontSize: '8px',
+									fontWeight: 600,
+									color: 'var(--text-muted)',
+									background: 'var(--bg-tertiary)',
+								}}
+							>
+								{name[0].toUpperCase()}
+							</span>
+						)}
+					</div>
+				);
+			})}
+			{overflow > 0 && (
+				<span style={{ fontSize: '9px', fontWeight: 600, color: 'var(--text-muted)', marginLeft: '2px', flexShrink: 0, position: 'relative', zIndex: 1 }}>
+					+{overflow}
+				</span>
+			)}
+		</div>
+	);
+}
+
+export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHourET, availEndHourET, totalGuildUsers, userMap, dateStatus, onConfirm }: TimeGridProps) {
 	const isTentative = dateStatus === 'tentative';
 	const [confirming, setConfirming] = useState(false);
-	const [selected, setSelected] = useState<Set<string>>(new Set(mySlots.map((s) => s.start_time)));
+	const [selected, setSelected] = useState<Map<string, 'available' | 'tentative'>>(
+		new Map(mySlots.map((s: any) => [s.start_time, (s.slot_status as 'available' | 'tentative') ?? 'available']))
+	);
+	const [brushMode, setBrushMode] = useState<'available' | 'tentative'>('available');
 	const [isDragging, setIsDragging] = useState(false);
-	const [dragValue, setDragValue] = useState(true);
-	const [touchMode, setTouchMode] = useState<'select' | 'scroll'>('scroll');
+	const [dragAction, setDragAction] = useState<'paint' | 'remove'>('paint');
+	const [touchMode, setTouchMode] = useState<'scroll' | 'select' | 'lock'>('scroll');
 	const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 	const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -186,7 +285,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 	const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const isFirstRender = useRef(true);
 	const onSaveRef = useRef(onSave);
-	const pendingSelectedRef = useRef<Set<string> | null>(null);
+	const pendingSelectedRef = useRef<Map<string, 'available' | 'tentative'> | null>(null);
 	onSaveRef.current = onSave;
 
 	// Use filtered slots if time range is configured
@@ -222,7 +321,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 		saveTimer.current = setTimeout(async () => {
 			pendingSelectedRef.current = null;
 			try {
-				const slots = ALL_SLOTS.filter((s) => selected.has(s.start_time));
+				const slots = ALL_SLOTS
+					.filter((s) => selected.has(s.start_time))
+					.map((s) => ({ ...s, slot_status: selected.get(s.start_time)! }));
 				await onSave(slots);
 				setSaveStatus('saved');
 				clearTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
@@ -241,7 +342,10 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 	useEffect(() => {
 		return () => {
 			if (pendingSelectedRef.current !== null) {
-				const slots = ALL_SLOTS.filter((s) => pendingSelectedRef.current!.has(s.start_time));
+				const sel = pendingSelectedRef.current;
+				const slots = ALL_SLOTS
+					.filter((s) => sel.has(s.start_time))
+					.map((s) => ({ ...s, slot_status: sel.get(s.start_time)! }));
 				onSaveRef.current(slots).catch(() => {});
 			}
 		};
@@ -278,25 +382,33 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 		[visibleSlots, numColumns, slotsPerColumn],
 	);
 
-	const otherUsers = useMemo(() => {
-		const map = new Map<string, Set<string>>();
+	// All voters per slot (including self), with status
+	const slotVoters = useMemo(() => {
+		const map = new Map<string, Voter[]>();
 		for (const slot of allSlots) {
-			if (slot.user_id === userId) continue;
-			if (!map.has(slot.start_time)) map.set(slot.start_time, new Set());
-			map.get(slot.start_time)!.add(slot.user_id);
+			if (!map.has(slot.start_time)) map.set(slot.start_time, []);
+			map.get(slot.start_time)!.push({
+				userId: slot.user_id,
+				status: slot.status ?? 'manual',
+				slotStatus: slot.slot_status ?? 'available',
+			});
 		}
 		return map;
-	}, [allSlots, userId]);
+	}, [allSlots]);
 
-	const toggleSlot = useCallback((time: string, forceValue?: boolean) => {
+	const toggleSlot = useCallback((time: string, forceAction?: 'paint' | 'remove') => {
 		setSelected((prev) => {
-			const next = new Set(prev);
-			const shouldAdd = forceValue ?? !next.has(time);
-			if (shouldAdd) next.add(time);
-			else next.delete(time);
+			const next = new Map(prev);
+			const currentStatus = next.get(time);
+			const action = forceAction ?? (currentStatus === brushMode ? 'remove' : 'paint');
+			if (action === 'remove') {
+				next.delete(time);
+			} else {
+				next.set(time, brushMode);
+			}
 			return next;
 		});
-	}, []);
+	}, [brushMode]);
 
 	const handleTouchMove = (e: TouchEvent) => {
 		if (!isDragging || touchMode !== 'select') return;
@@ -304,7 +416,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 		const touch = e.touches[0];
 		const el = document.elementFromPoint(touch.clientX, touch.clientY);
 		const time = el?.getAttribute('data-time');
-		if (time) toggleSlot(time, dragValue);
+		if (time) toggleSlot(time, dragAction);
 	};
 
 	const formatDateLabel = (dateStr: string): string => {
@@ -342,8 +454,35 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 		return slotMs < nowMs;
 	};
 
-	const statusText = saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '✓ Saved' : saveStatus === 'error' ? 'Save failed' : '';
+	const statusText = saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '\u2713 Saved' : saveStatus === 'error' ? 'Save failed' : '';
 	const statusColor = saveStatus === 'saved' ? 'var(--success)' : saveStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)';
+
+	const mobileHint = touchMode === 'select'
+		? 'Tap to toggle slots'
+		: touchMode === 'lock'
+			? 'Tap a slot to see who'
+			: 'Enable Select or Lock';
+
+	const brushButtons = (
+		<div style={{ display: 'flex', gap: '2px' }}>
+			<button
+				class={`btn ${brushMode === 'available' ? 'btn-primary' : 'btn-secondary'}`}
+				style={{ fontSize: '12px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+				onClick={() => setBrushMode('available')}
+			>
+				<span style={{ display: 'inline-block', width: '3px', height: '14px', borderRadius: '2px', background: 'var(--accent)' }} />
+				Avail
+			</button>
+			<button
+				class={`btn ${brushMode === 'tentative' ? 'btn-primary' : 'btn-secondary'}`}
+				style={{ fontSize: '12px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+				onClick={() => setBrushMode('tentative')}
+			>
+				<span style={{ display: 'inline-block', width: '3px', height: '14px', borderRadius: '2px', background: 'var(--warning)' }} />
+				Tentative
+			</button>
+		</div>
+	);
 
 	return (
 		<div>
@@ -357,16 +496,27 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 			}}>
 				<div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
 					{isMobile && (
-						<button
-							class={`btn ${touchMode === 'select' ? 'btn-primary' : 'btn-secondary'}`}
-							style={{ fontSize: '12px', padding: '4px 10px' }}
-							onClick={() => setTouchMode(touchMode === 'select' ? 'scroll' : 'select')}
-						>
-							{touchMode === 'select' ? '✓ Select' : 'Select'}
-						</button>
+						<div style={{ display: 'flex', gap: '4px' }}>
+							<button
+								class={`btn ${touchMode === 'select' ? 'btn-primary' : 'btn-secondary'}`}
+								style={{ fontSize: '12px', padding: '4px 10px' }}
+								onClick={() => setTouchMode(prev => prev === 'select' ? 'scroll' : 'select')}
+							>
+								Select
+							</button>
+							<button
+								class={`btn ${touchMode === 'lock' ? 'btn-primary' : 'btn-secondary'}`}
+								style={{ fontSize: '12px', padding: '4px 10px' }}
+								onClick={() => setTouchMode(prev => prev === 'lock' ? 'scroll' : 'lock')}
+							>
+								Lock
+							</button>
+						</div>
 					)}
+					{isMobile && <div style={{ width: '1px', height: '20px', background: 'var(--border)' }} />}
+					{brushButtons}
 					<span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-						{isMobile ? 'Tap to toggle · drag to range' : 'Click or drag to select · hover for details'}
+						{isMobile ? mobileHint : 'Click or drag to select \u00b7 hover for details'}
 					</span>
 				</div>
 				<span style={{ fontSize: '12px', color: statusColor, minWidth: '70px', textAlign: 'right' }}>
@@ -449,42 +599,42 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 
 						{col.map((slot) => {
 							const isSelected = selected.has(slot.start_time);
-							const slotOtherUsers = otherUsers.get(slot.start_time);
-							const overlapCount = slotOtherUsers?.size ?? 0;
+							const voters = slotVoters.get(slot.start_time);
+							const voterCount = voters?.length ?? 0;
 							const isHourStart = slot.start_time.endsWith(':00');
 							const isPast = isSlotPast(slot.start_time, slot.slotDate);
 							const slotLocalDate = new Date(`${slot.slotDate}T${slot.start_time}:00Z`).toLocaleDateString('en-CA');
 							const isNextLocalDay = slotLocalDate !== baseLocalDate;
-							const showPopover = hoveredSlot === slot.start_time && overlapCount > 0 && !isDragging;
-
-							// Scale background opacity by consensus ratio
-							const bgNotSelected = overlapCount > 0
-								? `rgba(34, 197, 94, ${consensusOpacity(overlapCount, totalParticipants).toFixed(2)})`
-								: isHourStart
-									? 'var(--bg-card)'
-									: 'var(--bg-tertiary)';
+							const showPopover = hoveredSlot === slot.start_time && voterCount > 0 && !isDragging;
 
 							return (
 								<div
 									key={slot.start_time}
 									data-time={slot.start_time}
 									onMouseDown={() => {
+										const currentStatus = selected.get(slot.start_time);
+										const action = currentStatus === brushMode ? 'remove' : 'paint';
 										setIsDragging(true);
-										setDragValue(!isSelected);
-										toggleSlot(slot.start_time);
+										setDragAction(action);
+										toggleSlot(slot.start_time, action);
 									}}
 									onMouseEnter={() => {
-										if (isDragging) toggleSlot(slot.start_time, dragValue);
-										else if (overlapCount > 0) setHoveredSlot(slot.start_time);
+										if (isDragging) toggleSlot(slot.start_time, dragAction);
+										else if (voterCount > 0) setHoveredSlot(slot.start_time);
 									}}
 									onMouseLeave={() => {
 										if (hoveredSlot === slot.start_time) setHoveredSlot(null);
 									}}
 									onTouchStart={() => {
-										if (touchMode !== 'select') return;
-										setIsDragging(true);
-										setDragValue(!isSelected);
-										toggleSlot(slot.start_time);
+										if (touchMode === 'select') {
+											const currentStatus = selected.get(slot.start_time);
+											const action = currentStatus === brushMode ? 'remove' : 'paint';
+											setIsDragging(true);
+											setDragAction(action);
+											toggleSlot(slot.start_time, action);
+										} else if (touchMode === 'lock') {
+											setHoveredSlot(prev => prev === slot.start_time ? null : slot.start_time);
+										}
 									}}
 									style={{
 										display: 'flex',
@@ -498,17 +648,43 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 										flexShrink: 0,
 										opacity: isPast ? 0.45 : 1,
 										position: 'relative',
-										background: isSelected
-											? overlapCount > 0
-												? 'var(--success)'
-												: isTentative
-													? 'var(--warning)'
-													: 'var(--accent)'
-											: bgNotSelected,
-										color: isSelected ? '#fff' : 'var(--text-secondary)',
+										background: isHourStart ? 'var(--bg-card)' : 'var(--bg-tertiary)',
+										color: 'var(--text-secondary)',
 										borderTop: isHourStart ? '1px solid var(--border)' : 'none',
 									}}
 								>
+									{/* Clipping wrapper for decorative bars */}
+									<div style={{
+										position: 'absolute', inset: 0,
+										borderRadius: 'inherit',
+										overflow: 'hidden',
+										pointerEvents: 'none',
+									}}>
+										{/* Green fill bar */}
+										{(() => {
+											if (voterCount === 0 || totalGuildUsers <= 0) return null;
+											const fillPct = Math.min((voterCount / totalGuildUsers) * 100, 100);
+											return (
+												<div style={{
+													position: 'absolute', top: 0, right: 0, bottom: 0,
+													width: `${fillPct}%`,
+													background: 'rgba(34, 197, 94, 0.3)',
+													borderRadius: '0 3px 3px 0',
+													pointerEvents: 'none', zIndex: 0,
+												}} />
+											);
+										})()}
+										{/* Left accent bar */}
+										{isSelected && (
+											<div style={{
+												position: 'absolute', top: 0, left: 0, bottom: 0,
+												width: '3px',
+												background: selected.get(slot.start_time) === 'tentative' ? 'var(--warning)' : 'var(--accent)',
+												borderRadius: '3px 0 0 3px',
+												zIndex: 2,
+											}} />
+										)}
+									</div>
 									<span
 										style={{
 											flex: 1,
@@ -519,29 +695,22 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 											textOverflow: 'ellipsis',
 											fontWeight: isHourStart ? 600 : 400,
 											textDecoration: isPast ? 'line-through' : 'none',
+											position: 'relative',
+											zIndex: 1,
 										}}
 									>
 										{formatLocalTimeClean(slot.start_time, slot.slotDate)}
 										{isNextLocalDay && (
-											<span style={{ color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--warning)', fontSize: '0.85em', verticalAlign: 'super', fontWeight: 600, marginLeft: '2px' }}>
+											<span style={{ color: 'var(--warning)', fontSize: '0.85em', verticalAlign: 'super', fontWeight: 600, marginLeft: '2px' }}>
 												+1
 											</span>
 										)}
 									</span>
-									{overlapCount > 0 && (
-										<span
-											style={{
-												fontSize: '10px',
-												fontWeight: 700,
-												color: isSelected ? '#fff' : 'var(--success)',
-												flexShrink: 0,
-											}}
-										>
-											+{overlapCount}
-										</span>
+									{voterCount > 0 && (
+										<InlineAvatars voters={voters!} userMap={userMap} />
 									)}
 									{showPopover && (
-										<SlotPopover userIds={Array.from(slotOtherUsers!)} userMap={userMap} />
+										<SlotPopover voters={voters!} userMap={userMap} />
 									)}
 								</div>
 							);
@@ -549,11 +718,32 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 					</div>
 				))}
 			</div>
-			<p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-				{isTentative
-					? 'Auto-filled from last week - toggle any slot or press Confirm'
-					: 'Changes save automatically · Darker green = more people available'}
-			</p>
+			<div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)', alignItems: 'center' }}>
+				<span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+					<span style={{ display: 'inline-block', width: '3px', height: '12px', borderRadius: '2px', background: 'var(--accent)' }} />
+					available
+				</span>
+				<span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+					<span style={{ display: 'inline-block', width: '3px', height: '12px', borderRadius: '2px', background: 'var(--warning)' }} />
+					tentative
+				</span>
+				<span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+					<span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', border: '2px solid var(--success)', boxSizing: 'border-box' }} />
+					available
+				</span>
+				<span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+					<span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', border: '2px solid var(--warning)', boxSizing: 'border-box' }} />
+					tentative
+				</span>
+				<span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+					<span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', border: '2px dashed var(--text-muted)', boxSizing: 'border-box' }} />
+					auto-filled
+				</span>
+				<span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+					<span style={{ display: 'inline-block', width: '14px', height: '10px', borderRadius: '2px', background: 'rgba(34, 197, 94, 0.3)' }} />
+					overlap
+				</span>
+			</div>
 		</div>
 	);
 }

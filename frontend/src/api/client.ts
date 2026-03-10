@@ -1,4 +1,4 @@
-import type { ApiResult } from '@when2play/shared';
+import type { ApiResult, AvailabilityStatusMap } from '@when2play/shared';
 
 const BASE = '/api';
 
@@ -85,11 +85,11 @@ export const api = {
 		const qs = new URLSearchParams(params as Record<string, string>).toString();
 		return request<any[]>(`/availability${qs ? `?${qs}` : ''}`);
 	},
-	setAvailability: (data: { date: string; slots: Array<{ start_time: string; end_time: string }> }) =>
+	setAvailability: (data: { date: string; slots: Array<{ start_time: string; end_time: string; slot_status?: string }> }) =>
 		request<any[]>('/availability', { method: 'PUT', body: JSON.stringify(data) }),
 	clearAvailability: (date: string) => request<null>(`/availability?date=${date}`, { method: 'DELETE' }),
 	getMyAvailabilityStatus: (from: string, to: string) =>
-		request<Record<string, string | null>>(`/availability/my-status?from=${from}&to=${to}`),
+		request<AvailabilityStatusMap>(`/availability/my-status?from=${from}&to=${to}`),
 	confirmAvailability: (date: string) =>
 		request<any[]>(`/availability/${date}/confirm`, { method: 'POST' }),
 
