@@ -12,6 +12,7 @@ interface SettingsState {
 	rally_button_labels: Record<string, string>;
 	rally_suggested_phrases: Record<string, string[]>;
 	rally_show_discord_command: boolean;
+	rally_anonymous_enabled: Record<string, boolean>;
 }
 
 const RALLY_ACTION_TYPES = ['call', 'in', 'out', 'brb', 'ping', 'where', 'judge_avail', 'judge_time', 'share_ranking'] as const;
@@ -32,6 +33,7 @@ const SETTINGS_WHITELIST: Record<string, 'number' | 'boolean' | 'string' | 'obje
 	rally_button_labels: 'object',
 	rally_suggested_phrases: 'object',
 	rally_show_discord_command: 'boolean',
+	rally_anonymous_enabled: 'object',
 };
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const MAX_IMPORT_SIZE = 100 * 1024; // 100KB
@@ -282,6 +284,7 @@ export function AdminPanel() {
 		rally_button_labels: {},
 		rally_suggested_phrases: {},
 		rally_show_discord_command: true,
+		rally_anonymous_enabled: { call: true, ping: true },
 	});
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
@@ -304,6 +307,7 @@ export function AdminPanel() {
 					rally_button_labels: (s.rally_button_labels as Record<string, string>) ?? {},
 					rally_suggested_phrases: (s.rally_suggested_phrases as Record<string, string[]>) ?? {},
 					rally_show_discord_command: s.rally_show_discord_command !== false,
+					rally_anonymous_enabled: (s.rally_anonymous_enabled as Record<string, boolean>) ?? { call: true, ping: true },
 				});
 			}
 			setLoading(false);
@@ -324,6 +328,13 @@ export function AdminPanel() {
 		setSettings((s) => ({
 			...s,
 			rally_suggested_phrases: { ...s.rally_suggested_phrases, [actionType]: phrases },
+		}));
+	};
+
+	const setRallyAnonymousEnabled = (actionType: string, enabled: boolean) => {
+		setSettings((s) => ({
+			...s,
+			rally_anonymous_enabled: { ...s.rally_anonymous_enabled, [actionType]: enabled },
 		}));
 	};
 
@@ -419,6 +430,7 @@ export function AdminPanel() {
 					rally_button_labels: (s.rally_button_labels as Record<string, string>) ?? {},
 					rally_suggested_phrases: (s.rally_suggested_phrases as Record<string, string[]>) ?? {},
 					rally_show_discord_command: s.rally_show_discord_command !== false,
+					rally_anonymous_enabled: (s.rally_anonymous_enabled as Record<string, boolean>) ?? { call: true, ping: true },
 				});
 			}
 
@@ -524,6 +536,15 @@ export function AdminPanel() {
 							phrases={settings.rally_suggested_phrases[actionType] ?? []}
 							onChange={(phrases) => setRallyPhrases(actionType, phrases)}
 						/>
+						<label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer' }}>
+							<input
+								type="checkbox"
+								checked={settings.rally_anonymous_enabled[actionType] ?? false}
+								onChange={(e) => setRallyAnonymousEnabled(actionType, (e.target as HTMLInputElement).checked)}
+								style={{ width: 'auto' }}
+							/>
+							Allow anonymous
+						</label>
 					</div>
 				))}
 				<div style={{ marginBottom: '16px' }}>

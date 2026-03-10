@@ -26,6 +26,7 @@ interface RallySettings {
 	rally_button_labels: Record<string, string>;
 	rally_suggested_phrases: Record<string, string[]>;
 	rally_show_discord_command: boolean;
+	rally_anonymous_enabled: Record<string, boolean>;
 }
 
 type ExpandedButton = null | 'call' | 'in' | 'out' | 'brb' | 'ping' | 'where' | 'judge_time' | 'judge_avail' | 'share_ranking';
@@ -55,13 +56,14 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 	const [error, setError] = useState('');
 	const [success, setSuccess] = useState('');
 	const [expandedButton, setExpandedButton] = useState<ExpandedButton>(null);
-	const [callAnonymous, setCallAnonymous] = useState(false);
+	const [actionAnonymous, setActionAnonymous] = useState(false);
 	const [composeMessage, setComposeMessage] = useState('');
 	const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
 	const [rallySettings, setRallySettings] = useState<RallySettings>({
 		rally_button_labels: {},
 		rally_suggested_phrases: {},
 		rally_show_discord_command: true,
+		rally_anonymous_enabled: { call: true, ping: true },
 	});
 
 	const userMap = new Map(users.map((u) => [u.id, { discord_username: u.discord_username, display_name: u.display_name, avatar_url: u.avatar_url }]));
@@ -80,6 +82,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 				rally_button_labels: (s.rally_button_labels as Record<string, string>) ?? {},
 				rally_suggested_phrases: (s.rally_suggested_phrases as Record<string, string[]>) ?? {},
 				rally_show_discord_command: s.rally_show_discord_command !== false,
+				rally_anonymous_enabled: (s.rally_anonymous_enabled as Record<string, boolean>) ?? { call: true, ping: true },
 			});
 		}
 	}, []);
@@ -116,6 +119,9 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 	const getSuggestedPhrases = (actionType: string) =>
 		rallySettings.rally_suggested_phrases[actionType] ?? [];
 
+	const shouldShowAnonymous = (actionType: string | null) =>
+		actionType ? (rallySettings.rally_anonymous_enabled[actionType] ?? false) : false;
+
 	const handleSend = async () => {
 		if (!expandedButton) return;
 		clearFeedback();
@@ -123,12 +129,12 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 
 		try {
 			if (expandedButton === 'call') {
-				const result = await api.createRally({ message: composeMessage || undefined, is_anonymous: callAnonymous || undefined });
+				const result = await api.createRally({ message: composeMessage || undefined, is_anonymous: (shouldShowAnonymous('call') && actionAnonymous) || undefined });
 				if (result.ok) {
 					setSuccess('Rally started!');
 					setExpandedButton(null);
 					setComposeMessage('');
-					setCallAnonymous(false);
+					setActionAnonymous(false);
 					await fetchData();
 				} else {
 					setError(result.error.message);
@@ -146,12 +152,14 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 				const result = await api.rallyAction({
 					action_type: expandedButton,
 					message: composeMessage || undefined,
+					is_anonymous: (shouldShowAnonymous(expandedButton) && actionAnonymous) || undefined,
 				});
 				if (result.ok) {
 					const labels = { in: "You're in!", out: "You're out.", brb: 'Marked as BRB.' };
 					setSuccess(labels[expandedButton as keyof typeof labels] ?? 'Done!');
 					setExpandedButton(null);
 					setComposeMessage('');
+					setActionAnonymous(false);
 					await fetchData();
 				} else {
 					setError(result.error.message);
@@ -166,6 +174,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 					action_type: expandedButton,
 					target_user_ids: [...selectedUserIds],
 					message: composeMessage || undefined,
+					is_anonymous: (shouldShowAnonymous(expandedButton) && actionAnonymous) || undefined,
 				});
 				if (result.ok) {
 					const names = [...selectedUserIds]
@@ -175,6 +184,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 					setExpandedButton(null);
 					setComposeMessage('');
 					setSelectedUserIds(new Set());
+					setActionAnonymous(false);
 					await fetchData();
 				} else {
 					setError(result.error.message);
@@ -226,7 +236,6 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 	};
 
 	const needsUserSelect = expandedButton === 'ping' || expandedButton === 'where' || expandedButton === 'judge_avail';
-	const needsCallOptions = expandedButton === 'call';
 	const phrases = expandedButton ? getSuggestedPhrases(expandedButton) : [];
 
 	const btnStyle = (actionType: string): Record<string, string> => ({
@@ -281,14 +290,14 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 				{/* Compose area */}
 				{expandedButton && (
 					<div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-						{/* Call options */}
-						{needsCallOptions && (
+						{/* Anonymous option */}
+						{shouldShowAnonymous(expandedButton) && (
 							<div style={{ marginBottom: '8px' }}>
 								<label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
 									<input
 										type="checkbox"
-										checked={callAnonymous}
-										onChange={(e) => setCallAnonymous((e.target as HTMLInputElement).checked)}
+										checked={actionAnonymous}
+										onChange={(e) => setActionAnonymous((e.target as HTMLInputElement).checked)}
 										style={{ width: 'auto' }}
 									/>
 									Anonymous (hide my name)

@@ -171,4 +171,4 @@ wrangler.jsonc
 CLAUDE.md
 MEMORY.md
 .claude/*
-.local/*
+**/.local/
