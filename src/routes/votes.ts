@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
-import { setVote, deleteVote, getVotesForGame, getGameRanking, getUserVotesWithGames, bulkUpdateVoteRanks } from '../db/queries/votes';
+import { setVote, deleteVote, getVotesForGame, getGameRanking, getUserVotesWithGames, bulkUpdateVoteRanks, deleteAllUserVotes } from '../db/queries/votes';
 import { getGameById } from '../db/queries/games';
 import type { UserRow } from '../db/queries/users';
 
@@ -29,6 +29,13 @@ votes.get('/my-votes', async (c) => {
 	const myVotes = await getUserVotesWithGames(c.env.DB, user.id);
 	const data = myVotes.map((v) => ({ ...v, is_approved: Boolean(v.is_approved) }));
 	return c.json({ ok: true, data });
+});
+
+// DELETE /api/games/my-votes — remove all votes for current user
+votes.delete('/my-votes', async (c) => {
+	const user = c.get('user');
+	await deleteAllUserVotes(c.env.DB, user.id);
+	return c.json({ ok: true, data: null });
 });
 
 // PUT /api/games/reorder-votes — bulk rank update

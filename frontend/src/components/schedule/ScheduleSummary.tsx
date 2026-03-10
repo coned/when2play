@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useMemo } from 'preact/hooks';
 import { api } from '../../api/client';
 import { getTimezoneAbbreviation, formatLocalTimeRangeStructured, availabilityToday, type TimeRangeParts } from '../../lib/time';
 
@@ -156,6 +156,7 @@ function AvatarRow({ users }: { users: Array<{ avatar_url: string | null; displa
 }
 
 export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
+	const [games, setGames] = useState<any[]>([]);
 	const [topGames, setTopGames] = useState<any[]>([]);
 	const [ranking, setRanking] = useState<any[]>([]);
 	const [availability, setAvailability] = useState<any[]>([]);
@@ -201,6 +202,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 
 			// Top games by net reaction score (likes - dislikes)
 			if (gamesResult.ok) {
+				setGames(gamesResult.data);
 				const sorted = [...gamesResult.data]
 					.map((g: any) => ({ ...g, net_score: (g.like_count ?? 0) - (g.dislike_count ?? 0) }))
 					.sort((a: any, b: any) => b.net_score - a.net_score)
@@ -226,6 +228,12 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 			setLoading(false);
 		})();
 	}, []);
+
+	const randomGame = useMemo(() => {
+		const active = games.filter((g: any) => !g.is_archived);
+		if (active.length === 0) return null;
+		return active[Math.floor(Math.random() * active.length)];
+	}, [games]);
 
 	if (loading) return <div class="spinner" style={{ margin: '20px auto' }} />;
 
@@ -369,7 +377,19 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 			<div style={{ marginBottom: '24px' }}>
 				<h3 style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>Suggestion for Today</h3>
 				{ranking.length === 0 ? (
-					<p class="text-muted">No votes cast yet.</p>
+					randomGame ? (
+						<div>
+							<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+								<span style={{ flex: 1 }}>{randomGame.name}</span>
+								<span class="badge badge-warning">Feeling lucky?</span>
+							</div>
+							<p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+								No votes yet - showing a random pick from the pool.
+							</p>
+						</div>
+					) : (
+						<p class="text-muted">No votes cast yet.</p>
+					)
 				) : (
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
 						{ranking.slice(0, 5).map((item, i) => (
