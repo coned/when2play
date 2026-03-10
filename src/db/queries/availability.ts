@@ -1,6 +1,12 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { uuid, now } from '../helpers';
 
+/** Returns true when the error is a SQLite "no such table" or "no such column" message. */
+function isMissingTableOrColumn(e: unknown): boolean {
+	const msg = e instanceof Error ? e.message : String(e);
+	return /no such (table|column)/i.test(msg);
+}
+
 export interface AvailabilityRow {
 	id: string;
 	user_id: string;
@@ -42,6 +48,10 @@ export async function setAvailability(
 	const timestamp = now();
 	const results: AvailabilityRow[] = [];
 
+	// NOTE: This intentionally hard-fails if slot_status column is missing (migration 0006).
+	// A silent fallback previously caused slot_status to be lost without the caller knowing.
+	// Status helpers (getAvailabilityStatus etc.) degrade gracefully because their data is
+	// supplementary, but losing slot_status on write is unacceptable.
 	for (const slot of slots) {
 		const id = uuid();
 		const slotStatus = slot.slot_status ?? 'available';
@@ -86,8 +96,9 @@ export async function getAvailabilityStatus(
 			.bind(userId, ...dates)
 			.all<AvailabilityStatusRow>();
 		return result.results;
-	} catch {
-		return [];
+	} catch (e: unknown) {
+		if (isMissingTableOrColumn(e)) return [];
+		throw e;
 	}
 }
 
@@ -105,8 +116,9 @@ export async function upsertAvailabilityStatus(
 			)
 			.bind(userId, date, status, timestamp)
 			.run();
-	} catch {
-		// Table may not exist yet (migration not applied)
+	} catch (e: unknown) {
+		// Table may not exist yet (migration 0005 not applied)
+		if (!isMissingTableOrColumn(e)) throw e;
 	}
 }
 
@@ -144,8 +156,9 @@ export async function getAvailabilityStatusForDate(
 			.bind(date)
 			.all<AvailabilityStatusRow>();
 		return result.results;
-	} catch {
-		return [];
+	} catch (e: unknown) {
+		if (isMissingTableOrColumn(e)) return [];
+		throw e;
 	}
 }
 
@@ -162,9 +175,10 @@ export async function getDatesWithTentativeSlots(
 			.bind(userId, ...dates)
 			.all<{ date: string }>();
 		return new Set(result.results.map((r: { date: string }) => r.date));
-	} catch {
-		// slot_status column may not exist yet
-		return new Set();
+	} catch (e: unknown) {
+		// slot_status column may not exist yet (migration 0006 not applied)
+		if (isMissingTableOrColumn(e)) return new Set();
+		throw e;
 	}
 }
 

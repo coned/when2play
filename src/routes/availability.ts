@@ -15,6 +15,17 @@ import {
 import { uuid, now } from '../db/helpers';
 import type { UserRow } from '../db/queries/users';
 
+const MAX_DATE_RANGE_DAYS = 31;
+
+/** Validate YYYY-MM-DD string is a real calendar date. Returns the normalised string or null. */
+function parseDate(s: string): string | null {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+	const d = new Date(s + 'T12:00:00Z');
+	if (isNaN(d.getTime())) return null;
+	// Round-trip check: rejects "2026-02-30" etc.
+	return d.toISOString().split('T')[0] === s ? s : null;
+}
+
 type AvailEnv = {
 	Bindings: Bindings;
 	Variables: {
@@ -37,13 +48,25 @@ availability.get('/my-status', async (c) => {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'from and to query params required' } }, 400);
 	}
 
+	const parsedFrom = parseDate(from);
+	const parsedTo = parseDate(to);
+	if (!parsedFrom || !parsedTo) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'invalid date format (YYYY-MM-DD)' } }, 400);
+	}
+
 	// Build date array
 	const dates: string[] = [];
-	const cur = new Date(from + 'T12:00:00Z');
-	const end = new Date(to + 'T12:00:00Z');
+	const cur = new Date(parsedFrom + 'T12:00:00Z');
+	const end = new Date(parsedTo + 'T12:00:00Z');
+	if (cur > end) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'from must be <= to' } }, 400);
+	}
 	while (cur <= end) {
 		dates.push(cur.toISOString().split('T')[0]);
 		cur.setUTCDate(cur.getUTCDate() + 1);
+		if (dates.length > MAX_DATE_RANGE_DAYS) {
+			return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: `date range exceeds ${MAX_DATE_RANGE_DAYS} days` } }, 400);
+		}
 	}
 
 	// 1. Get explicit status rows
@@ -109,8 +132,8 @@ availability.post('/:date/confirm', async (c) => {
 	const user = c.get('user');
 	const date = c.req.param('date');
 
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'invalid date format' } }, 400);
+	if (!parseDate(date)) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'invalid date format (YYYY-MM-DD)' } }, 400);
 	}
 
 	// Check if user already has slots for this date

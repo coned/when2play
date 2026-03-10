@@ -546,8 +546,11 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 						disabled={confirming}
 						onClick={async () => {
 							setConfirming(true);
-							await onConfirm();
-							setConfirming(false);
+							try {
+								await onConfirm();
+							} finally {
+								setConfirming(false);
+							}
 						}}
 					>
 						{confirming ? '...' : 'Confirm'}
