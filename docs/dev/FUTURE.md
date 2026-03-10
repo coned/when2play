@@ -1,6 +1,6 @@
 # Cloudflare-Native Discord Bot — Migration Guide
 
-This document describes how to replace the standalone `discord.js` bot (Part 3 of `SETUP.md`) with a fully Cloudflare-native implementation — no separate server required.
+This document describes how to replace the standalone `discord.js` bot (see [Deployment Guide](../user/DEPLOYMENT.md#part-2-discord-bot)) with a fully Cloudflare-native implementation - no separate server required.
 
 ---
 
@@ -203,7 +203,7 @@ export default {
 ## What Does NOT Change
 
 - All existing API routes (`/api/auth/token`, `/api/gather/pending`, etc.) are unchanged
-- The bot contract (`DISCORD_BOT_CONTRACT.md`) is unchanged — a third-party bot can still use those endpoints
+- The bot contract ([BOT_CONTRACT.md](BOT_CONTRACT.md)) is unchanged - a third-party bot can still use those endpoints
 - The existing discord.js bot can continue running alongside the Worker during migration
 
 ---

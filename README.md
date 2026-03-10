@@ -2,12 +2,24 @@
 
 Async game-session scheduling for friend groups, with Discord integration. Propose games, rank-vote, set availability, and coordinate play sessions from a browser dashboard.
 
-## Documentation
+## User Documentation
 
-| Document | Role |
-|----------|------|
-| [Design](docs/DESIGN.md) | Architecture, database schema, frontend layout, and key decisions |
-| [Setup](docs/SETUP.md) | Local development, production deployment, and security reference |
-| [API Reference](docs/API.md) | Complete HTTP API with request/response examples |
-| [Discord Bot Contract](docs/DISCORD_BOT_CONTRACT.md) | Integration spec for building a companion Discord bot |
-| [Cloudflare-Native Bot](docs/CLOUDFLARE_NATIVE_BOT.md) | Migration guide: replace discord.js with HTTP Interactions |
+Guides for setting up, deploying, and operating when2play.
+
+| Document | Description |
+|----------|-------------|
+| [Local Testing](docs/user/LOCAL_TESTING.md) | Run the project locally for development and testing |
+| [Deployment](docs/user/DEPLOYMENT.md) | First-time production deployment (Cloudflare Worker + Discord bot) |
+| [Maintenance](docs/user/MAINTENANCE.md) | Adding guilds, running migrations, key rotation, troubleshooting |
+| [Security](docs/user/SECURITY.md) | Authentication, cookies, input validation, attack surface |
+
+## Developer Documentation
+
+Technical references for understanding and extending the codebase.
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/dev/ARCHITECTURE.md) | Codebase structure, database schema, multi-guild design, frontend layout |
+| [API Reference](docs/dev/API.md) | Complete HTTP API with request/response examples |
+| [Bot Contract](docs/dev/BOT_CONTRACT.md) | Integration spec for building a companion Discord bot |
+| [Future Design](docs/dev/FUTURE.md) | Cloudflare-native bot migration guide (HTTP Interactions + Cron Triggers) |

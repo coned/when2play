@@ -311,7 +311,7 @@ The internal `user_id` (UUID) is included for reference but is not needed for Di
 
 ## Example Bot Implementation
 
-See `docs/SETUP.md` Part 3 for a complete working example using discord.js (Node.js).
+See [Deployment Guide](../user/DEPLOYMENT.md#part-2-discord-bot) for setup instructions and the `when2play_discordbot` repository for the full implementation.
 
 ### Python pseudocode
 
