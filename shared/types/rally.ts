@@ -39,6 +39,7 @@ export interface RallyTreeData {
   nodes: RallyTreeNode[];
   edges: Array<{ source: string; target: string; type: 'response' | 'ping' | 'sequence' }>;
   rallies: Rally[];
+  participants: Record<string, { username: string; avatar: string | null }>;
 }
 
 export interface JudgeTimeResult {
