@@ -212,6 +212,14 @@ For each pending action, format a Discord message using the universal `label —
 | `where` | `❓ **User** → @Target` | `❓ **User** → @Target — "message"` |
 | `share_ranking` | `🏆 **Game Rankings:**\n#1 Name (X pts, Y votes)` | *(metadata-driven)* |
 
+#### Anonymous Actions
+
+When `metadata.is_anonymous === true` on a rally action, the bot should display "Someone" instead of `<@discord_id>`. This applies to any action type. For example:
+- `call` with anonymous: `📢 **Someone** called` instead of `📢 **<@123>** called`
+- `in` with anonymous: `✅ **Someone** is in!`
+
+The `actor_discord_id` and `actor_username` fields are still present in the payload for logging, but should not be shown to users when anonymous.
+
 **`share_ranking` metadata format:**
 ```json
 {

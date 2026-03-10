@@ -55,6 +55,7 @@ export interface CreateActionRequest {
   rally_id?: string;
   target_user_ids?: string[];
   message?: string;
+  is_anonymous?: boolean;
 }
 
 export interface ShareTreeRequest {

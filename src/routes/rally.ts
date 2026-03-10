@@ -56,7 +56,7 @@ rally.post('/call', requireAuth, async (c) => {
 				...action,
 				delivered: Boolean(action.delivered),
 				target_user_ids: null,
-				metadata: null,
+				metadata: action.metadata ? JSON.parse(action.metadata) : null,
 			},
 		},
 	}, 201);
@@ -70,7 +70,8 @@ rally.post('/action', requireAuth, async (c) => {
 		rally_id?: string;
 		target_user_ids?: string[];
 		message?: string;
-	}>().catch(() => ({ action_type: '' as ActionType, rally_id: undefined as string | undefined, target_user_ids: undefined as string[] | undefined, message: undefined as string | undefined }));
+		is_anonymous?: boolean;
+	}>().catch(() => ({ action_type: '' as ActionType, rally_id: undefined as string | undefined, target_user_ids: undefined as string[] | undefined, message: undefined as string | undefined, is_anonymous: undefined as boolean | undefined }));
 
 	if (!VALID_ACTION_TYPES.includes(body.action_type)) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: `Invalid action_type. Must be one of: ${VALID_ACTION_TYPES.join(', ')}` } }, 400);
@@ -92,11 +93,13 @@ rally.post('/action', requireAuth, async (c) => {
 		rallyId = activeRally?.id ?? undefined;
 	}
 
+	const metadata = body.is_anonymous ? { is_anonymous: true } : undefined;
 	const action = await createRallyAction(c.env.DB, user.id, body.action_type, {
 		rallyId,
 		targetUserIds: body.target_user_ids,
 		message: body.message,
 		dayKey,
+		metadata,
 	});
 
 	return c.json({

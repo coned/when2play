@@ -108,7 +108,7 @@ export function ActionFeed({ actions, users }: ActionFeedProps) {
 						}}
 					>
 						<span style={{ fontSize: '16px', flexShrink: 0, marginTop: '1px' }}>{config.icon}</span>
-						{action.actor_avatar && (
+						{!action.metadata?.is_anonymous && action.actor_avatar && (
 							<img
 								src={action.actor_avatar}
 								alt=""
@@ -117,7 +117,7 @@ export function ActionFeed({ actions, users }: ActionFeedProps) {
 						)}
 						<div style={{ flex: 1, minWidth: 0 }}>
 							<span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
-								{action.actor_username}
+								{action.metadata?.is_anonymous ? 'Someone' : action.actor_username}
 							</span>{' '}
 							<span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
 								{formatAction(action, users)}

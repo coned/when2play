@@ -114,7 +114,8 @@ INSERT INTO settings (key, value, updated_at) VALUES
 	('rally_button_labels', '{}', datetime('now')),
 	('rally_suggested_phrases', '{}', datetime('now')),
 	('rally_show_discord_command', 'true', datetime('now')),
-	('day_cutoff_hour_et', '5', datetime('now'));
+	('day_cutoff_hour_et', '5', datetime('now')),
+	('rally_anonymous_enabled', '{"call":true,"ping":true}', datetime('now'));
 
 CREATE TABLE rallies (
 	id TEXT PRIMARY KEY,

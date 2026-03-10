@@ -236,7 +236,7 @@ export function TreeVisualization({ nodes, edges, onExportRef }: TreeVisualizati
 						</text>
 						{/* Username */}
 						<text x={x + 30} y={y + 20} fontSize="12" fontWeight="600" fill="var(--text-primary)">
-							{truncate(node.actor_username, 14)}
+							{truncate(node.metadata?.is_anonymous ? 'Someone' : node.actor_username, 14)}
 						</text>
 						{/* Time */}
 						<text x={x + NODE_WIDTH - 8} y={y + 20} fontSize="10" fill="var(--text-muted)" textAnchor="end">

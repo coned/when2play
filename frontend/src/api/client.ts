@@ -119,7 +119,7 @@ export const api = {
 	createRally: (data?: { message?: string; is_anonymous?: boolean }) =>
 		request<any>('/rally/call', { method: 'POST', body: JSON.stringify(data ?? {}) }),
 	shareRanking: () => request<any>('/rally/share-ranking', { method: 'POST' }),
-	rallyAction: (data: { action_type: string; target_user_ids?: string[]; message?: string }) =>
+	rallyAction: (data: { action_type: string; target_user_ids?: string[]; message?: string; is_anonymous?: boolean }) =>
 		request<any>('/rally/action', { method: 'POST', body: JSON.stringify(data) }),
 	judgeTime: () => request<any>('/rally/judge/time', { method: 'POST' }),
 	judgeAvail: (data: { target_user_ids: string[]; message?: string }) =>
