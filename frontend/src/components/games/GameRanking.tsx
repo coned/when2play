@@ -1,7 +1,11 @@
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useMemo } from 'preact/hooks';
 import { api } from '../../api/client';
 
-export function GameRanking() {
+interface GameRankingProps {
+	games?: any[];
+}
+
+export function GameRanking({ games = [] }: GameRankingProps) {
 	const [ranking, setRanking] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 
@@ -13,8 +17,38 @@ export function GameRanking() {
 		})();
 	}, []);
 
+	const randomGame = useMemo(() => {
+		const active = games.filter((g: any) => !g.is_archived);
+		if (active.length === 0) return null;
+		return active[Math.floor(Math.random() * active.length)];
+	}, [games]);
+
 	if (loading) return <div class="spinner" style={{ margin: '20px auto' }} />;
-	if (ranking.length === 0) return null;
+	if (ranking.length === 0) {
+		if (!randomGame) return null;
+		return (
+			<div>
+				<h3 style={{ marginBottom: '12px' }}>Suggestion for Today</h3>
+				<div
+					class="card"
+					style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px' }}
+				>
+					{randomGame.image_url && (
+						<img
+							src={randomGame.image_url}
+							alt={randomGame.name}
+							style={{ width: '48px', height: '22px', objectFit: 'cover', borderRadius: '4px' }}
+						/>
+					)}
+					<span style={{ flex: 1, fontWeight: 500 }}>{randomGame.name}</span>
+					<span class="badge badge-warning">Feeling lucky?</span>
+				</div>
+				<p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+					No votes yet - showing a random pick from the pool.
+				</p>
+			</div>
+		);
+	}
 
 	return (
 		<div>

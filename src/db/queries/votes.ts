@@ -115,9 +115,14 @@ export async function getGameRanking(db: D1Database): Promise<RankingRow[]> {
 			LEFT JOIN (SELECT game_id, COUNT(*) as like_count FROM game_reactions WHERE type = 'like' GROUP BY game_id) lk ON g.id = lk.game_id
 			WHERE g.is_archived = 0
 			GROUP BY g.id
+			HAVING COUNT(gv.id) > 0
 			ORDER BY total_score DESC, vote_count DESC`,
 		)
 		.all<RankingRow>();
 
 	return result.results;
+}
+
+export async function deleteAllUserVotes(db: D1Database, userId: string): Promise<void> {
+	await db.prepare('DELETE FROM game_votes WHERE user_id = ?').bind(userId).run();
 }

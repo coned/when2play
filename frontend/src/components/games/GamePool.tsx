@@ -91,7 +91,7 @@ export function GamePool({ user }: GamePoolProps) {
 						<VoteRanking games={games} onVoteChange={() => setRankingKey((k) => k + 1)} />
 					</div>
 
-					<GameRanking key={rankingKey} />
+					<GameRanking key={rankingKey} games={games} />
 				</>
 			)}
 
