@@ -8,6 +8,7 @@ export interface AvailabilityRow {
 	start_time: string;
 	end_time: string;
 	created_at: string;
+	slot_status: string;
 }
 
 export async function getAvailability(db: D1Database, filters: { user_id?: string; date?: string }): Promise<AvailabilityRow[]> {
@@ -33,7 +34,7 @@ export async function setAvailability(
 	db: D1Database,
 	userId: string,
 	date: string,
-	slots: Array<{ start_time: string; end_time: string }>,
+	slots: Array<{ start_time: string; end_time: string; slot_status?: string }>,
 ): Promise<AvailabilityRow[]> {
 	// Clear existing slots for this user+date
 	await db.prepare('DELETE FROM availability WHERE user_id = ? AND date = ?').bind(userId, date).run();
@@ -43,11 +44,19 @@ export async function setAvailability(
 
 	for (const slot of slots) {
 		const id = uuid();
-		await db
-			.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-			.bind(id, userId, date, slot.start_time, slot.end_time, timestamp)
-			.run();
-		results.push({ id, user_id: userId, date, start_time: slot.start_time, end_time: slot.end_time, created_at: timestamp });
+		const slotStatus = slot.slot_status ?? 'available';
+		try {
+			await db
+				.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at, slot_status) VALUES (?, ?, ?, ?, ?, ?, ?)')
+				.bind(id, userId, date, slot.start_time, slot.end_time, timestamp, slotStatus)
+				.run();
+		} catch {
+			await db
+				.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+				.bind(id, userId, date, slot.start_time, slot.end_time, timestamp)
+				.run();
+		}
+		results.push({ id, user_id: userId, date, start_time: slot.start_time, end_time: slot.end_time, created_at: timestamp, slot_status: slotStatus });
 	}
 
 	// Mark as manual so auto-fill won't override user action
@@ -144,6 +153,25 @@ export async function getAvailabilityStatusForDate(
 		return result.results;
 	} catch {
 		return [];
+	}
+}
+
+export async function getDatesWithTentativeSlots(
+	db: D1Database,
+	userId: string,
+	dates: string[],
+): Promise<Set<string>> {
+	if (dates.length === 0) return new Set();
+	try {
+		const placeholders = dates.map(() => '?').join(', ');
+		const result = await db
+			.prepare(`SELECT DISTINCT date FROM availability WHERE user_id = ? AND date IN (${placeholders}) AND slot_status = 'tentative'`)
+			.bind(userId, ...dates)
+			.all<{ date: string }>();
+		return new Set(result.results.map((r: { date: string }) => r.date));
+	} catch {
+		// slot_status column may not exist yet
+		return new Set();
 	}
 }
 

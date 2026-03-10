@@ -1,5 +1,7 @@
 export type AvailabilityStatus = 'tentative' | 'confirmed' | 'manual';
 
+export type SlotStatus = 'available' | 'tentative';
+
 export interface AvailabilitySlot {
 	id: string;
 	user_id: string;
@@ -8,6 +10,7 @@ export interface AvailabilitySlot {
 	end_time: string;
 	created_at: string;
 	status?: AvailabilityStatus;
+	slot_status?: SlotStatus;
 }
 
 export interface SetAvailabilityRequest {
@@ -15,6 +18,7 @@ export interface SetAvailabilityRequest {
 	slots: Array<{
 		start_time: string;
 		end_time: string;
+		slot_status?: SlotStatus;
 	}>;
 }
 
@@ -25,4 +29,9 @@ export interface OverlapWindow {
 	users: string[];
 }
 
-export type AvailabilityStatusMap = Record<string, AvailabilityStatus | null>;
+export type AvailabilityStatusInfo = {
+	status: AvailabilityStatus | null;
+	hasTentativeSlots?: boolean;
+};
+
+export type AvailabilityStatusMap = Record<string, AvailabilityStatusInfo>;

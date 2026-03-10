@@ -10,6 +10,7 @@ import {
 	getLastWeekSlots,
 	getAvailabilityStatusForDate,
 	getDistinctAvailabilityDates,
+	getDatesWithTentativeSlots,
 } from '../db/queries/availability';
 import { uuid, now } from '../db/helpers';
 import type { UserRow } from '../db/queries/users';
@@ -73,21 +74,31 @@ availability.get('/my-status', async (c) => {
 		? new Set(await getDistinctAvailabilityDates(c.env.DB, user.id, lastWeekDates))
 		: new Set<string>();
 
+	// Check which dates have tentative slots (slot_status = 'tentative')
+	const tentativeSlotDates = await getDatesWithTentativeSlots(c.env.DB, user.id, dates);
+
 	// Build response
-	const result: Record<string, string | null> = {};
+	const result: Record<string, { status: string | null; hasTentativeSlots?: boolean }> = {};
 	for (const date of dates) {
+		let status: string | null;
 		if (statusMap.has(date)) {
-			result[date] = statusMap.get(date)!;
+			status = statusMap.get(date)!;
 		} else if (slotDates.has(date)) {
 			// Legacy data (pre-feature) - treat as manual
-			result[date] = 'manual';
+			status = 'manual';
 		} else {
 			// Check if last-week date had slots
 			const d = new Date(date + 'T12:00:00Z');
 			d.setUTCDate(d.getUTCDate() - 7);
 			const lwDate = d.toISOString().split('T')[0];
-			result[date] = lastWeekSlotDates.has(lwDate) ? 'tentative' : null;
+			status = lastWeekSlotDates.has(lwDate) ? 'tentative' : null;
 		}
+
+		const entry: { status: string | null; hasTentativeSlots?: boolean } = { status };
+		if (tentativeSlotDates.has(date)) {
+			entry.hasTentativeSlots = true;
+		}
+		result[date] = entry;
 	}
 
 	return c.json({ ok: true, data: result });
@@ -127,11 +138,19 @@ availability.post('/:date/confirm', async (c) => {
 	const results = [];
 	for (const slot of lastWeekSlots) {
 		const id = uuid();
-		await c.env.DB
-			.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-			.bind(id, user.id, date, slot.start_time, slot.end_time, timestamp)
-			.run();
-		results.push({ id, user_id: user.id, date, start_time: slot.start_time, end_time: slot.end_time, created_at: timestamp });
+		const slotStatus = slot.slot_status ?? 'available';
+		try {
+			await c.env.DB
+				.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at, slot_status) VALUES (?, ?, ?, ?, ?, ?, ?)')
+				.bind(id, user.id, date, slot.start_time, slot.end_time, timestamp, slotStatus)
+				.run();
+		} catch {
+			await c.env.DB
+				.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+				.bind(id, user.id, date, slot.start_time, slot.end_time, timestamp)
+				.run();
+		}
+		results.push({ id, user_id: user.id, date, start_time: slot.start_time, end_time: slot.end_time, created_at: timestamp, slot_status: slotStatus });
 	}
 
 	await upsertAvailabilityStatus(c.env.DB, user.id, date, 'confirmed');
@@ -199,7 +218,7 @@ availability.get('/', async (c) => {
 // PUT /api/availability - bulk replace slots for a date
 availability.put('/', async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ date: string; slots: Array<{ start_time: string; end_time: string }> }>();
+	const body = await c.req.json<{ date: string; slots: Array<{ start_time: string; end_time: string; slot_status?: string }> }>();
 
 	if (!body.date || !body.slots) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'date and slots required' } }, 400);
