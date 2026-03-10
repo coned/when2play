@@ -224,7 +224,7 @@ rally.get('/tree', requireAuth, async (c) => {
 		metadata: n.metadata ? JSON.parse(n.metadata) : null,
 	}));
 
-	return c.json({ ok: true, data: { nodes, edges: treeData.edges, rallies: treeData.rallies } });
+	return c.json({ ok: true, data: { nodes, edges: treeData.edges, rallies: treeData.rallies, participants: treeData.participants } });
 });
 
 // GET /api/rally/pending — bot polls for undelivered actions

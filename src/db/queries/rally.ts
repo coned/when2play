@@ -197,6 +197,7 @@ export async function getTreeData(
 	nodes: RallyActionWithUser[];
 	edges: Array<{ source: string; target: string; type: 'response' | 'ping' | 'sequence' }>;
 	rallies: RallyRow[];
+	participants: Record<string, { username: string; avatar: string | null }>;
 }> {
 	const dk = dayKey ?? (await getDayKey(db));
 	const nodes = await getRallyActions(db, dk);
@@ -258,7 +259,37 @@ export async function getTreeData(
 		}
 	}
 
-	return { nodes, edges, rallies };
+	// Build participants map from actor IDs and target user IDs
+	const userIdSet = new Set<string>();
+	for (const node of nodes) {
+		userIdSet.add(node.actor_id);
+		if (node.target_user_ids) {
+			const targetIds: string[] = JSON.parse(node.target_user_ids);
+			for (const id of targetIds) userIdSet.add(id);
+		}
+	}
+
+	const participants: Record<string, { username: string; avatar: string | null }> = {};
+	// Populate from already-joined actor data
+	for (const node of nodes) {
+		if (!participants[node.actor_id]) {
+			participants[node.actor_id] = { username: node.actor_username, avatar: node.actor_avatar };
+		}
+	}
+	// Fetch any target users not already covered
+	const missingIds = Array.from(userIdSet).filter((id) => !participants[id]);
+	if (missingIds.length > 0) {
+		const ph = missingIds.map(() => '?').join(',');
+		const usersResult = await db
+			.prepare(`SELECT id, discord_username, avatar_url FROM users WHERE id IN (${ph})`)
+			.bind(...missingIds)
+			.all<{ id: string; discord_username: string; avatar_url: string | null }>();
+		for (const u of usersResult.results) {
+			participants[u.id] = { username: u.discord_username, avatar: u.avatar_url };
+		}
+	}
+
+	return { nodes, edges, rallies, participants };
 }
 
 // ---------- Judge ----------
