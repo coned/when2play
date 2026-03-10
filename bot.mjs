@@ -524,7 +524,8 @@ async function pollRallyActions(guildId, config) {
                 text = `${actor}: ${action.action_type}`;
         }
 
-        if (text) await channel.send({ content: text, allowedMentions: { parse: [], users: action.target_discord_ids ?? [] } });
+        const mentionUsers = (action.target_discord_ids ?? []).filter(id => /^\d{17,20}$/.test(id));
+        if (text) await channel.send({ content: text, allowedMentions: { parse: [], users: mentionUsers } });
 
         await fetch(`${API_URL}/api/rally/${action.id}/delivered`, {
             method: 'PATCH',
@@ -583,10 +584,11 @@ async function pollGatherPings(guildId, config) {
             text += ` → ${mentions}`;
         }
 
+        const isSnowflake = id => /^\d{17,20}$/.test(id);
         const intentionalUsers = [
             ...(ping.is_anonymous ? [] : [ping.sender_discord_id]),
             ...(ping.target_discord_ids ?? []),
-        ].filter(Boolean);
+        ].filter(id => id && isSnowflake(id));
         await channel.send({ content: text, allowedMentions: { parse: [], users: intentionalUsers } });
         await fetch(`${API_URL}/api/gather/${ping.id}/delivered`, {
             method: 'PATCH',
