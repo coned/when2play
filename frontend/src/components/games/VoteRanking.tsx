@@ -62,9 +62,11 @@ export function VoteRanking({ games, onVoteChange }: VoteRankingProps) {
 	};
 
 	const removeAllVotes = async () => {
-		await api.deleteAllVotes();
-		setRankedVotes([]);
-		onVoteChange();
+		const result = await api.deleteAllVotes();
+		if (result.ok) {
+			setRankedVotes([]);
+			onVoteChange();
+		}
 	};
 
 	const removeFromRanking = async (gameId: string) => {

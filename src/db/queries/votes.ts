@@ -115,7 +115,7 @@ export async function getGameRanking(db: D1Database): Promise<RankingRow[]> {
 			LEFT JOIN (SELECT game_id, COUNT(*) as like_count FROM game_reactions WHERE type = 'like' GROUP BY game_id) lk ON g.id = lk.game_id
 			WHERE g.is_archived = 0
 			GROUP BY g.id
-			HAVING COUNT(gv.id) > 0
+			HAVING COUNT(CASE WHEN gv.is_approved = 1 THEN 1 END) > 0
 			ORDER BY total_score DESC, vote_count DESC`,
 		)
 		.all<RankingRow>();
