@@ -62,8 +62,29 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Invalid request body' } }, 400);
 	}
 
-	// Always log into the fixed system admin account, not the requesting Discord user's account
-	const user = await upsertUser(c.env.DB, 'system-admin', 'Administrator', null);
+	// Per-guild admin account prevents cross-guild access via guild switcher
+	const guildId = c.req.header('X-Guild-Id');
+	const adminDiscordId = guildId ? `system-admin-${guildId}` : 'system-admin';
+
+	// Migrate legacy shared "system-admin" row to scoped ID.
+	// Delete the newer scoped row (few refs) and rename the old row (keeps FK refs).
+	// rallies/rally_actions/rally_tree_shares lack ON DELETE CASCADE, so we
+	// can't safely delete the old row.
+	if (adminDiscordId !== 'system-admin') {
+		const hasOld = await c.env.DB.prepare(
+			'SELECT 1 FROM users WHERE discord_id = ?'
+		).bind('system-admin').first();
+		if (hasOld) {
+			await c.env.DB.prepare(
+				'DELETE FROM users WHERE discord_id = ?'
+			).bind(adminDiscordId).run();
+			await c.env.DB.prepare(
+				'UPDATE users SET discord_id = ? WHERE discord_id = ?'
+			).bind(adminDiscordId, 'system-admin').run();
+		}
+	}
+
+	const user = await upsertUser(c.env.DB, adminDiscordId, 'Administrator', null);
 	const token = generateToken();
 	await createAuthToken(c.env.DB, user.id, token, true);
 
@@ -72,7 +93,6 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 	}
 
 	const url = new URL(c.req.url);
-	const guildId = c.req.header('X-Guild-Id');
 	const authUrl = `${url.protocol}//${url.host}/auth/${token}${guildId ? `?guild=${guildId}` : ''}`;
 
 	return c.json({ ok: true, data: { token, url: authUrl } }, 201);
