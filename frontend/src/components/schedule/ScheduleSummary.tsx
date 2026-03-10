@@ -244,14 +244,17 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 		slotUsers.get(slot.start_time)!.add(slot.user_id);
 	}
 
-	// Build user status map: if any slot is tentative, user is tentative
-	const userStatusMap = new Map<string, string>();
+	// Build user status map: date-level status + whether any slot is tentative
+	const userStatusMap = new Map<string, { status: string; hasTentativeSlot: boolean }>();
 	for (const slot of availability) {
 		const existing = userStatusMap.get(slot.user_id);
-		if (slot.status === 'tentative') {
-			userStatusMap.set(slot.user_id, 'tentative');
-		} else if (!existing) {
-			userStatusMap.set(slot.user_id, slot.status ?? 'manual');
+		const dateStatus = slot.status ?? 'manual';
+		const slotIsTentative = slot.slot_status === 'tentative';
+		if (!existing) {
+			userStatusMap.set(slot.user_id, { status: dateStatus, hasTentativeSlot: slotIsTentative });
+		} else {
+			if (dateStatus === 'tentative') existing.status = 'tentative';
+			if (slotIsTentative) existing.hasTentativeSlot = true;
 		}
 	}
 
@@ -458,64 +461,56 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 									<div style={{ display: 'flex', alignItems: 'center' }}>
 										{shown.map((uid, i) => {
 											const user = userMap.get(uid);
-											const isTentativeUser = userStatusMap.get(uid) === 'tentative';
-											const avatarEl = user?.avatar_url ? (
-												<img
-													src={user.avatar_url}
-													alt={user.display_name ?? user.discord_username}
-													title={user.display_name ?? user.discord_username}
-													style={{
-														width: '18px',
-														height: '18px',
-														borderRadius: '50%',
-														border: '1px solid var(--bg-secondary)',
-														flexShrink: 0,
-														display: 'block',
-													}}
-												/>
-											) : (
-												<span
-													title={user?.display_name ?? user?.discord_username ?? uid}
-													style={{
-														width: '18px',
-														height: '18px',
-														borderRadius: '50%',
-														background: 'var(--accent)',
-														border: '1px solid var(--bg-secondary)',
-														display: 'flex',
-														alignItems: 'center',
-														justifyContent: 'center',
-														fontSize: '9px',
-														color: '#fff',
-														flexShrink: 0,
-													}}
-												>
-													{(user?.display_name ?? user?.discord_username ?? '?')[0].toUpperCase()}
-												</span>
-											);
+											const info = userStatusMap.get(uid);
+											// Ring style: dashed gray for auto-filled, amber for tentative slots, green for available
+											let ringBorder = '2px solid var(--success)';
+											if (info?.status === 'tentative') {
+												ringBorder = '2px dashed var(--text-muted)';
+											} else if (info?.hasTentativeSlot) {
+												ringBorder = '2px solid var(--warning)';
+											}
+											const name = user?.display_name ?? user?.discord_username ?? uid;
 											return (
-												<span
+												<div
 													key={uid}
+													title={name}
 													style={{
-														position: 'relative',
+														width: '18px',
+														height: '18px',
+														borderRadius: '50%',
+														border: ringBorder,
+														boxSizing: 'border-box',
 														marginLeft: i > 0 ? '-4px' : 0,
 														flexShrink: 0,
+														overflow: 'hidden',
+														background: 'var(--bg-card)',
+														position: 'relative',
 													}}
 												>
-													{avatarEl}
-													{isTentativeUser && (
-														<span style={{
-															position: 'absolute',
-															bottom: '-2px',
-															right: '-2px',
-															width: '7px',
-															height: '7px',
-															borderRadius: '50%',
-															background: 'var(--warning)',
-															border: '1px solid var(--bg-tertiary)',
-														}} />
+													{user?.avatar_url ? (
+														<img
+															src={user.avatar_url}
+															alt={name}
+															style={{ width: '100%', height: '100%', display: 'block', borderRadius: '50%' }}
+														/>
+													) : (
+														<span
+															style={{
+																display: 'flex',
+																alignItems: 'center',
+																justifyContent: 'center',
+																width: '100%',
+																height: '100%',
+																fontSize: '8px',
+																fontWeight: 600,
+																color: 'var(--text-muted)',
+																background: 'var(--bg-tertiary)',
+															}}
+														>
+															{name[0].toUpperCase()}
+														</span>
 													)}
-												</span>
+												</div>
 											);
 										})}
 										{overflow > 0 && (
@@ -543,25 +538,43 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 				<h3 style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>My Availability -- {todayLabel}</h3>
 				{(() => {
 					const mySlots = availability.filter((s) => s.user_id === userId);
+					const myInfo = userStatusMap.get(userId);
 					const myGroups = groupMySlots(mySlots);
 					myGroups.sort((a, b) => localSortKey(a.startTime, today) - localSortKey(b.startTime, today));
+
 					if (myGroups.length === 0) return <p class="text-muted">You haven't set availability for today.</p>;
+
+					// Build a set of start_times that are tentative
+					const tentativeStarts = new Set(
+						mySlots.filter((s) => s.slot_status === 'tentative').map((s) => s.start_time),
+					);
+
 					return (
-						<div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-							{myGroups.map((g) => (
-								<span
-									key={`${g.startTime}-${g.endTime}`}
-									style={{
-										background: 'var(--accent)',
-										color: '#fff',
-										padding: '4px 8px',
-										borderRadius: '4px',
-										fontSize: '12px',
-									}}
-								>
-									<TimeRange parts={formatLocalTimeRangeStructured(g.startTime, g.endTime, today)} />
-								</span>
-							))}
+						<div>
+							{myInfo?.status === 'tentative' && (
+								<p style={{ fontSize: '11px', color: 'var(--warning)', marginBottom: '6px' }}>
+									Auto-filled from last week (pending confirm)
+								</p>
+							)}
+							<div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+								{myGroups.map((g) => {
+									const isTentativeGroup = tentativeStarts.has(g.startTime);
+									return (
+										<span
+											key={`${g.startTime}-${g.endTime}`}
+											style={{
+												background: isTentativeGroup ? 'var(--warning)' : 'var(--accent)',
+												color: '#fff',
+												padding: '4px 8px',
+												borderRadius: '4px',
+												fontSize: '12px',
+											}}
+										>
+											<TimeRange parts={formatLocalTimeRangeStructured(g.startTime, g.endTime, today)} />
+										</span>
+									);
+								})}
+							</div>
 						</div>
 					);
 				})()}
