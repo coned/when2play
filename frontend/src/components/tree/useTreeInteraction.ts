@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'preact/hooks';
-import type { TreeNode, TreeEdge, Participant, ViewMode } from './treeConstants';
+import { useState, useMemo, useCallback, useEffect } from 'preact/hooks';
+import type { TreeNode, TreeEdge, ViewMode } from './treeConstants';
 import { ANONYMOUS_ID, isAnonymous } from './treeConstants';
 import { filterByUsers } from './treeLayout';
 
@@ -30,7 +30,6 @@ export interface TreeInteraction {
 export function useTreeInteraction(
 	nodes: TreeNode[],
 	edges: TreeEdge[],
-	participants: Record<string, Participant>,
 ): TreeInteraction {
 	const [viewMode, setViewMode] = useState<ViewMode>(() => {
 		try {
@@ -131,6 +130,13 @@ export function useTreeInteraction(
 		}
 		return ids;
 	}, [consolidatedData.nodes]);
+
+	// Clear stale hover/selection when the node disappears from processedNodes
+	const processedNodeIds = useMemo(() => new Set(processedNodes.map((n) => n.id)), [processedNodes]);
+	useEffect(() => {
+		if (hoveredNodeId && !processedNodeIds.has(hoveredNodeId)) setHoveredNodeId(null);
+		if (selectedNodeId && !processedNodeIds.has(selectedNodeId)) setSelectedNodeId(null);
+	}, [processedNodeIds, hoveredNodeId, selectedNodeId]);
 
 	// Highlight connected nodes/edges on hover
 	const { highlightedNodeIds, highlightedEdgeIds } = useMemo(() => {

@@ -73,7 +73,7 @@ function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
 			let val = attr.value;
 			for (const [varRef, resolved] of Object.entries(cssVarMap)) {
 				if (val.includes(varRef)) {
-					val = val.replace(varRef, resolved);
+					val = val.replaceAll(varRef, resolved);
 				}
 			}
 			if (val !== attr.value) el.setAttribute(attr.name, val);
@@ -135,7 +135,7 @@ export function GamingTree() {
 	const rawEdges: TreeEdge[] = data?.edges ?? [];
 	const participants: Record<string, Participant> = data?.participants ?? {};
 
-	const interaction = useTreeInteraction(rawNodes, rawEdges, participants);
+	const interaction = useTreeInteraction(rawNodes, rawEdges);
 
 	const selectedNode = useMemo(() => {
 		if (!interaction.selectedNodeId) return null;

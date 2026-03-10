@@ -1,4 +1,4 @@
-import type { ActionType, RallyTreeNode } from '@when2play/shared';
+import type { RallyTreeNode } from '@when2play/shared';
 
 // -- View mode --
 
