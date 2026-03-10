@@ -23,3 +23,8 @@ Technical references for understanding and extending the codebase.
 | [API Reference](docs/dev/API.md) | Complete HTTP API with request/response examples |
 | [Bot Contract](docs/dev/BOT_CONTRACT.md) | Integration spec for building a companion Discord bot |
 | [Future Design](docs/dev/FUTURE.md) | Cloudflare-native bot migration guide (HTTP Interactions + Cron Triggers) |
+
+## Quick Link
+
+- [Cloudflare Dashboard](https://dash.cloudflare.com)
+- [Discord Developer Portal](https://discord.com/developers/applications)
