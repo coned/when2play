@@ -2,6 +2,8 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'preact/hooks'
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { formatLocalTimeClean } from '../../lib/time';
 
+import type { AvailabilityStatus } from '@when2play/shared';
+
 interface TimeGridProps {
 	date: string;
 	mySlots: any[];
@@ -12,6 +14,8 @@ interface TimeGridProps {
 	availEndHourET?: number;
 	totalParticipants: number;
 	userMap: Map<string, { display_name: string | null; avatar_url: string | null }>;
+	dateStatus?: AvailabilityStatus | null;
+	onConfirm?: () => Promise<void>;
 }
 
 const GRANULARITY = 15;
@@ -166,7 +170,9 @@ function SlotPopover({ userIds, userMap }: { userIds: string[]; userMap: Map<str
 	);
 }
 
-export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHourET, availEndHourET, totalParticipants, userMap }: TimeGridProps) {
+export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHourET, availEndHourET, totalParticipants, userMap, dateStatus, onConfirm }: TimeGridProps) {
+	const isTentative = dateStatus === 'tentative';
+	const [confirming, setConfirming] = useState(false);
 	const [selected, setSelected] = useState<Set<string>>(new Set(mySlots.map((s) => s.start_time)));
 	const [isDragging, setIsDragging] = useState(false);
 	const [dragValue, setDragValue] = useState(true);
@@ -368,6 +374,37 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 				</span>
 			</div>
 
+			{/* Tentative confirm banner */}
+			{isTentative && onConfirm && (
+				<div style={{
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'space-between',
+					gap: '8px',
+					padding: '6px 10px',
+					marginBottom: '6px',
+					background: 'rgba(234, 179, 8, 0.12)',
+					border: '1px solid var(--warning)',
+					borderRadius: 'var(--radius)',
+					fontSize: '12px',
+					color: 'var(--text-secondary)',
+				}}>
+					<span>Auto-filled from last week - toggle any slot or press Confirm</span>
+					<button
+						class="btn btn-primary"
+						style={{ fontSize: '12px', padding: '4px 12px', flexShrink: 0 }}
+						disabled={confirming}
+						onClick={async () => {
+							setConfirming(true);
+							await onConfirm();
+							setConfirming(false);
+						}}
+					>
+						{confirming ? '...' : 'Confirm'}
+					</button>
+				</div>
+			)}
+
 			{/* Time columns */}
 			<div
 				ref={containerRef}
@@ -464,7 +501,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 										background: isSelected
 											? overlapCount > 0
 												? 'var(--success)'
-												: 'var(--accent)'
+												: isTentative
+													? 'var(--warning)'
+													: 'var(--accent)'
 											: bgNotSelected,
 										color: isSelected ? '#fff' : 'var(--text-secondary)',
 										borderTop: isHourStart ? '1px solid var(--border)' : 'none',
@@ -511,7 +550,9 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 				))}
 			</div>
 			<p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-				Changes save automatically · Darker green = more people available
+				{isTentative
+					? 'Auto-filled from last week - toggle any slot or press Confirm'
+					: 'Changes save automatically · Darker green = more people available'}
 			</p>
 		</div>
 	);

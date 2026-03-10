@@ -161,6 +161,24 @@ export function availabilityTomorrow(cutoffHourET: number): string {
 }
 
 /**
+ * Generate an array of YYYY-MM-DD date strings starting from availabilityToday
+ * for a given number of consecutive days.
+ */
+export function availabilityDateRange(cutoffHourET: number, days: number): string[] {
+	const start = availabilityToday(cutoffHourET);
+	const dates: string[] = [];
+	const d = new Date(start + 'T12:00:00Z');
+	for (let i = 0; i < days; i++) {
+		const y = d.getUTCFullYear();
+		const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+		const day = String(d.getUTCDate()).padStart(2, '0');
+		dates.push(`${y}-${m}-${day}`);
+		d.setUTCDate(d.getUTCDate() + 1);
+	}
+	return dates;
+}
+
+/**
  * @deprecated Use formatLocalTime instead.
  */
 export function formatDualTime(utcHHMM: string, dateStr: string): string {

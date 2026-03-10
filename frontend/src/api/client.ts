@@ -88,6 +88,10 @@ export const api = {
 	setAvailability: (data: { date: string; slots: Array<{ start_time: string; end_time: string }> }) =>
 		request<any[]>('/availability', { method: 'PUT', body: JSON.stringify(data) }),
 	clearAvailability: (date: string) => request<null>(`/availability?date=${date}`, { method: 'DELETE' }),
+	getMyAvailabilityStatus: (from: string, to: string) =>
+		request<Record<string, string | null>>(`/availability/my-status?from=${from}&to=${to}`),
+	confirmAvailability: (date: string) =>
+		request<any[]>(`/availability/${date}/confirm`, { method: 'POST' }),
 
 	// Users (all)
 	getUsers: () => cachedGet<Array<{ id: string; discord_username: string; display_name: string | null; avatar_url: string | null }>>('/users'),
