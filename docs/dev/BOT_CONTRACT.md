@@ -218,7 +218,7 @@ When `metadata.is_anonymous === true` on a rally action, the bot should display 
 - `call` with anonymous: `📢 **Someone** called` instead of `📢 **<@123>** called`
 - `in` with anonymous: `✅ **Someone** is in!`
 
-The `actor_discord_id` and `actor_username` fields are still present in the payload for logging, but should not be shown to users when anonymous.
+The `actor_discord_id` and `actor_username` fields are still present for internal correlation/debugging only. They MUST NOT appear in any user-visible output (Discord channels, DMs, or audit/log channels visible to non-admins) when the action is anonymous.
 
 **`share_ranking` metadata format:**
 ```json
