@@ -41,7 +41,7 @@ games.get('/', async (c) => {
 		reaction_users: reactionUsers.get(g.id) ?? [],
 	}));
 
-	c.executionCtx.waitUntil(refreshStaleImages(c.env.DB, results));
+	c.executionCtx?.waitUntil?.(refreshStaleImages(c.env.DB, results));
 
 	return c.json({ ok: true, data });
 });

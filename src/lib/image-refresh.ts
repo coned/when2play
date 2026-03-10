@@ -19,15 +19,15 @@ export async function refreshStaleImages(db: D1Database, games: GameRow[]): Prom
 		stale.map(async (game) => {
 			const headerUrl = `https://cdn.akamai.steamstatic.com/steam/apps/${game.steam_app_id}/header.jpg`;
 			const timestamp = new Date().toISOString();
+			// Mark checked before HEAD to prevent concurrent requests from rechecking the same game
+			await updateGame(db, game.id, { image_checked_at: timestamp });
 			try {
 				const res = await fetch(headerUrl, { method: 'HEAD' });
 				if (res.ok) {
-					await updateGame(db, game.id, { image_url: headerUrl, image_checked_at: timestamp });
-				} else {
-					await updateGame(db, game.id, { image_checked_at: timestamp });
+					await updateGame(db, game.id, { image_url: headerUrl });
 				}
 			} catch {
-				await updateGame(db, game.id, { image_checked_at: timestamp });
+				// Leave image_url unchanged; image_checked_at already updated above
 			}
 		}),
 	);
