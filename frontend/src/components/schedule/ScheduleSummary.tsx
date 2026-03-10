@@ -49,25 +49,28 @@ function groupAdjacentSlots(slots: Array<[string, Set<string>]>): SlotGroup[] {
 	return groups;
 }
 
-function groupMySlots(slots: Array<{ start_time: string }>): Array<{ startTime: string; endTime: string }> {
+function groupMySlots(slots: Array<{ start_time: string; slot_status?: string }>): Array<{ startTime: string; endTime: string; slotStatus: string }> {
 	if (slots.length === 0) return [];
 
 	const sorted = [...slots].sort((a, b) => a.start_time.localeCompare(b.start_time));
-	const groups: Array<{ startTime: string; endTime: string }> = [];
+	const groups: Array<{ startTime: string; endTime: string; slotStatus: string }> = [];
 	let currentStart = sorted[0].start_time;
 	let currentEnd = addMinutes(sorted[0].start_time, 15);
+	let currentStatus = sorted[0].slot_status ?? 'available';
 
 	for (let i = 1; i < sorted.length; i++) {
 		const time = sorted[i].start_time;
-		if (time === currentEnd) {
+		const status = sorted[i].slot_status ?? 'available';
+		if (time === currentEnd && status === currentStatus) {
 			currentEnd = addMinutes(time, 15);
 		} else {
-			groups.push({ startTime: currentStart, endTime: currentEnd });
+			groups.push({ startTime: currentStart, endTime: currentEnd, slotStatus: currentStatus });
 			currentStart = time;
 			currentEnd = addMinutes(time, 15);
+			currentStatus = status;
 		}
 	}
-	groups.push({ startTime: currentStart, endTime: currentEnd });
+	groups.push({ startTime: currentStart, endTime: currentEnd, slotStatus: currentStatus });
 
 	return groups;
 }
@@ -244,17 +247,21 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 		slotUsers.get(slot.start_time)!.add(slot.user_id);
 	}
 
-	// Build user status map: date-level status + whether any slot is tentative
-	const userStatusMap = new Map<string, { status: string; hasTentativeSlot: boolean }>();
+	// Per-slot per-user status: key = "start_time:user_id"
+	const slotUserInfo = new Map<string, { status: string; slotStatus: string }>();
+	// Per-user aggregate (for My Availability section)
+	const userStatusMap = new Map<string, { status: string }>();
 	for (const slot of availability) {
-		const existing = userStatusMap.get(slot.user_id);
 		const dateStatus = slot.status ?? 'manual';
-		const slotIsTentative = slot.slot_status === 'tentative';
+		slotUserInfo.set(`${slot.start_time}:${slot.user_id}`, {
+			status: dateStatus,
+			slotStatus: slot.slot_status ?? 'available',
+		});
+		const existing = userStatusMap.get(slot.user_id);
 		if (!existing) {
-			userStatusMap.set(slot.user_id, { status: dateStatus, hasTentativeSlot: slotIsTentative });
-		} else {
-			if (dateStatus === 'tentative') existing.status = 'tentative';
-			if (slotIsTentative) existing.hasTentativeSlot = true;
+			userStatusMap.set(slot.user_id, { status: dateStatus });
+		} else if (dateStatus === 'tentative') {
+			existing.status = 'tentative';
 		}
 	}
 
@@ -461,12 +468,12 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 									<div style={{ display: 'flex', alignItems: 'center' }}>
 										{shown.map((uid, i) => {
 											const user = userMap.get(uid);
-											const info = userStatusMap.get(uid);
-											// Ring style: dashed gray for auto-filled, amber for tentative slots, green for available
+											const info = slotUserInfo.get(`${group.startTime}:${uid}`);
+											// Ring style per slot: dashed gray for auto-filled, amber for tentative slot, green for available
 											let ringBorder = '2px solid var(--success)';
 											if (info?.status === 'tentative') {
 												ringBorder = '2px dashed var(--text-muted)';
-											} else if (info?.hasTentativeSlot) {
+											} else if (info?.slotStatus === 'tentative') {
 												ringBorder = '2px solid var(--warning)';
 											}
 											const name = user?.display_name ?? user?.discord_username ?? uid;
@@ -544,11 +551,6 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 
 					if (myGroups.length === 0) return <p class="text-muted">You haven't set availability for today.</p>;
 
-					// Build a set of start_times that are tentative
-					const tentativeStarts = new Set(
-						mySlots.filter((s) => s.slot_status === 'tentative').map((s) => s.start_time),
-					);
-
 					return (
 						<div>
 							{myInfo?.status === 'tentative' && (
@@ -557,23 +559,20 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 								</p>
 							)}
 							<div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-								{myGroups.map((g) => {
-									const isTentativeGroup = tentativeStarts.has(g.startTime);
-									return (
-										<span
-											key={`${g.startTime}-${g.endTime}`}
-											style={{
-												background: isTentativeGroup ? 'var(--warning)' : 'var(--accent)',
-												color: '#fff',
-												padding: '4px 8px',
-												borderRadius: '4px',
-												fontSize: '12px',
-											}}
-										>
-											<TimeRange parts={formatLocalTimeRangeStructured(g.startTime, g.endTime, today)} />
-										</span>
-									);
-								})}
+								{myGroups.map((g) => (
+									<span
+										key={`${g.startTime}-${g.endTime}`}
+										style={{
+											background: g.slotStatus === 'tentative' ? 'var(--warning)' : 'var(--accent)',
+											color: '#fff',
+											padding: '4px 8px',
+											borderRadius: '4px',
+											fontSize: '12px',
+										}}
+									>
+										<TimeRange parts={formatLocalTimeRangeStructured(g.startTime, g.endTime, today)} />
+									</span>
+								))}
 							</div>
 						</div>
 					);
