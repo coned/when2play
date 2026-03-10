@@ -337,7 +337,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 				{topGames.length === 0 ? (
 					<p class="text-muted">No games in the pool yet.</p>
 				) : (
-					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '480px' }}>
 						{topGames.map((item, i) => {
 							const likeUsers = (item.reaction_users ?? []).filter((u: any) => u.type === 'like');
 							const dislikeUsers = (item.reaction_users ?? []).filter((u: any) => u.type === 'dislike');
@@ -391,7 +391,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 						<p class="text-muted">No votes cast yet.</p>
 					)
 				) : (
-					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '480px' }}>
 						{ranking.slice(0, 5).map((item, i) => (
 							<div key={item.game_id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 								<span style={{ color: 'var(--accent)', fontWeight: 700, minWidth: '24px' }}>#{i + 1}</span>
