@@ -45,17 +45,10 @@ export async function setAvailability(
 	for (const slot of slots) {
 		const id = uuid();
 		const slotStatus = slot.slot_status ?? 'available';
-		try {
-			await db
-				.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at, slot_status) VALUES (?, ?, ?, ?, ?, ?, ?)')
-				.bind(id, userId, date, slot.start_time, slot.end_time, timestamp, slotStatus)
-				.run();
-		} catch {
-			await db
-				.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-				.bind(id, userId, date, slot.start_time, slot.end_time, timestamp)
-				.run();
-		}
+		await db
+			.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at, slot_status) VALUES (?, ?, ?, ?, ?, ?, ?)')
+			.bind(id, userId, date, slot.start_time, slot.end_time, timestamp, slotStatus)
+			.run();
 		results.push({ id, user_id: userId, date, start_time: slot.start_time, end_time: slot.end_time, created_at: timestamp, slot_status: slotStatus });
 	}
 
