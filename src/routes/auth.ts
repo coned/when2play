@@ -64,20 +64,30 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 
 	// Per-guild admin account prevents cross-guild access via guild switcher
 	const guildId = c.req.header('X-Guild-Id');
-	const adminDiscordId = guildId ? `system-admin-${guildId}` : 'system-admin';
+	if (!guildId) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Missing guild context' } }, 400);
+	}
+	const adminDiscordId = `system-admin-${guildId}`;
 
 	// Migrate legacy shared "system-admin" row to scoped ID.
-	// Delete the newer scoped row (few refs) and rename the old row (keeps FK refs).
-	// rallies/rally_actions/rally_tree_shares lack ON DELETE CASCADE, so we
-	// can't safely delete the old row.
-	if (adminDiscordId !== 'system-admin') {
-		const hasOld = await c.env.DB.prepare(
-			'SELECT 1 FROM users WHERE discord_id = ?'
-		).bind('system-admin').first();
-		if (hasOld) {
-			await c.env.DB.prepare(
-				'DELETE FROM users WHERE discord_id = ?'
-			).bind(adminDiscordId).run();
+	// Transfer FK refs from scoped row to old row, delete scoped, rename old.
+	// rallies/rally_actions/rally_tree_shares lack ON DELETE CASCADE.
+	const oldUser = await c.env.DB.prepare(
+		'SELECT id FROM users WHERE discord_id = ?'
+	).bind('system-admin').first<{ id: string }>();
+	if (oldUser) {
+		const scopedUser = await c.env.DB.prepare(
+			'SELECT id FROM users WHERE discord_id = ?'
+		).bind(adminDiscordId).first<{ id: string }>();
+		if (scopedUser) {
+			await c.env.DB.batch([
+				c.env.DB.prepare('UPDATE rallies SET creator_id = ? WHERE creator_id = ?').bind(oldUser.id, scopedUser.id),
+				c.env.DB.prepare('UPDATE rally_actions SET actor_id = ? WHERE actor_id = ?').bind(oldUser.id, scopedUser.id),
+				c.env.DB.prepare('UPDATE rally_tree_shares SET requested_by = ? WHERE requested_by = ?').bind(oldUser.id, scopedUser.id),
+				c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(scopedUser.id),
+				c.env.DB.prepare('UPDATE users SET discord_id = ? WHERE id = ?').bind(adminDiscordId, oldUser.id),
+			]);
+		} else {
 			await c.env.DB.prepare(
 				'UPDATE users SET discord_id = ? WHERE discord_id = ?'
 			).bind(adminDiscordId, 'system-admin').run();

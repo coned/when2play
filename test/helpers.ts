@@ -1,12 +1,12 @@
 import app from '../src/index';
-import { guildUrl, guildCookie, testEnv } from './setup';
+import { guildUrl, guildCookie, TEST_GUILD_ID, testEnv } from './setup';
 
 export async function createAuthenticatedAdmin(db: D1Database, discordId: string, username: string) {
 	const tokenRes = await app.request(
 		guildUrl('/api/auth/admin-token'),
 		{
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
 			body: JSON.stringify({ discord_id: discordId, discord_username: username }),
 		},
 		testEnv(db),
