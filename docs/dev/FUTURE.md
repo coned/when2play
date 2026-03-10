@@ -31,7 +31,7 @@ Discord supports a second integration model: **HTTP Interactions**. Instead of t
 Combined with Cloudflare's **Cron Triggers**, the full bot can live inside the existing Worker:
 
 ```
-Slash command (/play, /when2play-admin)
+Slash command (/when2play, /when2play-admin)
   → Discord sends signed POST to your Worker URL
   → Worker verifies signature, handles command, returns JSON response
 
@@ -211,7 +211,7 @@ export default {
 ## Sequence: Slash Command Flow (HTTP Interactions)
 
 ```
-User types /play in Discord
+User types /when2play in Discord
     │
     ▼
 Discord sends POST /api/discord/interactions

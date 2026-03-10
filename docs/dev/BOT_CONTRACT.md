@@ -328,7 +328,7 @@ def guild_headers(guild_id):
         "X-Guild-Id": str(guild_id),
     }
 
-# On /play command
+# On /when2play command
 async def handle_play(interaction):
     member = interaction.guild.get_member(interaction.user.id)
     display_name = member.display_name if member else interaction.user.display_name
