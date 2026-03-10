@@ -55,7 +55,7 @@ This release adds multi-guild support -- one bot instance and one API deployment
 - Guild DB routing middleware -- API resolves the correct database binding per request based on guild context
 - `/setchannel` persistence in D1 -- channel configuration survives bot restarts and redeploys (previously stored in local JSON)
 - `/welcome` admin command -- posts a public introduction message explaining when2play and how to get started
-- `/play` now replies as an ephemeral channel message instead of a DM -- fewer clicks for the user
+- `/when2play` now replies as an ephemeral channel message instead of a DM -- fewer clicks for the user
 - Day cutoff setting -- admin-configurable "today's cutoff" (default 5 AM ET) so late-night sessions still count as the previous day on the Availability page
 - Settings export/import -- admin can export the full settings JSON and re-import it on the Settings page, with server-side validation against injection
 - Schedule tab renamed to Dashboard

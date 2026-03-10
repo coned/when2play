@@ -143,7 +143,7 @@ If the Worker URL changes (e.g., switching to a custom domain):
 
 ## Troubleshooting
 
-### `ConnectTimeoutError` when the bot polls or handles `/play`
+### `ConnectTimeoutError` when the bot polls or handles `/when2play`
 
 ```
 Error polling gather pings: TypeError: fetch failed
@@ -164,7 +164,7 @@ Either `DISCORD_TOKEN` or `WHEN2PLAY_API_URL` is missing from `.env`. Check that
 
 Commands are registered on bot startup via `registerCommands()`. This requires the bot to connect successfully at least once. If commands still don't appear after a minute, check the console for errors during startup.
 
-### `Failed: ...` reply to `/play`
+### `Failed: ...` reply to `/when2play`
 
 The Worker returned an error from `POST /api/auth/token`. Common causes:
 - `BOT_API_KEY` in `.env` doesn't match the secret set in the Worker (`npx wrangler secret put BOT_API_KEY`)

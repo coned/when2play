@@ -52,7 +52,7 @@ export function createTestDb(): D1Database {
 			return { count: 0, duration: 0 } as any;
 		},
 		batch(statements: any[]) {
-			return Promise.all(statements.map((s: any) => s.all()));
+			return Promise.all(statements.map((s: any) => s.run()));
 		},
 		dump() {
 			return Promise.resolve(new ArrayBuffer(0));

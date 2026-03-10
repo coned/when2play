@@ -154,7 +154,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/admin-token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
 				testEnv(db),
@@ -172,7 +172,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/admin-token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
 				testEnv(db),
@@ -190,6 +190,95 @@ describe('Auth routes', () => {
 			const meRes = await app.request(guildUrl('/api/users/me'), { headers: { Cookie: guildCookie(`session_id=${sessionId}`) } }, testEnv(db));
 			const me = await meRes.json();
 			expect(me.data.is_admin).toBe(true);
+		});
+
+		it('returns 400 when X-Guild-Id header is missing', async () => {
+			const res = await app.request(
+				guildUrl('/api/auth/admin-token'),
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
+				},
+				testEnv(db),
+			);
+
+			expect(res.status).toBe(400);
+			const body = await res.json();
+			expect(body.error.message).toBe('Missing guild context');
+		});
+
+		it('admin user gets guild-scoped discord_id', async () => {
+			const tokenRes = await app.request(
+				guildUrl('/api/auth/admin-token'),
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
+					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
+				},
+				testEnv(db),
+			);
+
+			expect(tokenRes.status).toBe(201);
+			const user = await db.prepare('SELECT discord_id FROM users WHERE discord_id = ?')
+				.bind(`system-admin-${TEST_GUILD_ID}`).first<{ discord_id: string }>();
+			expect(user).not.toBeNull();
+			expect(user!.discord_id).toBe(`system-admin-${TEST_GUILD_ID}`);
+		});
+
+		it('migration renames legacy system-admin row', async () => {
+			// Insert a legacy system-admin user
+			await db.prepare(
+				"INSERT INTO users (id, discord_id, discord_username, created_at, updated_at) VALUES ('legacy-id', 'system-admin', 'Administrator', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')"
+			).run();
+
+			const res = await app.request(
+				guildUrl('/api/auth/admin-token'),
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
+					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
+				},
+				testEnv(db),
+			);
+
+			expect(res.status).toBe(201);
+			const old = await db.prepare('SELECT 1 FROM users WHERE discord_id = ?').bind('system-admin').first();
+			expect(old).toBeNull();
+			const scoped = await db.prepare('SELECT id FROM users WHERE discord_id = ?')
+				.bind(`system-admin-${TEST_GUILD_ID}`).first<{ id: string }>();
+			expect(scoped).not.toBeNull();
+			expect(scoped!.id).toBe('legacy-id');
+		});
+
+		it('migration merges when both rows exist', async () => {
+			// Insert legacy system-admin and a scoped row
+			await db.prepare(
+				"INSERT INTO users (id, discord_id, discord_username, created_at, updated_at) VALUES ('old-id', 'system-admin', 'Administrator', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')"
+			).run();
+			await db.prepare(
+				"INSERT INTO users (id, discord_id, discord_username, created_at, updated_at) VALUES ('scoped-id', ?, 'Administrator', '2024-01-02T00:00:00Z', '2024-01-02T00:00:00Z')"
+			).bind(`system-admin-${TEST_GUILD_ID}`).run();
+
+			const res = await app.request(
+				guildUrl('/api/auth/admin-token'),
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
+					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
+				},
+				testEnv(db),
+			);
+
+			expect(res.status).toBe(201);
+			const old = await db.prepare('SELECT 1 FROM users WHERE discord_id = ?').bind('system-admin').first();
+			expect(old).toBeNull();
+			const deleted = await db.prepare('SELECT 1 FROM users WHERE id = ?').bind('scoped-id').first();
+			expect(deleted).toBeNull();
+			const merged = await db.prepare('SELECT id FROM users WHERE discord_id = ?')
+				.bind(`system-admin-${TEST_GUILD_ID}`).first<{ id: string }>();
+			expect(merged).not.toBeNull();
+			expect(merged!.id).toBe('old-id');
 		});
 
 		it('regular token callback sets persistent cookie and is_admin is false', async () => {
