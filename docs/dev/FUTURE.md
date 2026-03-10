@@ -141,7 +141,7 @@ The `handlePlay` and `handleAdminPlay` functions call the existing `/api/auth/to
 }
 ```
 
-DM sending (the `/play` DM with the auth URL) must happen via the Discord REST API using a follow-up webhook call, since the initial response has a 3-second deadline.
+DM sending (the `/when2play` DM with the auth URL) must happen via the Discord REST API using a follow-up webhook call, since the initial response has a 3-second deadline.
 
 ### 4. New Secret: `DISCORD_PUBLIC_KEY`
 

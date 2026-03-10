@@ -38,7 +38,7 @@ The Worker validates that the guild ID is a Discord snowflake (`/^\d{17,20}$/`).
 
 ### 1. Create Auth Token
 
-When a user types `/play` (or similar command) in Discord:
+When a user types `/when2play` (or similar command) in Discord:
 
 ```bash
 POST /api/auth/token
@@ -260,7 +260,7 @@ The bot registers the following slash commands:
 
 | Command | Description | Options |
 |---------|-------------|---------|
-| `/play` | Get a login link for the dashboard | — |
+| `/when2play` | Get a login link for the dashboard | — |
 | `/when2play-admin` | Get an admin link (requires ADMINISTRATOR) | — |
 | `/help` | Show all commands (ephemeral) | — |
 | `/call` | Call everyone to play | `message` (string, optional) |

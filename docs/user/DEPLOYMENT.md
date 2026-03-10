@@ -186,7 +186,7 @@ Loaded settings for N guild(s) from D1
 Polling N guild(s) every 15s (with exponential backoff on errors)
 ```
 
-Slash commands like `/call`, `/in`, `/play`, and `/help` are now live.
+Slash commands like `/call`, `/in`, `/when2play`, and `/help` are now live.
 
 ### 5. Set the Output Channel
 
@@ -250,7 +250,7 @@ pm2 startup   # follow the printed instructions to auto-start on reboot
 After completing both parts:
 
 1. Open the Worker URL in a browser - you should see the login page
-2. In Discord, run `/play` - the bot should DM you a login link
+2. In Discord, run `/when2play` - the bot should DM you a login link
 3. Click the login link - the dashboard should load
 4. Run `/setchannel` in the desired Discord channel
 5. Try `/call` - a rally notification should appear in the channel
