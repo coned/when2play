@@ -406,3 +406,15 @@ All time displays show both UTC and local time:
 - **Responsive breakpoint**: 768px. Below = BottomNav + mobile padding. Above = Sidebar + desktop layout.
 - **Steam search**: Fetches `store.steampowered.com/search/suggest` HTML, parses with regex for app IDs, names, and images.
 - **Image refresh**: Stale-while-revalidate pattern. Steam game images are re-validated via HEAD requests to the CDN every 24 hours, up to 3 per page load, using `waitUntil()` for zero user-facing latency. Failures defer the next check by 24 hours.
+
+### Day Boundaries
+
+Gaming sessions often run past midnight, so the app uses three distinct "day" concepts:
+
+| Concept | Setting | Default | Used by |
+|---------|---------|---------|---------|
+| **Game day** (day key) | `day_reset_hour_et` | 8 AM ET | Rally system (`day_key` in rallies and rally_actions). Before 8 AM ET, the game day is still "yesterday." |
+| **Availability day** | `day_cutoff_hour_et` | 5 AM ET | Availability display and schedule summary. Before 5 AM ET, "today" in the availability context still means the previous calendar date. |
+| **Calendar day** | N/A (user's local timezone) | midnight | Used for `+1` indicators on time slots that cross midnight in the user's local time. |
+
+The game day and availability day boundaries prevent late-night gaming sessions from rolling over into the next day's data prematurely. For example, a session ending at 2 AM still belongs to the previous game day (since `day_reset_hour_et` defaults to 8 AM ET).
