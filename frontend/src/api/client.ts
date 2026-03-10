@@ -74,6 +74,7 @@ export const api = {
 	setVote: (gameId: string, data: { rank: number; is_approved?: boolean }) =>
 		request<any>(`/games/${gameId}/vote`, { method: 'PUT', body: JSON.stringify(data) }),
 	deleteVote: (gameId: string) => request<null>(`/games/${gameId}/vote`, { method: 'DELETE' }),
+	deleteAllVotes: () => request<null>('/games/my-votes', { method: 'DELETE' }),
 	getGameVotes: (gameId: string) => request<any[]>(`/games/${gameId}/votes`),
 	getMyVotes: () => request<any[]>('/games/my-votes'),
 	reorderVotes: (rankings: Array<{ game_id: string; rank: number }>) =>

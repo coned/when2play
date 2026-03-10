@@ -61,6 +61,12 @@ export function VoteRanking({ games, onVoteChange }: VoteRankingProps) {
 		}
 	};
 
+	const removeAllVotes = async () => {
+		await api.deleteAllVotes();
+		setRankedVotes([]);
+		onVoteChange();
+	};
+
 	const removeFromRanking = async (gameId: string) => {
 		await api.deleteVote(gameId);
 		const newVotes = rankedVotes.filter((v) => v.game_id !== gameId);
@@ -156,7 +162,18 @@ export function VoteRanking({ games, onVoteChange }: VoteRankingProps) {
 
 	return (
 		<div>
-			<h3 style={{ marginBottom: '8px' }}>Vote for what to play today</h3>
+			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+				<h3 style={{ margin: 0 }}>Vote for what to play today</h3>
+				{rankedVotes.length > 0 && (
+					<button
+						class="btn btn-secondary"
+						style={{ padding: '2px 8px', fontSize: '11px' }}
+						onClick={removeAllVotes}
+					>
+						Remove all
+					</button>
+				)}
+			</div>
 			<p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
 				{rankedVotes.length === 0 ? 'Add games below to cast your vote.' : 'Drag to reorder · drag to the zone below to unrank'}
 			</p>
