@@ -1,7 +1,17 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
-import { getAvailability, setAvailability, clearAvailability } from '../db/queries/availability';
+import {
+	getAvailability,
+	setAvailability,
+	clearAvailability,
+	getAvailabilityStatus,
+	upsertAvailabilityStatus,
+	getLastWeekSlots,
+	getAvailabilityStatusForDate,
+	getDistinctAvailabilityDates,
+} from '../db/queries/availability';
+import { uuid, now } from '../db/helpers';
 import type { UserRow } from '../db/queries/users';
 
 type AvailEnv = {
@@ -15,6 +25,119 @@ type AvailEnv = {
 const availability = new Hono<AvailEnv>();
 
 availability.use('/*', requireAuth);
+
+// GET /api/availability/my-status?from=YYYY-MM-DD&to=YYYY-MM-DD
+availability.get('/my-status', async (c) => {
+	const user = c.get('user');
+	const from = c.req.query('from');
+	const to = c.req.query('to');
+
+	if (!from || !to) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'from and to query params required' } }, 400);
+	}
+
+	// Build date array
+	const dates: string[] = [];
+	const cur = new Date(from + 'T12:00:00Z');
+	const end = new Date(to + 'T12:00:00Z');
+	while (cur <= end) {
+		dates.push(cur.toISOString().split('T')[0]);
+		cur.setUTCDate(cur.getUTCDate() + 1);
+	}
+
+	// 1. Get explicit status rows
+	const statusRows = await getAvailabilityStatus(c.env.DB, user.id, dates);
+	const statusMap = new Map(statusRows.map((r) => [r.date, r.status]));
+
+	// 2. Get dates where user has actual slots
+	const datesWithSlots = await getDistinctAvailabilityDates(c.env.DB, user.id, dates);
+	const slotDates = new Set(datesWithSlots);
+
+	// 3. For dates with neither status nor slots, check last-week auto-fill
+	const needAutoFillCheck: string[] = [];
+	for (const date of dates) {
+		if (!statusMap.has(date) && !slotDates.has(date)) {
+			needAutoFillCheck.push(date);
+		}
+	}
+
+	// Compute last-week dates to check
+	const lastWeekDates: string[] = [];
+	for (const date of needAutoFillCheck) {
+		const d = new Date(date + 'T12:00:00Z');
+		d.setUTCDate(d.getUTCDate() - 7);
+		lastWeekDates.push(d.toISOString().split('T')[0]);
+	}
+
+	const lastWeekSlotDates = lastWeekDates.length > 0
+		? new Set(await getDistinctAvailabilityDates(c.env.DB, user.id, lastWeekDates))
+		: new Set<string>();
+
+	// Build response
+	const result: Record<string, string | null> = {};
+	for (const date of dates) {
+		if (statusMap.has(date)) {
+			result[date] = statusMap.get(date)!;
+		} else if (slotDates.has(date)) {
+			// Legacy data (pre-feature) - treat as manual
+			result[date] = 'manual';
+		} else {
+			// Check if last-week date had slots
+			const d = new Date(date + 'T12:00:00Z');
+			d.setUTCDate(d.getUTCDate() - 7);
+			const lwDate = d.toISOString().split('T')[0];
+			result[date] = lastWeekSlotDates.has(lwDate) ? 'tentative' : null;
+		}
+	}
+
+	return c.json({ ok: true, data: result });
+});
+
+// POST /api/availability/:date/confirm
+availability.post('/:date/confirm', async (c) => {
+	const user = c.get('user');
+	const date = c.req.param('date');
+
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'invalid date format' } }, 400);
+	}
+
+	// Check if user already has slots for this date
+	const existingSlots = await getAvailability(c.env.DB, { user_id: user.id, date });
+
+	if (existingSlots.length > 0) {
+		// Just mark as confirmed
+		await upsertAvailabilityStatus(c.env.DB, user.id, date, 'confirmed');
+		return c.json({ ok: true, data: existingSlots });
+	}
+
+	// Copy from last week
+	const d = new Date(date + 'T12:00:00Z');
+	d.setUTCDate(d.getUTCDate() - 7);
+	const lastWeekDate = d.toISOString().split('T')[0];
+
+	const lastWeekSlots = await getAvailability(c.env.DB, { user_id: user.id, date: lastWeekDate });
+
+	if (lastWeekSlots.length === 0) {
+		return c.json({ ok: false, error: { code: 'NOT_FOUND', message: 'no last-week slots to confirm' } }, 404);
+	}
+
+	// Insert copies for the target date
+	const timestamp = now();
+	const results = [];
+	for (const slot of lastWeekSlots) {
+		const id = uuid();
+		await c.env.DB
+			.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+			.bind(id, user.id, date, slot.start_time, slot.end_time, timestamp)
+			.run();
+		results.push({ id, user_id: user.id, date, start_time: slot.start_time, end_time: slot.end_time, created_at: timestamp });
+	}
+
+	await upsertAvailabilityStatus(c.env.DB, user.id, date, 'confirmed');
+
+	return c.json({ ok: true, data: results });
+});
 
 // GET /api/availability?user_id=&date=
 availability.get('/', async (c) => {
@@ -30,10 +153,50 @@ availability.get('/', async (c) => {
 	}
 
 	const slots = await getAvailability(c.env.DB, { user_id: userId, date });
+
+	// When querying by date (overlap queries), augment with tentative + status
+	if (date && !userId) {
+		// Collect user IDs that have real slots for this date
+		const realUserIds = new Set(slots.map((s) => s.user_id));
+
+		// Get status rows for this date
+		const statusRows = await getAvailabilityStatusForDate(c.env.DB, date);
+		const statusByUser = new Map(statusRows.map((r) => [r.user_id, r.status]));
+
+		// Users with a status row for this date should NOT get auto-filled
+		// (they explicitly acted on this date, even if they have no current slots)
+		const excludeFromAutoFill = new Set([...realUserIds, ...statusByUser.keys()]);
+
+		// Get last-week slots for users who don't have real data and no status row
+		const tentativeSlots = await getLastWeekSlots(
+			c.env.DB,
+			date,
+			Array.from(excludeFromAutoFill),
+		);
+
+		// Build augmented response
+		const augmentedSlots = slots.map((s) => ({
+			...s,
+			status: statusByUser.get(s.user_id) ?? 'manual',
+		}));
+
+		// Map tentative slots to target date
+		for (const slot of tentativeSlots) {
+			augmentedSlots.push({
+				...slot,
+				id: `tentative-${slot.user_id}-${slot.start_time}`,
+				date,
+				status: 'tentative',
+			});
+		}
+
+		return c.json({ ok: true, data: augmentedSlots });
+	}
+
 	return c.json({ ok: true, data: slots });
 });
 
-// PUT /api/availability — bulk replace slots for a date
+// PUT /api/availability - bulk replace slots for a date
 availability.put('/', async (c) => {
 	const user = c.get('user');
 	const body = await c.req.json<{ date: string; slots: Array<{ start_time: string; end_time: string }> }>();
