@@ -40,7 +40,7 @@
 when2play/
 ├── Makefile        # Project commands (make help)
 ├── docs/           # Documentation
-├── migrations/     # D1 SQL migrations (0000-0016)
+├── migrations/     # D1 SQL migrations (consolidated into 0000)
 ├── shared/         # Shared TypeScript types (npm workspace)
 ├── src/            # Backend (Hono API)
 │   ├── middleware/  # error, cors, auth, bot-auth, security-headers, fk, guild

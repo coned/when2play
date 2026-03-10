@@ -1,4 +1,4 @@
--- when2play schema (consolidated from migrations 0000-0017)
+-- when2play schema (consolidated from migrations 0000-0004)
 
 CREATE TABLE users (
 	id TEXT PRIMARY KEY,
