@@ -177,6 +177,7 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | is_archived | INTEGER DEFAULT 0 | Boolean |
 | created_at | TEXT NOT NULL | |
 | archived_at | TEXT | When archived |
+| image_checked_at | TEXT | Last time the image URL was validated against Steam CDN |
 
 ### game_votes
 
@@ -404,3 +405,4 @@ All time displays show both UTC and local time:
 - **Theme persistence**: `localStorage('w2p-theme')` (color scheme) and `localStorage('w2p-mode')` (light/dark) with `initTheme()` before render to prevent flash.
 - **Responsive breakpoint**: 768px. Below = BottomNav + mobile padding. Above = Sidebar + desktop layout.
 - **Steam search**: Fetches `store.steampowered.com/search/suggest` HTML, parses with regex for app IDs, names, and images.
+- **Image refresh**: Stale-while-revalidate pattern. Steam game images are re-validated via HEAD requests to the CDN every 24 hours, up to 3 per page load, using `waitUntil()` for zero user-facing latency. Failures defer the next check by 24 hours.
