@@ -1,18 +1,18 @@
 @import './themes.css';
 
 :root {
-	--bg-primary: #0f0f0f;
-	--bg-secondary: #1a1a2e;
-	--bg-tertiary: #16213e;
-	--bg-card: #1e1e32;
-	--accent: #3b82f6;
-	--accent-hover: #2563eb;
-	--accent-dim: #1d4ed8;
+	--bg-primary: #0d0221;
+	--bg-secondary: #1a0a3e;
+	--bg-tertiary: #240e52;
+	--bg-card: #1f0c45;
+	--accent: #ff2a6d;
+	--accent-hover: #e0245c;
+	--accent-dim: #b91c4e;
 	--text-primary: #e0e0e0;
 	--text-secondary: #a0a0a0;
 	--text-muted: #666;
-	--border: #2a2a3e;
-	--border-hover: #3a3a4e;
+	--border: #3a1a5e;
+	--border-hover: #4a2a6e;
 	--success: #22c55e;
 	--warning: #eab308;
 	--danger: #ef4444;

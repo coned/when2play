@@ -15,7 +15,7 @@ const THEME_KEY = 'w2p-theme';
 const MODE_KEY = 'w2p-mode';
 
 function applyTheme(id: ThemeId) {
-	if (id === 'midnight') {
+	if (id === 'cyberpunk') {
 		document.documentElement.removeAttribute('data-theme');
 	} else {
 		document.documentElement.setAttribute('data-theme', id);
@@ -31,15 +31,15 @@ export function useTheme() {
 		const saved = localStorage.getItem(THEME_KEY) as ThemeId | null;
 		// Migrate old themes
 		if (saved === 'daylight') {
-			localStorage.setItem(THEME_KEY, 'midnight');
+			localStorage.setItem(THEME_KEY, 'cyberpunk');
 			localStorage.setItem(MODE_KEY, 'light');
-			return 'midnight';
+			return 'cyberpunk';
 		}
 		if (saved === 'forest') {
 			localStorage.setItem(THEME_KEY, 'ocean');
 			return 'ocean';
 		}
-		return saved && THEMES.some((t) => t.id === saved) ? saved : 'midnight';
+		return saved && THEMES.some((t) => t.id === saved) ? saved : 'cyberpunk';
 	});
 
 	const [mode, setModeState] = useState<Mode>(() => {
@@ -78,7 +78,7 @@ export function initTheme() {
 
 	// Migrate old themes
 	if (savedTheme === 'daylight') {
-		localStorage.setItem(THEME_KEY, 'midnight');
+		localStorage.setItem(THEME_KEY, 'cyberpunk');
 		localStorage.setItem(MODE_KEY, 'light');
 		document.documentElement.setAttribute('data-mode', 'light');
 		return;
@@ -88,7 +88,7 @@ export function initTheme() {
 		document.documentElement.setAttribute('data-theme', 'ocean');
 	}
 
-	if (savedTheme && savedTheme !== 'midnight' && THEMES.some((t) => t.id === savedTheme)) {
+	if (savedTheme && savedTheme !== 'cyberpunk' && THEMES.some((t) => t.id === savedTheme)) {
 		document.documentElement.setAttribute('data-theme', savedTheme);
 	}
 
