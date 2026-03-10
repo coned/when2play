@@ -1,0 +1,36 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "when2play",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-02-19",
+	"observability": {
+		"enabled": true
+	},
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	// Each Discord guild needs one D1 database entry.
+	// - binding:        Must be "DB_<guild_id>" where guild_id is the Discord server snowflake ID.
+	//                   This is how the Worker resolves which database to use for each request.
+	// - database_name:  Human-readable name you chose when running `wrangler d1 create`.
+	//                   Used only by the wrangler CLI (not at runtime).
+	// - database_id:    UUID assigned by Cloudflare when the database was created.
+	//                   Shown in the output of `wrangler d1 create`.
+	// - migrations_dir: Always "migrations" (shared schema for all guilds).
+	"d1_databases": [
+		{
+			"binding": "DB_<guild_id>",
+			"database_name": "when2play-<guild-name>",
+			"database_id": "<uuid from wrangler d1 create>",
+			"migrations_dir": "migrations"
+		}
+	],
+	"assets": {
+		"directory": "./frontend/dist/",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": [
+			"/api/*"
+		]
+	}
+}

@@ -149,7 +149,6 @@ dist
 # Stores VSCode versions used for testing VSCode extensions
 
 .vscode-test
-
 # yarn v2
 
 .yarn/cache
@@ -165,6 +164,8 @@ dist
 .env*
 !.env.example
 .wrangler/
+wrangler.jsonc
+!wrangler.jsonc.template
 
 # MISC
 CLAUDE.md
