@@ -14,21 +14,31 @@ Each guild gets its own isolated D1 database. To onboard a new guild:
 npx wrangler d1 create when2play-<guild-name>
 ```
 
-Or use the helper script:
+Or use the helper script (validates the guild ID format and prints next steps):
 
 ```bash
 scripts/add-guild.sh <guild-name> <guild-id>
 ```
 
-### 2. Add the binding to `wrangler.jsonc`
+Wrangler auto-adds an entry to the `d1_databases` array in `wrangler.jsonc`, but **it needs manual fixes** (see step 2).
+
+### 2. Fix the auto-added binding in `wrangler.jsonc`
 
 > `wrangler.jsonc` is gitignored (it contains guild-specific IDs). Edit your local copy directly.
+
+Wrangler generates the binding name from the database name and omits `migrations_dir`. You must fix both:
+
+- Change `binding` from `"when2play_<name>"` to `"DB_<guild_id>"` (the Worker looks up databases by guild snowflake at runtime).
+- Add `"migrations_dir": "migrations"` (required for `wrangler d1 migrations apply`).
+- `database_name` and `database_id` are fine as-is.
+
+The corrected entry should look like:
 
 ```jsonc
 {
     "binding": "DB_<guild_id>",
     "database_name": "when2play-<guild-name>",
-    "database_id": "<id from step 1>",
+    "database_id": "<auto-filled by wrangler>",
     "migrations_dir": "migrations"
 }
 ```

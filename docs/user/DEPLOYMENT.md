@@ -31,14 +31,20 @@ Then create the database:
 npx wrangler d1 create when2play-<guild-name>
 ```
 
-Copy the returned `database_id` into `wrangler.jsonc`:
+Wrangler auto-adds an entry to the `d1_databases` array in `wrangler.jsonc`, but **the binding name and migrations_dir need manual fixes**:
+
+- Change `binding` from `"when2play_<name>"` to `"DB_<guild_id>"` (the Worker looks up databases by guild snowflake at runtime).
+- Add `"migrations_dir": "migrations"` (required for `wrangler d1 migrations apply`).
+- `database_name` and `database_id` are fine as-is.
+
+The corrected entry should look like:
 
 ```jsonc
 "d1_databases": [
     {
         "binding": "DB_<guild_id>",
         "database_name": "when2play-<guild-name>",
-        "database_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "database_id": "<auto-filled by wrangler>",
         "migrations_dir": "migrations"
     }
 ]

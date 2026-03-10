@@ -9,21 +9,21 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
-	// Each Discord guild needs one D1 database entry.
-	// - binding:        Must be "DB_<guild_id>" where guild_id is the Discord server snowflake ID.
+	// `wrangler d1 create` auto-adds entries here, but they need manual fixes:
+	// - binding:        Change from the auto-generated name to "DB_<guild_id>"
+	//                   where guild_id is the Discord server snowflake ID.
 	//                   This is how the Worker resolves which database to use for each request.
-	// - database_name:  Human-readable name you chose when running `wrangler d1 create`.
-	//                   Used only by the wrangler CLI (not at runtime).
-	// - database_id:    UUID assigned by Cloudflare when the database was created.
-	//                   Shown in the output of `wrangler d1 create`.
-	// - migrations_dir: Always "migrations" (shared schema for all guilds).
+	// - database_name:  Auto-filled. Human-readable label used only by the wrangler CLI (not at runtime).
+	// - database_id:    Auto-filled. UUID assigned by Cloudflare when the database was created.
+	// - migrations_dir: NOT auto-added. You must add "migrations" manually (shared schema for all guilds).
 	"d1_databases": [
-		{
-			"binding": "DB_<guild_id>",
-			"database_name": "when2play-<guild-name>",
-			"database_id": "<uuid from wrangler d1 create>",
-			"migrations_dir": "migrations"
-		}
+		// Remove this example entry once you add real guilds.
+		// {
+		//     "binding": "DB_<guild_id>",
+		//     "database_name": "when2play-<guild-name>",
+		//     "database_id": "<auto-filled by wrangler>",
+		//     "migrations_dir": "migrations"
+		// }
 	],
 	"assets": {
 		"directory": "./frontend/dist/",
