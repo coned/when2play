@@ -9,12 +9,15 @@ export interface Game {
 	archived_at: string | null;
 	archive_reason: string | null;
 	image_checked_at: string | null;
+	note: string | null;
+	last_activity_at: string | null;
 }
 
 export interface CreateGameRequest {
 	name: string;
 	steam_app_id?: string;
 	image_url?: string;
+	note?: string;
 }
 
 export interface UpdateGameRequest {
@@ -70,7 +73,7 @@ export interface ReactionUser {
 	avatar_url: string | null;
 }
 
-export type GameActivityAction = 'propose' | 'like' | 'dislike' | 'unreact' | 'archive' | 'restore';
+export type GameActivityAction = 'propose' | 'like' | 'dislike' | 'unreact' | 'archive' | 'restore' | 'share';
 
 export interface GameActivity {
 	id: string;

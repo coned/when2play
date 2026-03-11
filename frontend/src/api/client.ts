@@ -48,7 +48,7 @@ export const api = {
 		if (pool) return request<any[]>(`/games?pool=${pool}`);
 		return request<any[]>(`/games${includeArchived ? '?include_archived=true' : ''}`);
 	},
-	createGame: (data: { name: string; steam_app_id?: string; image_url?: string }) =>
+	createGame: (data: { name: string; steam_app_id?: string; image_url?: string; note?: string }) =>
 		request<any>('/games', { method: 'POST', body: JSON.stringify(data) }),
 	updateGame: (id: string, data: Record<string, unknown>) =>
 		request<any>(`/games/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -61,6 +61,8 @@ export const api = {
 		request<null>(`/games/${id}/react`, { method: 'PUT', body: JSON.stringify({ type }) }),
 	removeReaction: (id: string) => request<null>(`/games/${id}/react`, { method: 'DELETE' }),
 	restoreGame: (id: string) => request<null>(`/games/${id}/restore`, { method: 'POST' }),
+	deleteGamePermanently: (id: string) => request<null>(`/games/${id}/permanent`, { method: 'DELETE' }),
+	shareGame: (id: string) => request<any>(`/games/${id}/share`, { method: 'POST' }),
 	getGameActivity: (limit?: number, before?: string) => {
 		const params = new URLSearchParams();
 		if (limit) params.set('limit', String(limit));

@@ -123,6 +123,22 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 		onUpdate();
 	};
 
+	const handleDeletePermanently = async () => {
+		await api.deleteGamePermanently(game.id);
+		onUpdate();
+	};
+
+	const [sharing, setSharing] = useState(false);
+	const [shareMsg, setShareMsg] = useState('');
+	const handleShare = async () => {
+		setSharing(true);
+		setShareMsg('');
+		const result = await api.shareGame(game.id);
+		setShareMsg(result.ok ? 'Shared!' : 'Failed');
+		setSharing(false);
+		setTimeout(() => setShareMsg(''), 3000);
+	};
+
 	const steamUrl = game.steam_app_id ? `https://store.steampowered.com/app/${game.steam_app_id}/` : null;
 	const netScore = likes - dislikes;
 	const likeUsers = users.filter((u) => u.type === 'like');
@@ -157,6 +173,13 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 						</a>
 					)}
 				</div>
+
+				{/* Note */}
+				{game.note && (
+					<p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 8px 0', lineHeight: 1.4 }}>
+						{game.note}
+					</p>
+				)}
 
 				{/* Reaction buttons + score */}
 				<div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
@@ -234,24 +257,33 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 					</div>
 				)}
 
-				{/* Archive / Restore buttons */}
+				{/* Archive / Restore / Share buttons */}
 				{isArchived ? (
-					<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+					<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
 						{game.archived_at && (
 							<span class="text-muted" style={{ fontSize: '11px' }}>
 								{new Date(game.archived_at).toLocaleDateString()}
 							</span>
 						)}
-						<button
-							class="btn btn-secondary"
-							style={{ padding: '4px 10px', fontSize: '12px' }}
-							onClick={handleRestore}
-						>
-							Restore
-						</button>
+						<div style={{ display: 'flex', gap: '6px' }}>
+							<button
+								class="btn btn-secondary"
+								style={{ padding: '4px 10px', fontSize: '12px' }}
+								onClick={handleRestore}
+							>
+								Restore
+							</button>
+							<button
+								class="btn btn-danger"
+								style={{ padding: '4px 10px', fontSize: '12px' }}
+								onClick={handleDeletePermanently}
+							>
+								Delete
+							</button>
+						</div>
 					</div>
 				) : (
-					<div style={{ display: 'flex', gap: '6px' }}>
+					<div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
 						<button
 							style={{
 								padding: '4px 10px',
@@ -274,6 +306,15 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 							onClick={() => handleArchive('not_interested')}
 						>
 							Delete
+						</button>
+						<button
+							class="btn btn-secondary"
+							style={{ padding: '4px 10px', fontSize: '11px' }}
+							onClick={handleShare}
+							disabled={sharing}
+							title="Broadcast to Discord"
+						>
+							{sharing ? '...' : shareMsg || 'Share'}
 						</button>
 					</div>
 				)}

@@ -4,6 +4,7 @@ import { api } from '../../api/client';
 interface SettingsState {
 	time_granularity_minutes: number;
 	game_pool_lifespan_days: number;
+	auto_archive_enabled: boolean;
 	gather_cooldown_seconds: number;
 	gather_hourly_limit: number;
 	avail_start_hour_et: number;
@@ -24,6 +25,7 @@ const DEFAULT_RALLY_LABELS: Record<string, string> = {
 const SETTINGS_WHITELIST: Record<string, 'number' | 'boolean' | 'string' | 'object'> = {
 	time_granularity_minutes: 'number',
 	game_pool_lifespan_days: 'number',
+	auto_archive_enabled: 'boolean',
 	gather_cooldown_seconds: 'number',
 	gather_hourly_limit: 'number',
 	avail_start_hour_et: 'number',
@@ -276,6 +278,7 @@ export function AdminPanel() {
 	const [settings, setSettings] = useState<SettingsState>({
 		time_granularity_minutes: 15,
 		game_pool_lifespan_days: 7,
+		auto_archive_enabled: true,
 		gather_cooldown_seconds: 10,
 		gather_hourly_limit: 30,
 		avail_start_hour_et: 17,
@@ -299,6 +302,7 @@ export function AdminPanel() {
 				setSettings({
 					time_granularity_minutes: (s.time_granularity_minutes as number) ?? 15,
 					game_pool_lifespan_days: (s.game_pool_lifespan_days as number) ?? 7,
+					auto_archive_enabled: (s.auto_archive_enabled as boolean) ?? true,
 					gather_cooldown_seconds: (s.gather_cooldown_seconds as number) ?? 10,
 					gather_hourly_limit: (s.gather_hourly_limit as number) ?? 30,
 					avail_start_hour_et: (s.avail_start_hour_et as number) ?? 17,
@@ -422,6 +426,7 @@ export function AdminPanel() {
 				setSettings({
 					time_granularity_minutes: (s.time_granularity_minutes as number) ?? 15,
 					game_pool_lifespan_days: (s.game_pool_lifespan_days as number) ?? 7,
+					auto_archive_enabled: (s.auto_archive_enabled as boolean) ?? true,
 					gather_cooldown_seconds: (s.gather_cooldown_seconds as number) ?? 10,
 					gather_hourly_limit: (s.gather_hourly_limit as number) ?? 30,
 					avail_start_hour_et: (s.avail_start_hour_et as number) ?? 17,
@@ -497,13 +502,25 @@ export function AdminPanel() {
 			</SectionCard>
 
 			<SectionCard title="Game Pool">
-				<Field
-					label="Game pool lifespan (days)"
-					hint="Games older than this are automatically archived."
-					value={settings.game_pool_lifespan_days}
-					min={1}
-					onChange={set('game_pool_lifespan_days')}
-				/>
+				<div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+					<label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '13px' }}>
+						<input
+							type="checkbox"
+							checked={settings.auto_archive_enabled}
+							onChange={(e) => setSettings((prev) => ({ ...prev, auto_archive_enabled: (e.target as HTMLInputElement).checked }))}
+						/>
+						Auto-archive inactive games
+					</label>
+				</div>
+				{settings.auto_archive_enabled && (
+					<Field
+						label="Lifespan (days)"
+						hint="Games with no activity for this many days are auto-archived."
+						value={settings.game_pool_lifespan_days}
+						min={1}
+						onChange={set('game_pool_lifespan_days')}
+					/>
+				)}
 			</SectionCard>
 
 			<SectionCard title="Gather Bell">
