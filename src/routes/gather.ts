@@ -1,3 +1,7 @@
+// DEPRECATED: Gather bell was merged into the rally system. The UI tab has been
+// hidden since v0.3 and the bot no longer polls /api/gather/pending.
+// These routes are kept for backward compatibility but should not be extended.
+
 import { Hono } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';

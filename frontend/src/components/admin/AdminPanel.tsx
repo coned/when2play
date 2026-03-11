@@ -523,6 +523,7 @@ export function AdminPanel() {
 				)}
 			</SectionCard>
 
+			{/* DEPRECATED: Gather bell merged into rally; UI hidden since v0.3. Settings kept for backward compat. */}
 			<SectionCard title="Gather Bell">
 				<Field
 					label="Per-ping cooldown (seconds)"

@@ -98,7 +98,7 @@ export const api = {
 	// Users (all)
 	getUsers: () => cachedGet<Array<{ id: string; discord_username: string; display_name: string | null; avatar_url: string | null }>>('/users'),
 
-	// Gather
+	// Gather (DEPRECATED: merged into rally, UI hidden since v0.3)
 	ringGather: (options?: { message?: string; is_anonymous?: boolean; target_user_ids?: string[] }) =>
 		request<any>('/gather', { method: 'POST', body: JSON.stringify(options ?? {}) }),
 

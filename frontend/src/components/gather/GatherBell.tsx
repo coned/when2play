@@ -1,3 +1,6 @@
+// DEPRECATED: Gather bell was merged into the rally system. This component is
+// unreachable (tab hidden from navigation since v0.3). Kept for reference only.
+
 import { useState, useEffect } from 'preact/hooks';
 import { api } from '../../api/client';
 

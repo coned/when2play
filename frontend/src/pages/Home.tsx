@@ -25,6 +25,7 @@ export function Home({ user, onLogout, onUserUpdate }: HomeProps) {
 			{activeTab === 'dashboard' && <ScheduleSummary userId={user.id} />}
 			{activeTab === 'games' && <GamePool user={user} />}
 			{activeTab === 'availability' && <AvailabilityView userId={user.id} />}
+			{/* DEPRECATED: gather merged into rally, tab hidden since v0.3 */}
 			{activeTab === 'gather' && <GatherBell />}
 			{activeTab === 'rally' && <RallyPanel userId={user.id} />}
 			{activeTab === 'tree' && <GamingTree />}
