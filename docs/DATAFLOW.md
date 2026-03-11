@@ -25,6 +25,7 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 │   │ /in, /out, ...   │    │  * pollRallyActions(guildId, cfg)  │ │
 │   └────────┬─────────┘    │  * pollGatherPings(guildId, cfg)   │ │
 │            │              │  * pollTreeShares(guildId, cfg)    │ │
+│            │              │  * pollGameShares(guildId, cfg)    │ │
 │            │              └──────────────┬─────────────────────┘ │
 └────────────┼─────────────────────────────┼───────────────────────┘
              │  HTTPS                      │  HTTPS
@@ -277,6 +278,25 @@ For each share:
 PATCH /api/rally/tree/share/:id/delivered  (X-Bot-Token)
 ```
 
+### Loop 4: Game shares (`pollGameShares`)
+
+Fetches pending game share requests (triggered by the "Share" button on game cards in the web
+dashboard) and posts them as Discord messages with game details and an image embed.
+
+```
+GET /api/games/share/pending  (X-Bot-Token)
+  ↓
+Returns: GameShare[] with joined game data (name, note, image_url, steam_app_id,
+         like_count, dislike_count, requester_name)
+  ↓
+For each share:
+  Format message: game name, note, like/dislike score, Steam store link
+  Attach game image as embed thumbnail (if image_url present)
+  Post to GAMING_CHANNEL_ID
+  ↓
+PATCH /api/games/share/:id/delivered  (X-Bot-Token)
+```
+
 ---
 
 ## Complete Endpoint Inventory
@@ -309,6 +329,8 @@ matches `BOT_API_KEY`.
 | `PATCH` | `/api/rally/tree/share/:id/delivered` | Mark tree share delivered |
 | `GET` | `/api/gather/pending` | Fetch undelivered gather pings |
 | `PATCH` | `/api/gather/:id/delivered` | Mark gather ping delivered |
+| `GET` | `/api/games/share/pending` | Fetch pending game shares |
+| `PATCH` | `/api/games/share/:id/delivered` | Mark game share delivered |
 | `GET` | `/api/settings/bot` | Fetch guild settings (channel_id, guild_name) |
 | `PATCH` | `/api/settings/bot` | Update guild settings (used by `/setchannel`) |
 
