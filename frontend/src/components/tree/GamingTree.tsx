@@ -14,7 +14,24 @@ interface TreeData {
 	participants: Record<string, Participant>;
 }
 
-function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
+/** Fetch an image URL and return a data URL. Returns null on failure. */
+async function fetchAsDataUrl(url: string): Promise<string | null> {
+	try {
+		const resp = await fetch(url, { mode: 'cors' });
+		if (!resp.ok) return null;
+		const blob = await resp.blob();
+		return await new Promise<string>((resolve) => {
+			const reader = new FileReader();
+			reader.onloadend = () => resolve(reader.result as string);
+			reader.onerror = () => resolve('');
+			reader.readAsDataURL(blob);
+		}) || null;
+	} catch {
+		return null;
+	}
+}
+
+async function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
 	// Clone SVG for export-safe processing
 	const clone = svgElement.cloneNode(true) as SVGSVGElement;
 
@@ -23,33 +40,51 @@ function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
 		anim.remove();
 	}
 
-	// Replace <image> elements with colored circle + initials (cross-origin safe)
-	for (const img of Array.from(clone.querySelectorAll('image'))) {
-		const parent = img.parentElement;
-		if (!parent) { img.remove(); continue; }
-
-		// Find the sibling circle for sizing reference
-		const circle = parent.querySelector('circle');
-		if (circle) {
-			const cx = circle.getAttribute('cx') ?? '0';
-			const cy = circle.getAttribute('cy') ?? '0';
-			// Remove image, the initials text fallback (if any) or circle background will show through
-			img.remove();
-
-			// If there's no text sibling, add initials
-			if (!parent.querySelector('text')) {
-				const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-				text.setAttribute('x', cx);
-				text.setAttribute('y', String(Number(cy) + 4));
-				text.setAttribute('font-size', '12');
-				text.setAttribute('font-weight', '600');
-				text.setAttribute('fill', '#aaa');
-				text.setAttribute('text-anchor', 'middle');
-				text.textContent = '?';
-				parent.appendChild(text);
-			}
+	// Inline avatar images as data URLs to avoid cross-origin canvas tainting
+	const images = Array.from(clone.querySelectorAll('image'));
+	const uniqueUrls = new Map<string, string | null>();
+	for (const img of images) {
+		const href = img.getAttribute('href') ?? img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+		if (href && !href.startsWith('data:') && !uniqueUrls.has(href)) {
+			uniqueUrls.set(href, null);
+		}
+	}
+	// Fetch all unique URLs in parallel
+	await Promise.all(
+		Array.from(uniqueUrls.keys()).map(async (url) => {
+			uniqueUrls.set(url, await fetchAsDataUrl(url));
+		}),
+	);
+	// Replace hrefs with data URLs, or fall back to initials
+	for (const img of images) {
+		const href = img.getAttribute('href') ?? img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+		const dataUrl = href ? uniqueUrls.get(href) : null;
+		if (dataUrl) {
+			img.setAttribute('href', dataUrl);
+			img.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
 		} else {
-			img.remove();
+			// Fall back to initials text
+			const parent = img.parentElement;
+			if (!parent) { img.remove(); continue; }
+			const circle = parent.querySelector('circle');
+			if (circle) {
+				const cx = circle.getAttribute('cx') ?? '0';
+				const cy = circle.getAttribute('cy') ?? '0';
+				img.remove();
+				if (!parent.querySelector('text')) {
+					const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+					text.setAttribute('x', cx);
+					text.setAttribute('y', String(Number(cy) + 4));
+					text.setAttribute('font-size', '12');
+					text.setAttribute('font-weight', '600');
+					text.setAttribute('fill', '#aaa');
+					text.setAttribute('text-anchor', 'middle');
+					text.textContent = '?';
+					parent.appendChild(text);
+				}
+			} else {
+				img.remove();
+			}
 		}
 	}
 
