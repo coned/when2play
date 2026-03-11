@@ -637,6 +637,48 @@ client.on('interactionCreate', async (interaction) => {
     await interaction.editReply(helpText);
 });
 
+// --- Game share polling ---
+async function pollGameShares(guildId, config) {
+    const channelId = config.channelId || GAMING_CHANNEL_ID;
+    if (!channelId) return;
+
+    const headers = buildGuildHeaders(guildId);
+    const res = await fetch(`${API_URL}/api/games/share/pending`, { headers });
+    const json = await safeJson(res);
+    if (!json.ok || json.data.length === 0) return;
+
+    const channel = await client.channels.fetch(channelId);
+    if (!channel?.isTextBased()) return;
+
+    for (const share of json.data) {
+        const likes = share.like_count ?? 0;
+        const dislikes = share.dislike_count ?? 0;
+        const net = likes - dislikes;
+        const scoreStr = net > 0 ? `+${net}` : String(net);
+
+        let text = `**${share.game_name}**`;
+        if (share.game_note) text += `\n> ${share.game_note}`;
+        const steamUrl = share.game_steam_app_id ? `https://store.steampowered.com/app/${share.game_steam_app_id}/` : null;
+        const stats = [];
+        if (likes > 0 || dislikes > 0) stats.push(`Score: ${scoreStr} (${likes} like${likes !== 1 ? 's' : ''}, ${dislikes} dislike${dislikes !== 1 ? 's' : ''})`);
+        if (steamUrl) stats.push(`Steam: ${steamUrl}`);
+        if (stats.length > 0) text += `\n${stats.join(' | ')}`;
+        text += `\n_Shared by ${share.requester_name}_`;
+
+        const msgPayload = { content: text, allowedMentions: { parse: [], users: [] } };
+        if (share.game_image_url) {
+            // Embed the Steam header image
+            msgPayload.embeds = [{ image: { url: share.game_image_url }, color: 0x4a9eff }];
+        }
+        await channel.send(msgPayload);
+
+        await fetch(`${API_URL}/api/games/share/${share.id}/delivered`, {
+            method: 'PATCH',
+            headers,
+        });
+    }
+}
+
 function scheduleNextPoll() {
     const maxErrors = Math.max(0, ...Object.values(guildErrors));
     const delay = maxErrors === 0
@@ -653,6 +695,7 @@ function scheduleNextPoll() {
                     pollGatherPings(guildId, config),
                     pollRallyActions(guildId, config),
                     pollTreeShares(guildId, config),
+                    pollGameShares(guildId, config),
                 ]);
                 guildErrors[guildId] = 0;
             } catch (err) {
