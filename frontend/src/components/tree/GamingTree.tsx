@@ -87,6 +87,16 @@ function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
 	}
 	clone.setAttribute('style', updatedStyle);
 
+	// Read the viewBox to get the logical SVG size, fall back to element dimensions
+	const scale = 3;
+	const vb = svgElement.viewBox?.baseVal;
+	const logicalW = (vb && vb.width > 0 ? vb.width : svgElement.clientWidth) || 800;
+	const logicalH = (vb && vb.height > 0 ? vb.height : svgElement.clientHeight) || 600;
+
+	// Set explicit pixel dimensions on the clone so the browser rasterizes at high res
+	clone.setAttribute('width', String(logicalW * scale));
+	clone.setAttribute('height', String(logicalH * scale));
+
 	const svgData = new XMLSerializer().serializeToString(clone);
 	const canvas = document.createElement('canvas');
 	const ctx = canvas.getContext('2d')!;
@@ -96,8 +106,8 @@ function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
 
 	return new Promise((resolve, reject) => {
 		img.onload = () => {
-			canvas.width = img.width || 800;
-			canvas.height = img.height || 600;
+			canvas.width = img.width;
+			canvas.height = img.height;
 			ctx.fillStyle = cssVarMap['var(--bg-primary)'];
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
 			ctx.drawImage(img, 0, 0);
