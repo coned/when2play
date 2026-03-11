@@ -2,6 +2,13 @@
 
 Async game-session scheduling for friend groups, with Discord integration. Propose games, rank-vote, set availability, and coordinate play sessions from a browser dashboard.
 
+<table>
+<tr>
+<td><img src="blog/assets/demo_v0.4_2.png" alt="Dashboard" width="480"></td>
+<td><img src="blog/assets/demo_v0.4_1.png" alt="Availability" width="480"></td>
+</tr>
+</table>
+
 ## User Documentation
 
 Guides for setting up, deploying, and operating when2play.
