@@ -120,28 +120,87 @@ Updates the current user's profile.
 
 ## Games
 
-All endpoints require session cookie.
+User-auth endpoints require session cookie. Bot-auth endpoints require `X-Bot-Token` header.
 
 ### `GET /api/games`
-Lists active games. Add `?include_archived=true` to include archived games.
+Lists games with pool filtering, reaction counts, user reactions, and per-user reaction avatars.
+
+**Query params:** `?pool=active|archive|all` (default `active`). Legacy `?include_archived=true` is supported (maps to `all`).
+
+On active/all pool fetch, stale games are auto-archived in the background if `auto_archive_enabled` is true (based on `game_pool_lifespan_days`, default 7).
+
+**Response per game:**
+```json
+{
+  "id": "uuid", "name": "...", "steam_app_id": "730", "image_url": "...",
+  "proposed_by": "uuid", "is_archived": false, "note": "optional note",
+  "last_activity_at": "2026-03-10T...",
+  "like_count": 3, "dislike_count": 1,
+  "user_reaction": "like",
+  "reaction_users": [
+    { "user_id": "uuid", "type": "like", "display_name": "Alice", "avatar_url": "..." }
+  ]
+}
+```
 
 ### `POST /api/games`
-Proposes a new game.
+Proposes a new game. Duplicate detection by `steam_app_id` (returns 409 with `DUPLICATE_GAME` or `ARCHIVED_DUPLICATE`). Steam header image auto-upgraded when `steam_app_id` is provided.
 
 **Body:**
 ```json
 {
   "name": "Counter-Strike 2",     // required, max 100 chars
   "steam_app_id": "730",          // optional
-  "image_url": "https://..."      // optional, max 500 chars
+  "image_url": "https://...",     // optional, max 500 chars
+  "note": "Great FPS"             // optional, max 500 chars
 }
 ```
 
 ### `PATCH /api/games/:id`
-Updates a game. Only the proposer can update.
+Updates a game. Only the proposer can update. Accepts `name`, `image_url`, `note` (max 500 chars).
 
 ### `DELETE /api/games/:id`
-Archives a game (soft delete). Only the proposer can archive.
+Archives a game (soft delete). Any user can archive. Accepts optional body `{ "reason": "not_interested" }`.
+
+### `DELETE /api/games/:id/permanent`
+Permanently deletes an archived game and all related data (reactions, activity, shares). Only the proposer can permanently delete. Game must be archived first (returns 400 otherwise).
+
+### `POST /api/games/:id/restore`
+Restores an archived game to the active pool. Any user can restore. Resets `last_activity_at` to now.
+
+### `PUT /api/games/:id/react`
+Sets a reaction (like or dislike) on a game. Updates `last_activity_at`.
+
+**Body:**
+```json
+{ "type": "like" }
+```
+
+### `DELETE /api/games/:id/react`
+Removes the current user's reaction from a game.
+
+### `GET /api/games/activity`
+Returns recent game activity (propose, like, dislike, archive, restore, share events). Paginated.
+
+**Query params:** `?limit=20&before=<iso-timestamp>` (max 50 per page, cursor-based).
+
+### `POST /api/games/:id/share`
+Broadcasts a game to the Discord channel. Creates a share record for bot polling. Logs activity and updates `last_activity_at`.
+
+**Response (201):**
+```json
+{ "ok": true, "data": { "id": "uuid", "game_id": "uuid", "requested_by": "uuid", "delivered": false, "created_at": "..." } }
+```
+
+### `GET /api/games/share/pending` (Bot-auth)
+Returns undelivered game shares with joined game data (name, note, image, Steam app ID, like/dislike counts, requester name).
+
+**Auth:** `X-Bot-Token` header
+
+### `PATCH /api/games/share/:id/delivered` (Bot-auth)
+Marks a game share as delivered.
+
+**Auth:** `X-Bot-Token` header
 
 ---
 
@@ -229,6 +288,8 @@ All endpoints require session cookie.
 ### `GET /api/availability`
 Query params: `?user_id=...&date=YYYY-MM-DD` (both optional).
 
+Returns slots with per-slot `slot_status` field (`'available'` or `'tentative'`) when available.
+
 **Note:** `user_id` is scoped to the authenticated user when no `date` filter is provided (prevents cross-user personal data access).
 
 ### `PUT /api/availability`
@@ -239,14 +300,49 @@ Bulk-replaces all availability slots for a given date.
 {
   "date": "2026-03-01",
   "slots": [
-    { "start_time": "19:00", "end_time": "19:15" },
-    { "start_time": "19:15", "end_time": "19:30" }
+    { "start_time": "19:00", "end_time": "19:15", "slot_status": "available" },
+    { "start_time": "19:15", "end_time": "19:30", "slot_status": "tentative" }
   ]
 }
 ```
 
+`slot_status` defaults to `'available'` if omitted. Upserts an `availability_status` record for the user+date.
+
 ### `DELETE /api/availability?date=YYYY-MM-DD`
-Clears all slots for the given date.
+Clears all slots for the given date. Writes `status = 'filled'` to block auto-seed re-triggering.
+
+### `GET /api/availability/my-status`
+Returns the user's availability status for a date range.
+
+**Query params:** `?from=YYYY-MM-DD&to=YYYY-MM-DD` (both required, max 31-day range). Dates are validated with calendar round-trip checks.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": {
+    "2026-03-10": "filled",
+    "2026-03-11": "tentative_auto",
+    "2026-03-12": null
+  }
+}
+```
+
+### `POST /api/availability/:date/confirm`
+Confirms auto-filled availability for a date. Transitions status from `tentative_auto` to `tentative_confirmed`. Date is validated with calendar round-trip check.
+
+**Response:**
+```json
+{ "ok": true, "data": null }
+```
+
+### `POST /api/availability/seed`
+Seeds a future date with slots from the same weekday 7 days ago. Idempotent: returns `null` if already seeded, slots exist, or no prior-week data.
+
+**Body:**
+```json
+{ "date": "2026-03-15" }
+```
 
 ---
 
@@ -491,6 +587,7 @@ Updates settings. **Auth:** `X-Bot-Token` header. Used by the bot's `/setchannel
 ```json
 {
   "time_granularity_minutes": 15,
+  "auto_archive_enabled": true,
   "game_pool_lifespan_days": 7,
   "gather_cooldown_seconds": 10,
   "gather_hourly_limit": 30,

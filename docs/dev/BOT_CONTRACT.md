@@ -11,6 +11,7 @@ The Discord bot is responsible for:
 4. **Rally actions** — 8 slash commands for session coordination (call/in/out/ping/judge/brb/where/tree)
 5. **Rally delivery** — Polling for and delivering rally action messages to Discord
 6. **Tree sharing** — Polling for and posting gaming tree images to Discord
+7. **Game sharing** — Polling for and posting game cards (name, note, reactions, image) to Discord
 
 ## Authentication
 
@@ -258,6 +259,55 @@ Returns pending tree images with `image_data` (base64 PNG). The bot should decod
 
 ```bash
 PATCH /api/rally/tree/share/:id/delivered
+X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
+```
+
+## Rally Slash Commands
+
+### 9. Poll for Game Shares
+
+Periodically (every 15 seconds, alongside other polling):
+
+```bash
+GET /api/games/share/pending
+X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "share-uuid",
+      "game_id": "game-uuid",
+      "requested_by": "user-uuid",
+      "delivered": false,
+      "created_at": "2026-03-10T...",
+      "game_name": "Counter-Strike 2",
+      "game_note": "Great FPS",
+      "game_image_url": "https://cdn.akamai.steamstatic.com/steam/apps/730/header.jpg",
+      "game_steam_app_id": "730",
+      "like_count": 3,
+      "dislike_count": 1,
+      "requester_name": "GamerDave"
+    }
+  ]
+}
+```
+
+For each pending share, the bot should:
+1. Format a Discord message with the game name, note (if present), like/dislike score, and Steam store link (if `game_steam_app_id` is present)
+2. Attach the game image as an embed thumbnail (if `game_image_url` is present)
+3. Send to the gaming channel
+4. Mark as delivered (see below)
+
+### 10. Mark Game Share Delivered
+
+```bash
+PATCH /api/games/share/:id/delivered
 X-Bot-Token: <BOT_API_KEY>
 X-Guild-Id: 123456789012345678
 ```

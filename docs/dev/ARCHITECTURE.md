@@ -11,7 +11,7 @@
 3. On the dashboard, users can:
    - **Propose games** (via Steam name search, App ID lookup, or manual entry)
    - **Rank-vote** on proposed games (drag-to-reorder ranking)
-   - **Set availability** (15-min time slots for today/tomorrow, vertical layout with dual timezone)
+   - **Set availability** (15-min time slots for a 10-day window, auto-seeded from last week, with per-slot status tracking)
    - **Ring the gather bell** (notify others, with anonymous + targeted options)
    - **Rally** (call/in/out/ping/brb/where - structured session coordination)
    - **Gaming tree** (visualize the day's rally interactions as a DAG)
@@ -177,7 +177,10 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | is_archived | INTEGER DEFAULT 0 | Boolean |
 | created_at | TEXT NOT NULL | |
 | archived_at | TEXT | When archived |
+| archive_reason | TEXT | 'not_interested', 'save_for_later', 'auto_archived', etc. |
 | image_checked_at | TEXT | Last time the image URL was validated against Steam CDN |
+| note | TEXT | Optional user note (max 500 chars) |
+| last_activity_at | TEXT | Updated on propose, react, restore, share; used for auto-archive |
 
 ### game_votes
 
@@ -201,7 +204,20 @@ All times stored in **UTC**. SQLite booleans use `INTEGER` (0/1). Foreign keys e
 | start_time | TEXT NOT NULL | HH:MM (UTC) |
 | end_time | TEXT NOT NULL | HH:MM (UTC) |
 | created_at | TEXT NOT NULL | |
+| slot_status | TEXT DEFAULT 'available' | 'available' or 'tentative' |
 | UNIQUE(user_id, date, start_time) | | No duplicate slots |
+
+### availability_status
+
+Per-user, per-date status tracking for the availability window.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| user_id | TEXT NOT NULL FK>users | |
+| date | TEXT NOT NULL | ISO date |
+| status | TEXT NOT NULL | 'tentative_auto', 'tentative_confirmed', or 'filled' |
+| updated_at | TEXT NOT NULL | |
+| PRIMARY KEY(user_id, date) | | One status per user per date |
 
 ### gather_pings
 
@@ -240,7 +256,8 @@ Default settings:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `time_granularity_minutes` | `15` | Availability slot resolution (admin + user configurable) |
-| `game_pool_lifespan_days` | `7` | Games older than this are auto-archived |
+| `auto_archive_enabled` | `true` | Whether stale games are auto-archived on pool fetch |
+| `game_pool_lifespan_days` | `7` | Days of inactivity before auto-archive |
 | `gather_cooldown_seconds` | `10` | Minimum seconds between a user's gather pings (0 = off) |
 | `gather_hourly_limit` | `30` | Max pings per user per rolling 60-minute window (0 = off) |
 | `day_reset_hour_et` | `8` | Hour (ET) at which the rally day resets (8 = 8 AM ET) |
@@ -287,6 +304,16 @@ One rally per day. Day boundary: 8:01 AM ET to 8:00 AM next day ET (configurable
 | day_key | TEXT NOT NULL | |
 | image_data | TEXT | base64 PNG from frontend |
 | delivered | INTEGER DEFAULT 0 | |
+| created_at | TEXT NOT NULL | |
+
+### game_shares
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | TEXT PK | UUID |
+| game_id | TEXT NOT NULL FK>games | ON DELETE CASCADE |
+| requested_by | TEXT NOT NULL FK>users | ON DELETE CASCADE |
+| delivered | INTEGER DEFAULT 0 | Bot has picked up |
 | created_at | TEXT NOT NULL | |
 
 ---

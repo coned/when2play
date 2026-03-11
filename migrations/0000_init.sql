@@ -1,4 +1,4 @@
--- when2play schema (consolidated from migrations 0000-0004)
+-- when2play schema (consolidated from migrations 0000-0007)
 -- Uses IF NOT EXISTS / OR IGNORE so it is safe to apply on databases
 -- that already have some or all tables from the original migrations.
 
@@ -47,7 +47,10 @@ CREATE TABLE IF NOT EXISTS games (
 	is_archived INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL,
 	archived_at TEXT,
-	image_checked_at TEXT
+	archive_reason TEXT,
+	image_checked_at TEXT,
+	note TEXT,
+	last_activity_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_games_proposed_by ON games(proposed_by);
 CREATE INDEX IF NOT EXISTS idx_games_is_archived ON games(is_archived);
@@ -71,6 +74,7 @@ CREATE TABLE IF NOT EXISTS availability (
 	start_time TEXT NOT NULL,
 	end_time TEXT NOT NULL,
 	created_at TEXT NOT NULL,
+	slot_status TEXT NOT NULL DEFAULT 'available',
 	UNIQUE(user_id, date, start_time)
 );
 CREATE INDEX IF NOT EXISTS idx_availability_user_id ON availability(user_id);
@@ -118,7 +122,8 @@ INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
 	('rally_suggested_phrases', '{}', datetime('now')),
 	('rally_show_discord_command', 'true', datetime('now')),
 	('day_cutoff_hour_et', '5', datetime('now')),
-	('rally_anonymous_enabled', '{"call":true,"ping":true}', datetime('now'));
+	('rally_anonymous_enabled', '{"call":true,"ping":true}', datetime('now')),
+	('auto_archive_enabled', 'true', datetime('now'));
 
 CREATE TABLE IF NOT EXISTS rallies (
 	id TEXT PRIMARY KEY,
@@ -156,3 +161,21 @@ CREATE TABLE IF NOT EXISTS rally_tree_shares (
 	created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tree_shares_delivered ON rally_tree_shares(delivered);
+
+CREATE TABLE IF NOT EXISTS availability_status (
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	date TEXT NOT NULL,
+	status TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	PRIMARY KEY (user_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_avail_status_date ON availability_status(date);
+
+CREATE TABLE IF NOT EXISTS game_shares (
+	id TEXT PRIMARY KEY,
+	game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+	requested_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	delivered INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_game_shares_delivered ON game_shares(delivered, created_at);
