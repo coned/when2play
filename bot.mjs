@@ -563,41 +563,9 @@ async function pollTreeShares(guildId, config) {
     }
 }
 
-// --- Gather ping polling ---
-async function pollGatherPings(guildId, config) {
-    const channelId = config.channelId || GAMING_CHANNEL_ID;
-    if (!channelId) return;
-
-    const headers = buildGuildHeaders(guildId);
-    const res = await fetch(`${API_URL}/api/gather/pending`, { headers });
-    const json = await safeJson(res);
-    if (!json.ok || json.data.length === 0) return;
-
-    const channel = await client.channels.fetch(channelId);
-    if (!channel?.isTextBased()) return;
-
-    for (const ping of json.data) {
-        const sender = ping.is_anonymous ? 'Someone' : `<@${ping.sender_discord_id}>`;
-        const msg = ping.message || 'Ready to play!';
-        let text = `🔔 **Gather bell!** ${sender}: ${msg}`;
-
-        if (ping.target_discord_ids && ping.target_discord_ids.length > 0) {
-            const mentions = ping.target_discord_ids.map((id) => `<@${id}>`).join(' ');
-            text += ` → ${mentions}`;
-        }
-
-        const isSnowflake = id => /^\d{17,20}$/.test(id);
-        const intentionalUsers = [
-            ...(ping.is_anonymous ? [] : [ping.sender_discord_id]),
-            ...(ping.target_discord_ids ?? []),
-        ].filter(id => id && isSnowflake(id));
-        await channel.send({ content: text, allowedMentions: { parse: [], users: intentionalUsers } });
-        await fetch(`${API_URL}/api/gather/${ping.id}/delivered`, {
-            method: 'PATCH',
-            headers,
-        });
-    }
-}
+// --- Gather ping polling (DEPRECATED: gather was merged into rally; UI hidden since v0.3) ---
+// Kept as dead code for reference. Remove entirely once gather_pings table is dropped.
+// async function pollGatherPings(guildId, config) { ... }
 
 // --- /help handler ---
 client.on('interactionCreate', async (interaction) => {
@@ -692,7 +660,6 @@ function scheduleNextPoll() {
             const config = cachedConfig.guilds?.[guildId] || {};
             try {
                 await Promise.all([
-                    pollGatherPings(guildId, config),
                     pollRallyActions(guildId, config),
                     pollTreeShares(guildId, config),
                     pollGameShares(guildId, config),

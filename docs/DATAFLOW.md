@@ -23,8 +23,7 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 │   │ Command handlers │    │ Per-guild polling loops (every 15s)│ │
 │   │ /when2play, /call,    │    │  For each guild in config:         │ │
 │   │ /in, /out, ...   │    │  * pollRallyActions(guildId, cfg)  │ │
-│   └────────┬─────────┘    │  * pollGatherPings(guildId, cfg)   │ │
-│            │              │  * pollTreeShares(guildId, cfg)    │ │
+│   └────────┬─────────┘    │  * pollTreeShares(guildId, cfg)    │ │
 │            │              │  * pollGameShares(guildId, cfg)    │ │
 │            │              └──────────────┬─────────────────────┘ │
 └────────────┼─────────────────────────────┼───────────────────────┘
@@ -214,7 +213,8 @@ All rally commands call `ensureUser()` first to obtain a session.
 
 ## Polling Loops
 
-The bot runs three polling loops per guild, scheduled via `scheduleNextPoll()`. For each
+The bot runs three polling loops per guild (rally actions, tree shares, game shares),
+scheduled via `scheduleNextPoll()`. For each
 guild the bot has joined (`client.guilds.cache`), all three loops fire every 15 seconds under normal
 conditions, with per-guild exponential backoff on errors (doubles each failure, capped at
 2 minutes, resets on first success for that guild). All API requests include the
@@ -244,24 +244,13 @@ The bot formats these with Discord timestamp tags (`<t:unix:t>`) for auto-locali
 
 `judge_avail` actions mention the target user(s) and link to the when2play site.
 
-### Loop 2: Gather pings (`pollGatherPings`)
+### ~~Loop 2: Gather pings (`pollGatherPings`)~~ (DEPRECATED)
 
-Fetches undelivered gather bells and posts them to `GAMING_CHANNEL_ID`.
+Gather was merged into the rally system. The bot no longer polls `/api/gather/pending`.
+The server-side endpoints still exist for backward compatibility but no new pings can be
+created (UI tab hidden since v0.3).
 
-```
-GET /api/gather/pending  (X-Bot-Token)
-  ↓
-Returns: GatherPing[] with resolved sender_discord_id and target_discord_ids
-  ↓
-For each ping:
-  Build @mention list (targeted) or "@here" (broadcast)
-  Format message with sender name and optional custom message
-  Post to GAMING_CHANNEL_ID
-  ↓
-PATCH /api/gather/:id/delivered  (X-Bot-Token)
-```
-
-### Loop 3: Tree share images (`pollTreeShares`)
+### Loop 2: Tree share images (`pollTreeShares`)
 
 Fetches pending gaming-tree PNG uploads (submitted via the web dashboard) and posts them
 as image attachments.
@@ -278,7 +267,7 @@ For each share:
 PATCH /api/rally/tree/share/:id/delivered  (X-Bot-Token)
 ```
 
-### Loop 4: Game shares (`pollGameShares`)
+### Loop 3: Game shares (`pollGameShares`)
 
 Fetches pending game share requests (triggered by the "Share" button on game cards in the web
 dashboard) and posts them as Discord messages with game details and an image embed.
@@ -327,8 +316,8 @@ matches `BOT_API_KEY`.
 | `PATCH` | `/api/rally/:id/delivered` | Mark rally action delivered |
 | `GET` | `/api/rally/tree/share/pending` | Fetch pending tree share images |
 | `PATCH` | `/api/rally/tree/share/:id/delivered` | Mark tree share delivered |
-| `GET` | `/api/gather/pending` | Fetch undelivered gather pings |
-| `PATCH` | `/api/gather/:id/delivered` | Mark gather ping delivered |
+| `GET` | `/api/gather/pending` | ~~Fetch undelivered gather pings~~ (deprecated, no longer polled) |
+| `PATCH` | `/api/gather/:id/delivered` | ~~Mark gather ping delivered~~ (deprecated) |
 | `GET` | `/api/games/share/pending` | Fetch pending game shares |
 | `PATCH` | `/api/games/share/:id/delivered` | Mark game share delivered |
 | `GET` | `/api/settings/bot` | Fetch guild settings (channel_id, guild_name) |
