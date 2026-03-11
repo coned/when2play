@@ -68,6 +68,7 @@ export function Header({ user, onLogout, onUserUpdate }: HeaderProps) {
 							justifyContent: 'center',
 							fontSize: '13px',
 							lineHeight: 1,
+							color: 'var(--text-primary)',
 						}}
 					>
 						{mode === 'dark' ? '\u263E' : '\u2600'}
