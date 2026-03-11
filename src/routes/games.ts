@@ -53,9 +53,9 @@ games.get('/', async (c) => {
 	// Auto-archive stale games on active pool fetch
 	if (pool === 'active' || pool === 'all') {
 		const autoEnabled = await getSetting(c.env.DB, 'auto_archive_enabled');
-		if (autoEnabled !== 'false') {
+		if (autoEnabled !== false) {
 			const lifespanRaw = await getSetting(c.env.DB, 'game_pool_lifespan_days');
-			const lifespan = lifespanRaw ? parseInt(lifespanRaw as string, 10) : 7;
+			const lifespan = typeof lifespanRaw === 'number' ? lifespanRaw : 7;
 			if (lifespan > 0) {
 				c.executionCtx?.waitUntil?.(autoArchiveStaleGames(c.env.DB, lifespan));
 			}
@@ -152,6 +152,9 @@ games.patch('/:id', async (c) => {
 	}
 
 	const body = await c.req.json<{ name?: string; image_url?: string; note?: string }>();
+	if (body.note !== undefined && body.note.length > 500) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'note must be 500 characters or less' } }, 400);
+	}
 	const updated = await updateGame(c.env.DB, id, body);
 	return c.json({ ok: true, data: { ...updated, is_archived: Boolean(updated!.is_archived) } });
 });
@@ -187,6 +190,9 @@ games.delete('/:id/permanent', async (c) => {
 	}
 	if (!game.is_archived) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Game must be archived before permanent deletion' } }, 400);
+	}
+	if (game.proposed_by !== user.id) {
+		return c.json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the proposer can permanently delete this game' } }, 403);
 	}
 
 	await deleteGamePermanently(c.env.DB, id);
@@ -261,6 +267,8 @@ games.post('/:id/share', async (c) => {
 	}
 
 	const share = await createGameShare(c.env.DB, id, user.id);
+	await logActivity(c.env.DB, id, user.id, 'share');
+	await touchGameActivity(c.env.DB, id);
 	return c.json({ ok: true, data: { ...share, delivered: Boolean(share.delivered) } }, 201);
 });
 

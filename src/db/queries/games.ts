@@ -111,9 +111,10 @@ export async function touchGameActivity(db: D1Database, id: string): Promise<voi
 
 export async function autoArchiveStaleGames(db: D1Database, lifespanDays: number): Promise<number> {
 	const cutoff = new Date(Date.now() - lifespanDays * 86400000).toISOString();
+	const timestamp = now();
 	const result = await db
-		.prepare("UPDATE games SET is_archived = 1, archived_at = datetime('now'), archive_reason = 'auto_archived' WHERE is_archived = 0 AND COALESCE(last_activity_at, created_at) < ?")
-		.bind(cutoff)
+		.prepare('UPDATE games SET is_archived = 1, archived_at = ?, archive_reason = ? WHERE is_archived = 0 AND COALESCE(last_activity_at, created_at) < ?')
+		.bind(timestamp, 'auto_archived', cutoff)
 		.run();
 	return result.meta?.changes ?? 0;
 }
