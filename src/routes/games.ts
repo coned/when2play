@@ -1,11 +1,17 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
-import { createGame, getGames, getGameById, updateGame, archiveGame, restoreGame, getGameBySteamAppId } from '../db/queries/games';
+import { requireBotAuth } from '../middleware/bot-auth';
+import {
+	createGame, getGames, getGameById, updateGame, archiveGame, restoreGame, getGameBySteamAppId,
+	deleteGamePermanently, touchGameActivity, autoArchiveStaleGames,
+	createGameShare, getPendingGameShares, markGameShareDelivered,
+} from '../db/queries/games';
 import { setReaction, removeReaction, getReactionCountsForGames, getUserReactions, getReactionUsersForGames } from '../db/queries/game-reactions';
 import { logActivity, getActivity } from '../db/queries/game-activity';
 import type { UserRow } from '../db/queries/users';
 import { refreshStaleImages } from '../lib/image-refresh';
+import { getSetting } from '../db/queries/settings';
 
 type GamesEnv = {
 	Bindings: Bindings;
@@ -17,6 +23,23 @@ type GamesEnv = {
 
 const games = new Hono<GamesEnv>();
 
+// --- Bot-auth endpoints (registered before the blanket requireAuth) ---
+
+// GET /api/games/share/pending -- bot polls for pending game shares
+games.get('/share/pending', requireBotAuth, async (c) => {
+	const shares = await getPendingGameShares(c.env.DB);
+	const data = shares.map((s) => ({ ...s, delivered: Boolean(s.delivered) }));
+	return c.json({ ok: true, data });
+});
+
+// PATCH /api/games/share/:id/delivered -- bot marks game share delivered
+games.patch('/share/:id/delivered', requireBotAuth, async (c) => {
+	const id = c.req.param('id');
+	await markGameShareDelivered(c.env.DB, id);
+	return c.json({ ok: true, data: null });
+});
+
+// --- User-auth endpoints ---
 games.use('/*', requireAuth);
 
 // GET /api/games
@@ -26,6 +49,18 @@ games.get('/', async (c) => {
 	// Support legacy include_archived param
 	const includeArchived = c.req.query('include_archived') === 'true';
 	const pool = poolParam ?? (includeArchived ? 'all' : 'active');
+
+	// Auto-archive stale games on active pool fetch
+	if (pool === 'active' || pool === 'all') {
+		const autoEnabled = await getSetting(c.env.DB, 'auto_archive_enabled');
+		if (autoEnabled !== 'false') {
+			const lifespanRaw = await getSetting(c.env.DB, 'game_pool_lifespan_days');
+			const lifespan = lifespanRaw ? parseInt(lifespanRaw as string, 10) : 7;
+			if (lifespan > 0) {
+				c.executionCtx?.waitUntil?.(autoArchiveStaleGames(c.env.DB, lifespan));
+			}
+		}
+	}
 
 	const results = await getGames(c.env.DB, pool);
 	const reactionCounts = await getReactionCountsForGames(c.env.DB);
@@ -59,13 +94,16 @@ games.get('/activity', async (c) => {
 // POST /api/games
 games.post('/', async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ name: string; steam_app_id?: string; image_url?: string }>();
+	const body = await c.req.json<{ name: string; steam_app_id?: string; image_url?: string; note?: string }>();
 
 	if (!body.name || body.name.length > 100) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'name is required and must be 100 characters or less' } }, 400);
 	}
 	if (body.image_url && body.image_url.length > 500) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'image_url must be 500 characters or less' } }, 400);
+	}
+	if (body.note && body.note.length > 500) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'note must be 500 characters or less' } }, 400);
 	}
 
 	// Duplicate detection by steam_app_id
@@ -94,7 +132,7 @@ games.post('/', async (c) => {
 		}
 	}
 
-	const game = await createGame(c.env.DB, body.name, user.id, body.steam_app_id, imageUrl);
+	const game = await createGame(c.env.DB, body.name, user.id, body.steam_app_id, imageUrl, body.note);
 	await logActivity(c.env.DB, game.id, user.id, 'propose');
 
 	return c.json({ ok: true, data: { ...game, is_archived: Boolean(game.is_archived) } }, 201);
@@ -113,7 +151,7 @@ games.patch('/:id', async (c) => {
 		return c.json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the proposer can update this game' } }, 403);
 	}
 
-	const body = await c.req.json<{ name?: string; image_url?: string }>();
+	const body = await c.req.json<{ name?: string; image_url?: string; note?: string }>();
 	const updated = await updateGame(c.env.DB, id, body);
 	return c.json({ ok: true, data: { ...updated, is_archived: Boolean(updated!.is_archived) } });
 });
@@ -135,6 +173,23 @@ games.delete('/:id', async (c) => {
 	const detail = JSON.stringify({ reason });
 	await logActivity(c.env.DB, id, user.id, 'archive', detail);
 
+	return c.json({ ok: true, data: null });
+});
+
+// DELETE /api/games/:id/permanent -- permanently remove from archive
+games.delete('/:id/permanent', async (c) => {
+	const user = c.get('user');
+	const id = c.req.param('id');
+	const game = await getGameById(c.env.DB, id);
+
+	if (!game) {
+		return c.json({ ok: false, error: { code: 'NOT_FOUND', message: 'Game not found' } }, 404);
+	}
+	if (!game.is_archived) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Game must be archived before permanent deletion' } }, 400);
+	}
+
+	await deleteGamePermanently(c.env.DB, id);
 	return c.json({ ok: true, data: null });
 });
 
@@ -174,6 +229,7 @@ games.put('/:id/react', async (c) => {
 
 	await setReaction(c.env.DB, id, user.id, body.type);
 	await logActivity(c.env.DB, id, user.id, body.type);
+	await touchGameActivity(c.env.DB, id);
 
 	return c.json({ ok: true, data: null });
 });
@@ -192,6 +248,20 @@ games.delete('/:id/react', async (c) => {
 	await logActivity(c.env.DB, id, user.id, 'unreact');
 
 	return c.json({ ok: true, data: null });
+});
+
+// POST /api/games/:id/share -- broadcast game to Discord
+games.post('/:id/share', async (c) => {
+	const user = c.get('user');
+	const id = c.req.param('id');
+	const game = await getGameById(c.env.DB, id);
+
+	if (!game) {
+		return c.json({ ok: false, error: { code: 'NOT_FOUND', message: 'Game not found' } }, 404);
+	}
+
+	const share = await createGameShare(c.env.DB, id, user.id);
+	return c.json({ ok: true, data: { ...share, delivered: Boolean(share.delivered) } }, 201);
 });
 
 export default games;

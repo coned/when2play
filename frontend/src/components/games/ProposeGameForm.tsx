@@ -12,6 +12,7 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 	const [steamAppId, setSteamAppId] = useState('');
 	const [name, setName] = useState('');
 	const [imageUrl, setImageUrl] = useState('');
+	const [note, setNote] = useState('');
 	const [loading, setLoading] = useState(false);
 	const [searching, setSearching] = useState(false);
 	const [error, setError] = useState('');
@@ -91,6 +92,7 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 			name,
 			steam_app_id: steamAppId || undefined,
 			image_url: imageUrl || undefined,
+			note: note.trim() || undefined,
 		});
 
 		if (result.ok) {
@@ -222,6 +224,17 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 					value={name}
 					onInput={(e) => setName((e.target as HTMLInputElement).value)}
 					required
+					readOnly={mode !== 'manual' && !!steamAppId}
+					style={mode !== 'manual' && steamAppId ? { opacity: 0.7, cursor: 'default' } : undefined}
+				/>
+
+				<textarea
+					placeholder="Note (optional, e.g. why you want to play this)"
+					value={note}
+					onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
+					maxLength={500}
+					rows={2}
+					style={{ resize: 'vertical' }}
 				/>
 
 				{imageUrl && (
