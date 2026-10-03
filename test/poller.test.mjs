@@ -381,6 +381,95 @@ test('guild errors are logged first, then at most once per 10 minutes per guild'
     assert.equal(errors.length, 2);
 });
 
+// --- flushAcks (shutdown) ---
+
+test('flushAcks sends only the pending acks with no guild ids and clears them on success', async () => {
+    const fetch = fakeFetch([
+        okData({ guilds: { [G1]: lists({ rally_actions: [{ id: 'a1', action_type: 'in' }] }) } }),
+        okData(),
+    ]);
+    const { poller, delivered } = makePoller({ fetch });
+    await poller.pollOnce();
+    assert.equal(await poller.flushAcks(), true);
+    assert.equal(fetch.calls.length, 2);
+    const { url, init, body } = fetch.calls[1];
+    assert.equal(url, `${API}/api/bot/poll`);
+    assert.equal(init.headers['X-Bot-Token'], 'secret');
+    assert.deepEqual(body, { guild_ids: [], acks: { [G1]: { rally_actions: ['a1'] } } });
+    assert.deepEqual(poller.pendingAcks, {});
+    assert.deepEqual(delivered, [`${G1}/rally_actions/a1`]);
+});
+
+test('flushAcks never delivers, even if the response carries items', async () => {
+    const fetch = fakeFetch([
+        okData({ guilds: { [G1]: lists({ rally_actions: [{ id: 'a1', action_type: 'in' }] }) } }),
+        okData({ guilds: { [G1]: lists({ rally_actions: [{ id: 'a2', action_type: 'in' }] }) } }),
+    ]);
+    const { poller, delivered } = makePoller({ fetch });
+    await poller.pollOnce();
+    await poller.flushAcks();
+    assert.deepEqual(delivered, [`${G1}/rally_actions/a1`]);
+});
+
+test('flushAcks keeps the acks when the request fails, and never rejects', async () => {
+    const fetch = fakeFetch([
+        okData({ guilds: { [G1]: lists({ game_shares: [{ id: 'g1' }] }) } }),
+        new TypeError('fetch failed'),
+        jsonRes(500, { ok: false }),
+    ]);
+    const { poller, errors } = makePoller({ fetch });
+    await poller.pollOnce();
+    assert.equal(await poller.flushAcks(), false);
+    assert.equal(await poller.flushAcks(), false);
+    assert.deepEqual(poller.pendingAcks, { [G1]: { rally_actions: [], tree_shares: [], game_shares: ['g1'] } });
+    assert.equal(errors.filter(e => e.startsWith('flush acks')).length, 2);
+    assert.equal(poller.consecutiveFailures, 0);
+});
+
+test('flushAcks keeps acks for guilds the Worker reports errors for', async () => {
+    const fetch = fakeFetch([
+        okData({ guilds: {
+            [G1]: lists({ rally_actions: [{ id: 'a1' }] }),
+            [G2]: lists({ rally_actions: [{ id: 'b1' }] }),
+        } }),
+        okData({ errors: { [G1]: 'D1 timeout' } }),
+    ]);
+    const { poller } = makePoller({ fetch });
+    await poller.pollOnce();
+    assert.equal(await poller.flushAcks(), true);
+    assert.deepEqual(Object.keys(poller.pendingAcks), [G1]);
+});
+
+test('flushAcks sends no request when nothing is pending', async () => {
+    const fetch = fakeFetch([okData()]);
+    const { poller } = makePoller({ fetch });
+    assert.equal(await poller.flushAcks(), true);
+    assert.equal(fetch.calls.length, 0);
+    await poller.pollOnce();
+    assert.equal(await poller.flushAcks(), true);
+    assert.equal(fetch.calls.length, 1);
+});
+
+test('flushAcks waits for an in-flight cycle and then flushes what it delivered', async () => {
+    let release;
+    const gate = new Promise(r => { release = r; });
+    const fetch = fakeFetch([
+        async () => { await gate; return okData({ guilds: { [G1]: lists({ tree_shares: [{ id: 't1', image_data: 'aGk=' }] }) } }); },
+        okData(),
+    ]);
+    const { poller } = makePoller({ fetch });
+    const cycle = poller.pollOnce();
+    const flushed = poller.flushAcks();
+    await Promise.resolve();
+    assert.equal(fetch.calls.length, 1);
+    release();
+    await cycle;
+    assert.equal(await flushed, true);
+    assert.equal(fetch.calls.length, 2);
+    assert.deepEqual(fetch.calls[1].body, { guild_ids: [], acks: { [G1]: { tree_shares: ['t1'] } } });
+    assert.deepEqual(poller.pendingAcks, {});
+});
+
 test('importing lib/poller.mjs creates no timers or handles', async () => {
     const before = process.getActiveResourcesInfo().length;
     await import(`../lib/poller.mjs?fresh=${Date.now()}`);

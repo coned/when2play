@@ -22,6 +22,8 @@ const BASE_POLL_MS = Number.isFinite(ENV_POLL_MS) && ENV_POLL_MS >= 5000 ? ENV_P
 const MAX_POLL_MS = 2 * 60 * 1000;
 const API_TIMEOUT_MS = 10_000;
 const SETTINGS_RETRY_MS = 5 * 60 * 1000;
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+const SHUTDOWN_FLUSH_TIMEOUT_MS = 8_000;
 
 if (!DISCORD_TOKEN || !API_URL) {
     console.error('Missing required env vars (DISCORD_TOKEN, WHEN2PLAY_API_URL)');
@@ -659,6 +661,41 @@ process.on('uncaughtException', (err) => {
     logError('uncaughtException', err);
     process.exit(1);
 });
+
+// --- Graceful shutdown (systemd sends SIGTERM on `make deploy` / restart) ---
+// Stop polling, send the acks of items already posted (else they are posted again after the
+// restart), close the gateway connection. A second signal or the timeout forces the exit.
+let shuttingDown = false;
+
+async function shutdown(signal) {
+    if (shuttingDown) {
+        console.error(`${signal} received again, forcing exit`);
+        process.exit(1);
+    }
+    shuttingDown = true;
+    console.log(`${signal} received, shutting down`);
+    const forceTimer = setTimeout(() => {
+        logError('shutdown', new Error(`not finished after ${SHUTDOWN_TIMEOUT_MS / 1000}s, forcing exit`));
+        console.error('Shutdown timed out, forcing exit');
+        process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+
+    poller.stop();
+    settingsRetrier.stop();
+    const flushed = await poller.flushAcks({ timeoutMs: SHUTDOWN_FLUSH_TIMEOUT_MS });
+    if (!flushed) console.error('Pending acks could not be sent; those items may be posted again after restart');
+    try {
+        await client.destroy();
+    } catch (err) {
+        logError('client.destroy', err);
+    }
+    clearTimeout(forceTimer);
+    console.log('Shutdown complete');
+    process.exit(0);
+}
+
+process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+process.on('SIGINT', () => { void shutdown('SIGINT'); });
 
 if (DRY_RUN) {
     console.log('dry run ok');
