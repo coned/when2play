@@ -555,7 +555,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 						{isMobile ? mobileHint : 'Click or drag to select \u00b7 hover for details'}
 					</span>
 				</div>
-				<span style={{ fontSize: '12px', color: statusColor, minWidth: '70px', textAlign: 'right' }}>
+				<span role="status" style={{ fontSize: '12px', color: statusColor, minWidth: '70px', textAlign: 'right' }}>
 					{statusText}
 				</span>
 			</div>
@@ -686,6 +686,8 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 								<div
 									key={slot.start_time}
 									data-time={slot.start_time}
+									role="button"
+									aria-pressed={isSelected}
 									onMouseDown={() => {
 										const currentStatus = selected.get(slot.start_time);
 										const action = currentStatus === brushMode ? 'remove' : 'paint';

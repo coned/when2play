@@ -428,12 +428,12 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 			</div>
 
 			{/* Overlap Windows */}
-			<div style={{ marginBottom: '24px' }}>
-				<h3 style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>Who's Around -- {todayLabel}</h3>
+			<section aria-labelledby="whos-around-heading" style={{ marginBottom: '24px' }}>
+				<h3 id="whos-around-heading" style={{ marginBottom: '12px', fontSize: '16px', color: 'var(--text-secondary)' }}>Who's Around -- {todayLabel}</h3>
 				{overlapGroups.length === 0 ? (
 					<p class="text-muted">No overlapping availability yet.</p>
 				) : (
-					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+					<div role="list" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
 						{overlapGroups.map((group) => {
 							const shown = group.userIds.slice(0, 4);
 							const overflow = group.userIds.length - shown.length;
@@ -441,6 +441,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 							return (
 								<div
 									key={`${group.startTime}-${group.endTime}`}
+									role="listitem"
 									style={{
 										background: 'var(--bg-tertiary)',
 										border: '1px solid var(--success)',
@@ -530,7 +531,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 						})}
 					</div>
 				)}
-			</div>
+			</section>
 
 			{/* My Availability */}
 			<div>

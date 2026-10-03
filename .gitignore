@@ -172,3 +172,9 @@ CLAUDE.md
 MEMORY.md
 .claude/*
 **/.local/
+
+# Playwright output (npm run e2e)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

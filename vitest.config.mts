@@ -1,9 +1,11 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
 	test: {
 		globals: true,
+		// e2e/ holds the Playwright browser suite (npm run e2e), not vitest tests
+		exclude: [...configDefaults.exclude, 'e2e/**'],
 	},
 	resolve: {
 		alias: {

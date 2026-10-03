@@ -1,4 +1,4 @@
-.PHONY: help dev dev-local build test test-watch typecheck check deploy deploy-only \
+.PHONY: help dev dev-local build test test-watch e2e typecheck check deploy deploy-only \
        release smoke require-app-url version migrate-local migrate-remote seed simulate logs clean
 
 # Commit the Worker is deployed from: short hash, plus -dirty when the working
@@ -31,7 +31,10 @@ test: ## Run all tests
 test-watch: ## Run tests in watch mode
 	npx vitest
 
-typecheck: ## Type check the Worker and the frontend
+e2e: ## Build the frontend, then run the browser smoke suite (mocked API, local Chromium)
+	npm run e2e
+
+typecheck: ## Type check the Worker, the frontend and the e2e suite
 	npm run typecheck
 
 check: typecheck test ## Type check, then run all tests

@@ -12,11 +12,13 @@
 		"build": "cd frontend && npx vite build",
 		"start": "wrangler dev",
 		"test": "vitest",
-		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p frontend/tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p frontend/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
+		"e2e": "npm run build && playwright test",
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.12.4",
+		"@playwright/test": "1.63.0",
 		"@types/better-sqlite3": "^7.6.13",
 		"@types/node": "^25.3.0",
 		"better-sqlite3": "^12.6.2",
