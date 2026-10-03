@@ -523,18 +523,21 @@ export function AdminPanel() {
 				)}
 			</SectionCard>
 
-			{/* DEPRECATED: Gather bell merged into rally; UI hidden since v0.3. Settings kept for backward compat. */}
-			<SectionCard title="Gather Bell">
+			{/* Keys keep the gather_ prefix from the retired gather bell; the server applies them to every post to Discord. */}
+			<SectionCard title="Discord Post Limits">
+				<p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+					These limits apply per user to every action that posts to Discord: rally actions (call, in, out, brb, ping, where, judge, share ranking), game shares and gaming tree shares.
+				</p>
 				<Field
-					label="Per-ping cooldown (seconds)"
-					hint="Minimum time between a user's gather pings. Set to 0 to disable."
+					label="Cooldown (seconds)"
+					hint="Minimum time before a user can repeat the same kind of post (the same rally action, another game share, another tree share). Set to 0 to disable."
 					value={settings.gather_cooldown_seconds}
 					min={0}
 					onChange={set('gather_cooldown_seconds')}
 				/>
 				<Field
-					label="Hourly limit (pings per 60 min)"
-					hint="Max pings a user can send in any rolling 60-minute window. Lockout expires when the oldest ping ages out. Set to 0 to disable."
+					label="Hourly limit (rally actions per 60 min)"
+					hint="Max rally actions a user can post in any rolling 60-minute window. Lockout expires when the oldest one ages out. Set to 0 to disable."
 					value={settings.gather_hourly_limit}
 					min={0}
 					onChange={set('gather_hourly_limit')}

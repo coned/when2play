@@ -12,6 +12,7 @@ import { logActivity, getActivity } from '../db/queries/game-activity';
 import type { UserRow } from '../db/queries/users';
 import { refreshStaleImages } from '../lib/image-refresh';
 import { getSetting } from '../db/queries/settings';
+import { checkShareCooldown, rateLimited } from '../db/queries/rate-limit';
 
 type GamesEnv = {
 	Bindings: Bindings;
@@ -280,6 +281,9 @@ games.post('/:id/share', async (c) => {
 	if (!game) {
 		return c.json({ ok: false, error: { code: 'NOT_FOUND', message: 'Game not found' } }, 404);
 	}
+
+	const limited = await checkShareCooldown(c.env.DB, user.id, 'game_share');
+	if (limited) return c.json(rateLimited(limited), 429);
 
 	const share = await createGameShare(c.env.DB, id, user.id);
 	await logActivity(c.env.DB, id, user.id, 'share');

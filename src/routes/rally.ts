@@ -24,6 +24,7 @@ import {
 import type { ActionType } from '@when2play/shared';
 import { getGameRanking } from '../db/queries/votes';
 import { getSetting } from '../db/queries/settings';
+import { checkRallyRateLimit, checkShareCooldown, rateLimited } from '../db/queries/rate-limit';
 
 type RallyEnv = {
 	Bindings: Bindings;
@@ -64,21 +65,76 @@ function badRequest(message: string) {
 	return { ok: false as const, error: { code: 'BAD_REQUEST', message } };
 }
 
+const MAX_MESSAGE_LENGTH = 500;
+const MAX_TARGET_USERS = 20;
+
+type JsonObject = Record<string, unknown>;
+
+/**
+ * Read the request body as a JSON object. An empty body counts as {}; invalid
+ * JSON or any other JSON value (array, string, null ...) returns null so the
+ * route can answer 400 instead of failing on a property access.
+ */
+async function readJsonObject(c: { req: { text(): Promise<string> } }): Promise<JsonObject | null> {
+	const text = await c.req.text().catch(() => '');
+	if (text.trim() === '') return {};
+	try {
+		const parsed: unknown = JSON.parse(text);
+		return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as JsonObject) : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Optional message: absent/null/'' means none, otherwise a string of at most 500 characters. */
+function parseMessage(raw: unknown): { message?: string; error?: string } {
+	if (raw === undefined || raw === null || raw === '') return {};
+	if (typeof raw !== 'string') return { error: 'message must be a string' };
+	if (raw.length > MAX_MESSAGE_LENGTH) return { error: 'Message must be 500 characters or less' };
+	return { message: raw };
+}
+
+/** target_user_ids: an array of 1 to 20 ids of existing users. Returns the ids or an error message. */
+async function parseTargetUserIds(db: D1Database, raw: unknown): Promise<{ ids?: string[]; error?: string }> {
+	if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_TARGET_USERS) {
+		return { error: `target_user_ids must be an array of 1 to ${MAX_TARGET_USERS} user ids` };
+	}
+	if (!raw.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 100)) {
+		return { error: 'target_user_ids must contain user id strings' };
+	}
+	const ids = raw as string[];
+	const unique = Array.from(new Set(ids));
+	const ph = unique.map(() => '?').join(',');
+	const row = await db
+		.prepare(`SELECT COUNT(*) AS n FROM users WHERE id IN (${ph})`)
+		.bind(...unique)
+		.first<{ n: number }>();
+	if (Number(row?.n ?? 0) !== unique.length) return { error: 'target_user_ids contains an unknown user' };
+	return { ids };
+}
+
 // POST /api/rally/call — create or get today's rally + record call action
 rally.post('/call', requireAuth, async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ message?: string; is_anonymous?: boolean }>().catch(() => ({} as { message?: string; is_anonymous?: boolean }));
+	const body = await readJsonObject(c);
+	if (!body) return c.json(badRequest('Body must be a JSON object'), 400);
+
+	const { message, error: messageError } = parseMessage(body.message);
+	if (messageError) return c.json(badRequest(messageError), 400);
 
 	const anonError = await checkAnonymous(c.env.DB, 'call', body.is_anonymous);
 	if (anonError) return c.json(badRequest(anonError), 400);
 
+	const limited = await checkRallyRateLimit(c.env.DB, user.id, 'call');
+	if (limited) return c.json(rateLimited(limited), 429);
+
 	const dayKey = await getDayKey(c.env.DB);
 	const rallyRow = await createOrGetRally(c.env.DB, user.id, 'now', dayKey);
 
-	const metadata = body.is_anonymous ? { is_anonymous: true } : undefined;
+	const metadata = body.is_anonymous === true ? { is_anonymous: true } : undefined;
 	const action = await createRallyAction(c.env.DB, user.id, 'call', {
 		rallyId: rallyRow.id,
-		message: body.message || undefined,
+		message,
 		dayKey,
 		metadata,
 	});
@@ -95,42 +151,53 @@ rally.post('/call', requireAuth, async (c) => {
 // POST /api/rally/action — record an action (in/out/ping/brb/where)
 rally.post('/action', requireAuth, async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{
-		action_type: ActionType;
-		rally_id?: string;
-		target_user_ids?: string[];
-		message?: string;
-		is_anonymous?: boolean;
-	}>().catch(() => ({ action_type: '' as ActionType, rally_id: undefined as string | undefined, target_user_ids: undefined as string[] | undefined, message: undefined as string | undefined, is_anonymous: undefined as boolean | undefined }));
+	const body = await readJsonObject(c);
+	if (!body) return c.json(badRequest('Body must be a JSON object'), 400);
 
-	if (!VALID_ACTION_TYPES.includes(body.action_type)) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: `Invalid action_type. Must be one of: ${VALID_ACTION_TYPES.join(', ')}` } }, 400);
+	const actionType = body.action_type as ActionType;
+	if (!VALID_ACTION_TYPES.includes(actionType)) {
+		return c.json(badRequest(`Invalid action_type. Must be one of: ${VALID_ACTION_TYPES.join(', ')}`), 400);
 	}
 
-	if (['ping', 'where'].includes(body.action_type) && (!body.target_user_ids || body.target_user_ids.length === 0)) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'target_user_ids required for ping/where actions' } }, 400);
+	if (['ping', 'where'].includes(actionType) && (!Array.isArray(body.target_user_ids) || body.target_user_ids.length === 0)) {
+		return c.json(badRequest('target_user_ids required for ping/where actions'), 400);
 	}
 
-	if (body.message && body.message.length > 500) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Message must be 500 characters or less' } }, 400);
+	const { message, error: messageError } = parseMessage(body.message);
+	if (messageError) return c.json(badRequest(messageError), 400);
+
+	let targetUserIds: string[] | undefined;
+	if (body.target_user_ids !== undefined && body.target_user_ids !== null) {
+		const targets = await parseTargetUserIds(c.env.DB, body.target_user_ids);
+		if (targets.error) return c.json(badRequest(targets.error), 400);
+		targetUserIds = targets.ids;
 	}
 
-	const anonError = await checkAnonymous(c.env.DB, body.action_type, body.is_anonymous);
+	if (body.rally_id !== undefined && body.rally_id !== null) {
+		if (typeof body.rally_id !== 'string') return c.json(badRequest('rally_id must be a string'), 400);
+		const exists = await c.env.DB.prepare('SELECT id FROM rallies WHERE id = ?').bind(body.rally_id).first();
+		if (!exists) return c.json(badRequest('rally_id does not exist'), 400);
+	}
+
+	const anonError = await checkAnonymous(c.env.DB, actionType, body.is_anonymous);
 	if (anonError) return c.json(badRequest(anonError), 400);
+
+	const limited = await checkRallyRateLimit(c.env.DB, user.id, actionType);
+	if (limited) return c.json(rateLimited(limited), 429);
 
 	const dayKey = await getDayKey(c.env.DB);
 	// Auto-attach to active rally if no rally_id specified
-	let rallyId = body.rally_id;
+	let rallyId = (body.rally_id as string | null | undefined) ?? undefined;
 	if (!rallyId) {
 		const activeRally = await getActiveRally(c.env.DB, dayKey);
 		rallyId = activeRally?.id ?? undefined;
 	}
 
-	const metadata = body.is_anonymous ? { is_anonymous: true } : undefined;
-	const action = await createRallyAction(c.env.DB, user.id, body.action_type, {
+	const metadata = body.is_anonymous === true ? { is_anonymous: true } : undefined;
+	const action = await createRallyAction(c.env.DB, user.id, actionType, {
 		rallyId,
-		targetUserIds: body.target_user_ids,
-		message: body.message,
+		targetUserIds,
+		message,
 		dayKey,
 		metadata,
 	});
@@ -141,6 +208,9 @@ rally.post('/action', requireAuth, async (c) => {
 // POST /api/rally/judge/time — compute & broadcast optimal time slots
 rally.post('/judge/time', requireAuth, async (c) => {
 	const user = c.get('user');
+	const limited = await checkRallyRateLimit(c.env.DB, user.id, 'judge_time');
+	if (limited) return c.json(rateLimited(limited), 429);
+
 	const dayKey = await getDayKey(c.env.DB);
 	const result = await computeJudgeTime(c.env.DB, dayKey);
 
@@ -166,23 +236,29 @@ rally.post('/judge/time', requireAuth, async (c) => {
 // POST /api/rally/judge/avail — nudge user to set availability
 rally.post('/judge/avail', requireAuth, async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ target_user_ids: string[]; message?: string }>().catch(() => ({ target_user_ids: [] as string[], message: undefined as string | undefined }));
+	const body = await readJsonObject(c);
+	if (!body) return c.json(badRequest('Body must be a JSON object'), 400);
 
-	if (!body.target_user_ids || body.target_user_ids.length === 0) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'target_user_ids required' } }, 400);
+	if (!Array.isArray(body.target_user_ids) || body.target_user_ids.length === 0) {
+		return c.json(badRequest('target_user_ids required'), 400);
 	}
 
-	if (body.message && body.message.length > 500) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Message must be 500 characters or less' } }, 400);
-	}
+	const { message, error: messageError } = parseMessage(body.message);
+	if (messageError) return c.json(badRequest(messageError), 400);
+
+	const targets = await parseTargetUserIds(c.env.DB, body.target_user_ids);
+	if (targets.error) return c.json(badRequest(targets.error), 400);
+
+	const limited = await checkRallyRateLimit(c.env.DB, user.id, 'judge_avail');
+	if (limited) return c.json(rateLimited(limited), 429);
 
 	const dayKey = await getDayKey(c.env.DB);
 	const activeRally = await getActiveRally(c.env.DB, dayKey);
 
 	const action = await createRallyAction(c.env.DB, user.id, 'judge_avail', {
 		rallyId: activeRally?.id,
-		targetUserIds: body.target_user_ids,
-		message: body.message || undefined,
+		targetUserIds: targets.ids,
+		message,
 		dayKey,
 	});
 
@@ -191,7 +267,7 @@ rally.post('/judge/avail', requireAuth, async (c) => {
 		data: {
 			...action,
 			delivered: Boolean(action.delivered),
-			target_user_ids: body.target_user_ids,
+			target_user_ids: targets.ids,
 			metadata: null,
 		},
 	}, 201);
@@ -200,6 +276,9 @@ rally.post('/judge/avail', requireAuth, async (c) => {
 // POST /api/rally/share-ranking — broadcast current game ranking to Discord
 rally.post('/share-ranking', requireAuth, async (c) => {
 	const user = c.get('user');
+	const limited = await checkRallyRateLimit(c.env.DB, user.id, 'share_ranking');
+	if (limited) return c.json(rateLimited(limited), 429);
+
 	const dayKey = await getDayKey(c.env.DB);
 	const ranking = await getGameRanking(c.env.DB);
 	const activeRally = await getActiveRally(c.env.DB, dayKey);
@@ -259,14 +338,18 @@ rally.patch('/:id/delivered', requireBotAuth, async (c) => {
 // POST /api/rally/tree/share — upload PNG for Discord sharing
 rally.post('/tree/share', requireAuth, async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ image_data: string }>().catch(() => ({ image_data: '' as string }));
+	const body = await readJsonObject(c);
+	if (!body) return c.json(badRequest('Body must be a JSON object'), 400);
 
-	if (!body.image_data) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'image_data required' } }, 400);
+	if (typeof body.image_data !== 'string' || !body.image_data) {
+		return c.json(badRequest('image_data required'), 400);
 	}
 
+	const limited = await checkShareCooldown(c.env.DB, user.id, 'tree_share');
+	if (limited) return c.json(rateLimited(limited), 429);
+
 	const dayKey = await getDayKey(c.env.DB);
-	const share = await createTreeShare(c.env.DB, user.id, dayKey, body.image_data);
+	const share = await createTreeShare(c.env.DB, user.id, dayKey, body.image_data as string);
 
 	return c.json({
 		ok: true,

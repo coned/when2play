@@ -23,6 +23,8 @@ describe('Anonymous rally actions', () => {
 		alice = await createAuthenticatedUser(db, '30000000000000001', 'alice-secret');
 		bob = await createAuthenticatedUser(db, '30000000000000002', 'bob');
 		await db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').bind('https://cdn.example/alice.png', alice.userId).run();
+		// These tests repeat actions back to back; rate limits are covered in rally-limits.spec.ts
+		await setSettingRaw(db, 'gather_cooldown_seconds', 0);
 	});
 
 	async function seedAnonymousCall() {
