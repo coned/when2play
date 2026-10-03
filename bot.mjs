@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { createPoller, fmtDiscordTime, formatRallyAction, formatTreeShare, formatGameShare } from './lib/poller.mjs';
 import { readApiResult, errorReply } from './lib/api.mjs';
+import {
+    memberDisplayName, avatarUrlFor, buildSyncBody, findSyncedUser, truncate, MAX_GUILD_NAME_LENGTH,
+} from './lib/commands.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ERROR_LOG_PATH = join(__dirname, 'errors.log');
@@ -206,9 +209,9 @@ onCommand('when2play', async (interaction) => {
             method: 'POST',
             body: JSON.stringify({
                 discord_id: interaction.user.id,
-                discord_username: interaction.member?.displayName ?? interaction.user.displayName,
-                avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
-                guild_name: interaction.guild?.name,
+                discord_username: memberDisplayName(interaction.member, interaction.user),
+                avatar_url: avatarUrlFor(interaction.user),
+                guild_name: interaction.guild?.name ? truncate(interaction.guild.name, MAX_GUILD_NAME_LENGTH) : undefined,
             }),
         }, interaction.guildId);
 
@@ -219,29 +222,31 @@ onCommand('when2play', async (interaction) => {
     }
 });
 
-// --- Helper: resolve Discord user ID to when2play user ID via auth token flow ---
-async function ensureUser(discordUser, guildMember, guildId) {
-    const tokenRequest = {
-        method: 'POST',
-        body: JSON.stringify({
-            discord_id: discordUser.id,
-            discord_username: guildMember?.displayName ?? discordUser.displayName ?? discordUser.username,
-            avatar_url: discordUser.displayAvatarURL?.({ size: 128 }) ?? null,
-            guild_name: guildId ? client.guilds.cache.get(guildId)?.name : undefined,
-        }),
-    };
-    const { token } = await apiRequest('/api/auth/token', tokenRequest, guildId);
-    return apiRequest(`/api/auth/callback/${token}`, {}, guildId); // { user, session }
+// --- Helpers: act as a Discord user (POST /api/users/sync, then X-Discord-User-Id) ---
+
+/**
+ * Create or refresh the given users in the guild database with one request and return their
+ * when2play rows in the same order. `people` is a list of { user, member }.
+ */
+async function syncUsers(guildId, guildName, people) {
+    const body = buildSyncBody(people.map(({ user, member }) => ({
+        discordId: user.id,
+        name: memberDisplayName(member, user),
+        avatarUrl: avatarUrlFor(user),
+    })), guildName);
+    const data = await apiRequest('/api/users/sync', { method: 'POST', body: JSON.stringify(body) }, guildId);
+    return people.map(({ user }) => {
+        const row = findSyncedUser(data, user.id);
+        if (!row) throw new Error(`POST /api/users/sync returned no user for ${user.id}`);
+        return row;
+    });
 }
 
-// --- Helper: make an authenticated API call on behalf of a user session ---
-async function apiCallWithSession(sessionId, path, options = {}, guildId) {
+/** A Worker request authenticated as the Discord user `discordId` (no session involved). */
+function apiRequestAs(discordId, path, options = {}, guildId) {
     return apiRequest(path, {
         ...options,
-        headers: {
-            'Cookie': `session_id=${sessionId}`,
-            ...(options.headers || {}),
-        },
+        headers: { 'X-Discord-User-Id': discordId, ...(options.headers || {}) },
     }, guildId);
 }
 
@@ -250,6 +255,8 @@ onCommand('url', async (interaction) => {
     await interaction.deferReply({ flags: 64 });
     await interaction.editReply(API_URL);
 });
+
+const TARGET_COMMANDS = new Set(['ping', 'where', 'call2select']);
 
 // --- Rally command handlers ---
 onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], async (interaction) => {
@@ -263,90 +270,79 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
     await interaction.deferReply({ flags: 64 });
 
     try {
-        const authData = await ensureUser(interaction.user, interaction.member, interaction.guildId);
-        if (!authData) {
-            await interaction.editReply('Could not authenticate. Try `/when2play` first to set up your account.');
+        const guildId = interaction.guildId;
+        const callerId = interaction.user.id;
+        const targetDiscordUser = TARGET_COMMANDS.has(commandName) ? interaction.options.getUser('user', true) : null;
+        if (targetDiscordUser?.bot) {
+            await interaction.editReply('That user is a bot. Pick a person instead.');
             return;
         }
-        const { session } = authData;
+
+        // One sync request for the caller and the target, then the action as the caller
+        const people = [{ user: interaction.user, member: interaction.member }];
+        if (targetDiscordUser) people.push({ user: targetDiscordUser, member: interaction.options.getMember('user') });
+        const guildName = interaction.guild?.name ?? client.guilds.cache.get(guildId)?.name;
+        const [caller, target] = await syncUsers(guildId, guildName, people);
 
         if (commandName === 'call') {
             const message = interaction.options.getString('message') ?? undefined;
-            await apiCallWithSession(session.session_id, '/api/rally/call', {
+            await apiRequestAs(callerId, '/api/rally/call', {
                 method: 'POST',
                 body: JSON.stringify({ message }),
-            }, interaction.guildId);
+            }, guildId);
             await interaction.editReply('Rally started!');
         }
 
         else if (commandName === 'in') {
             const message = interaction.options.getString('message') ?? undefined;
-            await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiRequestAs(callerId, '/api/rally/action', {
                 method: 'POST',
                 body: JSON.stringify({ action_type: 'in', message }),
-            }, interaction.guildId);
+            }, guildId);
             await interaction.editReply("You're in!");
         }
 
         else if (commandName === 'out') {
             const reason = interaction.options.getString('reason') ?? undefined;
-            await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiRequestAs(callerId, '/api/rally/action', {
                 method: 'POST',
                 body: JSON.stringify({ action_type: 'out', message: reason }),
-            }, interaction.guildId);
+            }, guildId);
             await interaction.editReply("You're out.");
         }
 
         else if (commandName === 'ping') {
-            const targetDiscordUser = interaction.options.getUser('user', true);
             const message = interaction.options.getString('message') ?? undefined;
-            const targetAuth = await ensureUser(targetDiscordUser, null, interaction.guildId);
-            if (!targetAuth) {
-                await interaction.editReply('Could not find that user. They may need to use `/when2play` first.');
-                return;
-            }
-            await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiRequestAs(callerId, '/api/rally/action', {
                 method: 'POST',
-                body: JSON.stringify({ action_type: 'ping', target_user_ids: [targetAuth.user.id], message }),
-            }, interaction.guildId);
+                body: JSON.stringify({ action_type: 'ping', target_user_ids: [target.id], message }),
+            }, guildId);
             await interaction.editReply(`Pinged ${targetDiscordUser.displayName}!`);
         }
 
         else if (commandName === 'brb') {
             const message = interaction.options.getString('message') ?? undefined;
-            await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiRequestAs(callerId, '/api/rally/action', {
                 method: 'POST',
                 body: JSON.stringify({ action_type: 'brb', message }),
-            }, interaction.guildId);
+            }, guildId);
             await interaction.editReply('Marked as BRB.');
         }
 
         else if (commandName === 'where') {
-            const targetDiscordUser = interaction.options.getUser('user', true);
-            const targetAuth = await ensureUser(targetDiscordUser, null, interaction.guildId);
-            if (!targetAuth) {
-                await interaction.editReply('Could not find that user.');
-                return;
-            }
-            await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiRequestAs(callerId, '/api/rally/action', {
                 method: 'POST',
-                body: JSON.stringify({ action_type: 'where', target_user_ids: [targetAuth.user.id] }),
-            }, interaction.guildId);
+                body: JSON.stringify({ action_type: 'where', target_user_ids: [target.id] }),
+            }, guildId);
             await interaction.editReply(`Asked where ${targetDiscordUser.displayName} is.`);
         }
 
         else if (commandName === 'call2select') {
-            const targetDiscordUser = interaction.options.getUser('user', true);
             const message = interaction.options.getString('message') ?? undefined;
-            const targetAuth = await ensureUser(targetDiscordUser, null, interaction.guildId);
-            if (!targetAuth) {
-                await interaction.editReply('Could not find that user. They may need to use `/when2play` first.');
-                return;
-            }
-            await apiCallWithSession(session.session_id, '/api/rally/judge/avail', {
+            await apiRequestAs(callerId, '/api/rally/judge/avail', {
                 method: 'POST',
-                body: JSON.stringify({ target_user_ids: [targetAuth.user.id], message }),
-            }, interaction.guildId);
+                body: JSON.stringify({ target_user_ids: [target.id], message }),
+            }, guildId);
             await interaction.editReply(`Nudged ${targetDiscordUser.displayName} to set their availability.`);
         }
 
@@ -354,9 +350,9 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
             const sub = interaction.options.getSubcommand();
 
             if (sub === 'schedule') {
-                const data = await apiCallWithSession(session.session_id, '/api/rally/judge/time', {
+                const data = await apiRequestAs(callerId, '/api/rally/judge/time', {
                     method: 'POST',
-                }, interaction.guildId);
+                }, guildId);
                 const meta = data?.metadata;
                 if (!meta?.windows?.length) {
                     await interaction.editReply('No overlapping availability windows found today. Ask everyone to set their times!');
@@ -372,19 +368,19 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
             }
 
             else if (sub === 'gamerank') {
-                await apiCallWithSession(session.session_id, '/api/rally/share-ranking', {
+                await apiRequestAs(callerId, '/api/rally/share-ranking', {
                     method: 'POST',
-                }, interaction.guildId);
+                }, guildId);
                 await interaction.editReply('Game rankings posted to the channel!');
             }
 
             else if (sub === 'gametree') {
-                const active = await apiCallWithSession(session.session_id, '/api/rally/active', {}, interaction.guildId);
+                const active = await apiRequestAs(callerId, '/api/rally/active', {}, guildId);
                 if (!active?.rally) {
                     await interaction.editReply('No active rally today. Use `/call` to start one!');
                     return;
                 }
-                const channelId = getChannelId(interaction.guildId);
+                const channelId = getChannelId(guildId);
                 if (!channelId) {
                     await interaction.editReply('No output channel configured. An admin should run `/setchannel` first.');
                     return;
@@ -401,7 +397,7 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
                 }
                 const channel = await client.channels.fetch(channelId);
                 if (channel?.isTextBased()) {
-                    const actor = authData.user.display_name ?? authData.user.discord_username;
+                    const actor = caller.display_name ?? caller.discord_username;
                     await channel.send({ content: `${summary}_On behalf of ${actor}_`, allowedMentions: { parse: [], users: [] } });
                 }
                 await interaction.editReply('Gaming tree posted to the channel!');
@@ -473,9 +469,9 @@ onCommand('when2play-admin', async (interaction) => {
             method: 'POST',
             body: JSON.stringify({
                 discord_id: interaction.user.id,
-                discord_username: interaction.member?.displayName ?? interaction.user.displayName,
-                avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
-                guild_name: interaction.guild?.name,
+                discord_username: memberDisplayName(interaction.member, interaction.user),
+                avatar_url: avatarUrlFor(interaction.user),
+                guild_name: interaction.guild?.name ? truncate(interaction.guild.name, MAX_GUILD_NAME_LENGTH) : undefined,
             }),
         }, interaction.guildId);
 
