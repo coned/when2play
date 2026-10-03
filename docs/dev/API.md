@@ -28,6 +28,59 @@ No auth required.
 
 ---
 
+## Bot Delivery Poll
+
+### `POST /api/bot/poll` (Bot-auth, recommended)
+One request per bot polling cycle for **all** guilds: acknowledges what the bot delivered since the last cycle and returns every rally action, tree share and game share still waiting to be posted. Replaces the per-guild, per-kind `GET .../pending` and `PATCH .../delivered` calls (now legacy). Gather pings are not covered; they keep using `/api/gather/pending`.
+
+**Auth:** `X-Bot-Token` header (required when `BOT_API_KEY` secret is set). **No `X-Guild-Id`** and no `?guild=`: the endpoint is cross-guild and reads each guild's `DB_<guild_id>` binding itself.
+
+**Body:**
+```json
+{
+  "guild_ids": ["926950608127287346", "1165751530654273707"],
+  "acks": {
+    "926950608127287346": {
+      "rally_actions": ["action-uuid"],
+      "tree_shares": ["tree-share-uuid"],
+      "game_shares": ["game-share-uuid"]
+    }
+  }
+}
+```
+
+- `guild_ids` (required): array of guild ID strings matching `/^\d{17,20}$/`. Duplicates are ignored; at most 100 distinct IDs. An empty array is allowed (acks only).
+- `acks` (optional): object keyed by guild ID (same format, at most 100 keys). Each value is an object with any of `rally_actions`, `tree_shares`, `game_shares` (no other keys); each list holds at most 200 non-empty ID strings of at most 100 characters. Acked IDs are marked delivered; unknown or already-delivered IDs are ignored, so re-sending an ack is harmless. Acks are applied for every guild that has a DB binding, even if it is not listed in `guild_ids` (such a guild is acked but not polled).
+- Anything else returns `400 BAD_REQUEST`.
+
+**Per guild, in order:** apply acks; count undelivered rows with one query (idle guilds stop here and are omitted from the response); mark rows older than 30 minutes as delivered; return the remaining undelivered rows of each kind, oldest first.
+
+**Staleness rule:** items older than 30 minutes (`PENDING_MAX_AGE_MS`) are never returned. They are marked delivered so a bot coming back from an outage never posts a stale backlog. The legacy pending endpoints apply the same 30 minute filter (read-only).
+
+**Response (200):**
+```json
+{
+  "ok": true,
+  "data": {
+    "guilds": {
+      "926950608127287346": {
+        "rally_actions": [{ "id": "action-uuid", "action_type": "call", "actor_discord_id": "...", "actor_username": "GamerDave", "target_user_ids": null, "target_discord_ids": null, "metadata": null, "delivered": false, "...": "..." }],
+        "tree_shares": [],
+        "game_shares": []
+      }
+    },
+    "unknown_guilds": ["1165751530654273707"],
+    "errors": {}
+  }
+}
+```
+
+- `guilds`: only guilds with at least one item to deliver (`{}` when everything is idle). Each present guild has all three arrays (possibly empty). Item shapes are identical to the legacy `GET /api/rally/pending`, `GET /api/rally/tree/share/pending` and `GET /api/games/share/pending` responses.
+- `unknown_guilds`: requested or acked guild IDs with no DB binding (always present, possibly `[]`).
+- `errors`: guild ID to short error message for guilds that failed twice (each guild is retried once). Those guilds are missing from `guilds`, and their acks may not have been applied: re-send them next cycle. Always present, possibly `{}`. The HTTP status stays 200.
+
+---
+
 ## Auth
 
 ### `POST /api/auth/token`
@@ -192,13 +245,13 @@ Broadcasts a game to the Discord channel. Creates a share record for bot polling
 { "ok": true, "data": { "id": "uuid", "game_id": "uuid", "requested_by": "uuid", "delivered": false, "created_at": "..." } }
 ```
 
-### `GET /api/games/share/pending` (Bot-auth)
-Returns undelivered game shares with joined game data (name, note, image, Steam app ID, like/dislike counts, requester name).
+### `GET /api/games/share/pending` (Bot-auth, legacy)
+Returns undelivered game shares with joined game data (name, note, image, Steam app ID, like/dislike counts, requester name). Shares older than 30 minutes are skipped. Legacy: prefer `POST /api/bot/poll`.
 
 **Auth:** `X-Bot-Token` header
 
-### `PATCH /api/games/share/:id/delivered` (Bot-auth)
-Marks a game share as delivered.
+### `PATCH /api/games/share/:id/delivered` (Bot-auth, legacy)
+Marks a game share as delivered. Legacy: prefer acks in `POST /api/bot/poll`.
 
 **Auth:** `X-Bot-Token` header
 
@@ -539,13 +592,13 @@ Requires session cookie. Returns tree DAG data (nodes, edges, rallies) for visua
 }
 ```
 
-### `GET /api/rally/pending`
-Returns undelivered rally actions with resolved Discord IDs.
+### `GET /api/rally/pending` (legacy)
+Returns undelivered rally actions with resolved Discord IDs. Actions older than 30 minutes are skipped. Legacy: prefer `POST /api/bot/poll`.
 
 **Auth:** `X-Bot-Token` header
 
-### `PATCH /api/rally/:id/delivered`
-Marks a rally action as delivered.
+### `PATCH /api/rally/:id/delivered` (legacy)
+Marks a rally action as delivered. Legacy: prefer acks in `POST /api/bot/poll`.
 
 **Auth:** `X-Bot-Token` header
 
@@ -557,13 +610,13 @@ Requires session cookie. Uploads a base64 PNG for Discord sharing.
 { "image_data": "base64-png-data..." }
 ```
 
-### `GET /api/rally/tree/share/pending`
-Returns undelivered tree share images.
+### `GET /api/rally/tree/share/pending` (legacy)
+Returns undelivered tree share images. Shares older than 30 minutes are skipped. Legacy: prefer `POST /api/bot/poll`.
 
 **Auth:** `X-Bot-Token` header
 
-### `PATCH /api/rally/tree/share/:id/delivered`
-Marks a tree share as delivered.
+### `PATCH /api/rally/tree/share/:id/delivered` (legacy)
+Marks a tree share as delivered. Legacy: prefer acks in `POST /api/bot/poll`.
 
 **Auth:** `X-Bot-Token` header
 

@@ -5,7 +5,7 @@ import { requireBotAuth } from '../middleware/bot-auth';
 import {
 	createGame, getGames, getGameById, updateGame, archiveGame, restoreGame, getGameBySteamAppId,
 	deleteGamePermanently, touchGameActivity, autoArchiveStaleGames,
-	createGameShare, getPendingGameShares, markGameShareDelivered,
+	createGameShare, getPendingGameShares, markGameShareDelivered, formatPendingGameShare,
 } from '../db/queries/games';
 import { setReaction, removeReaction, getReactionCountsForGames, getUserReactions, getReactionUsersForGames } from '../db/queries/game-reactions';
 import { logActivity, getActivity } from '../db/queries/game-activity';
@@ -40,10 +40,10 @@ function runInBackground(c: Context<GamesEnv>, task: () => Promise<unknown>): vo
 
 // --- Bot-auth endpoints (registered before the blanket requireAuth) ---
 
-// GET /api/games/share/pending -- bot polls for pending game shares
+// GET /api/games/share/pending -- bot polls for pending game shares (legacy, see /api/bot/poll)
 games.get('/share/pending', requireBotAuth, async (c) => {
 	const shares = await getPendingGameShares(c.env.DB);
-	const data = shares.map((s) => ({ ...s, delivered: Boolean(s.delivered) }));
+	const data = shares.map(formatPendingGameShare);
 	return c.json({ ok: true, data });
 });
 

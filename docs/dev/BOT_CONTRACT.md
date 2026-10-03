@@ -13,6 +13,8 @@ The Discord bot is responsible for:
 6. **Tree sharing** — Polling for and posting gaming tree images to Discord
 7. **Game sharing** — Polling for and posting game cards (name, note, reactions, image) to Discord
 
+Items 5 to 7 share one aggregated request per cycle: `POST /api/bot/poll` (see [Delivery Polling](#delivery-polling-recommended-post-apibotpoll)).
+
 ## Authentication
 
 All bot-facing endpoints require the `X-Bot-Token` header matching the `BOT_API_KEY` Cloudflare Worker secret:
@@ -25,7 +27,7 @@ Set the secret via `npx wrangler secret put BOT_API_KEY`. When the secret is not
 
 ## Guild Context
 
-All API requests from the bot must include the `X-Guild-Id` header with the Discord guild (server) snowflake ID. The Worker uses this to route each request to the correct per-guild D1 database.
+All API requests from the bot must include the `X-Guild-Id` header with the Discord guild (server) snowflake ID, except `POST /api/bot/poll`, which is cross-guild and takes its guild IDs in the body. The Worker uses this header to route each request to the correct per-guild D1 database.
 
 ```
 X-Guild-Id: 123456789012345678
@@ -33,7 +35,60 @@ X-Guild-Id: 123456789012345678
 
 The guild ID is available as `interaction.guildId` in discord.js. If the bot is used in DMs (no guild context), it should reject the command early and not call the API.
 
-The Worker validates that the guild ID is a Discord snowflake (`/^\d{17,20}$/`). If a per-guild D1 binding (`DB_<guildId>`) exists, it is used; otherwise the Worker falls back to the default `DB` binding.
+The Worker validates that the guild ID is a Discord snowflake (`/^\d{17,20}$/`). If a per-guild D1 binding (`DB_<guildId>`) exists, it is used; otherwise the request fails with `404 UNKNOWN_GUILD`.
+
+## Delivery Polling (recommended): `POST /api/bot/poll`
+
+Rally actions, tree shares and game shares are delivered through one aggregated request per polling cycle (every 15 seconds) covering every guild the bot is in. It replaces endpoints 5 to 10 below, which remain only for older bot builds.
+
+```bash
+POST /api/bot/poll
+Content-Type: application/json
+X-Bot-Token: <BOT_API_KEY>
+# no X-Guild-Id
+
+{
+  "guild_ids": ["926950608127287346", "1165751530654273707"],
+  "acks": {
+    "926950608127287346": {
+      "rally_actions": ["action-uuid"],
+      "tree_shares": ["tree-share-uuid"],
+      "game_shares": ["game-share-uuid"]
+    }
+  }
+}
+```
+
+**Request rules:**
+- `guild_ids` (required): guild ID strings (`/^\d{17,20}$/`), duplicates ignored, at most 100 distinct. May be empty.
+- `acks` (optional): keyed by guild ID (at most 100 keys). Each value may contain `rally_actions`, `tree_shares`, `game_shares` (no other keys), each a list of at most 200 non-empty ID strings (max 100 chars each). Acks are applied for any guild with a DB binding, even one not in `guild_ids`.
+- Anything else: `400 BAD_REQUEST`. Wrong or missing `X-Bot-Token` (when `BOT_API_KEY` is set): `403 FORBIDDEN`.
+
+**Response (200):**
+```json
+{
+  "ok": true,
+  "data": {
+    "guilds": {
+      "926950608127287346": {
+        "rally_actions": [ /* same items as GET /api/rally/pending */ ],
+        "tree_shares":   [ /* same items as GET /api/rally/tree/share/pending */ ],
+        "game_shares":   [ /* same items as GET /api/games/share/pending */ ]
+      }
+    },
+    "unknown_guilds": [],
+    "errors": {}
+  }
+}
+```
+
+- `guilds` holds only guilds with something to deliver (`{}` when idle); a present guild always has all three arrays, each ordered oldest first.
+- `unknown_guilds` lists requested or acked guild IDs that have no DB binding on the Worker.
+- `errors` maps a guild ID to a short message when that guild failed twice on the server (it is retried once). The guild is absent from `guilds` and its acks may not have been applied; keep those acks and send them again next cycle. The status is still 200.
+
+**Ack semantics:** after posting an item to Discord, remember its ID and send it in `acks` on the next poll. Acks are applied before the pending items are read, so an acked item is never returned again. Acks are idempotent: re-sending an ID, or an ID that no longer exists, is harmless. Until an item is acked it is returned on every poll, so ack each item exactly after it has been posted (a crash between posting and acking re-posts that item once).
+
+**Staleness rule:** an item that has not been acked within 30 minutes of its creation is never returned; the server marks it delivered instead. A bot coming back after an outage therefore never posts a stale backlog. The legacy pending endpoints apply the same 30 minute filter.
 
 ## Endpoints
 
@@ -165,9 +220,9 @@ X-Guild-Id: 123456789012345678
 { "ok": true, "data": null }
 ```
 
-### 5. Poll for Rally Actions
+### 5. Poll for Rally Actions (legacy)
 
-Periodically (every 15 seconds, alongside gather polling):
+Legacy: use `POST /api/bot/poll` instead; the item shape and formatting rules below still apply to its `rally_actions`. Actions older than 30 minutes are not returned.
 
 ```bash
 GET /api/rally/pending
@@ -237,7 +292,9 @@ The bot should format this as a numbered list, e.g.:
 #2 Valorant (12 pts, 3 votes)
 ```
 
-### 6. Mark Rally Action Delivered
+### 6. Mark Rally Action Delivered (legacy)
+
+Legacy: send the ID in `acks.<guild>.rally_actions` of the next `POST /api/bot/poll` instead.
 
 ```bash
 PATCH /api/rally/:id/delivered
@@ -245,7 +302,9 @@ X-Bot-Token: <BOT_API_KEY>
 X-Guild-Id: 123456789012345678
 ```
 
-### 7. Poll for Tree Share Images
+### 7. Poll for Tree Share Images (legacy)
+
+Legacy: use `POST /api/bot/poll` (`tree_shares`). Shares older than 30 minutes are not returned.
 
 ```bash
 GET /api/rally/tree/share/pending
@@ -255,7 +314,9 @@ X-Guild-Id: 123456789012345678
 
 Returns pending tree images with `image_data` (base64 PNG). The bot should decode and send as a Discord attachment.
 
-### 8. Mark Tree Share Delivered
+### 8. Mark Tree Share Delivered (legacy)
+
+Legacy: send the ID in `acks.<guild>.tree_shares` instead.
 
 ```bash
 PATCH /api/rally/tree/share/:id/delivered
@@ -265,9 +326,9 @@ X-Guild-Id: 123456789012345678
 
 ## Rally Slash Commands
 
-### 9. Poll for Game Shares
+### 9. Poll for Game Shares (legacy)
 
-Periodically (every 15 seconds, alongside other polling):
+Legacy: use `POST /api/bot/poll` instead; the item shape and posting rules below still apply to its `game_shares`. Shares older than 30 minutes are not returned.
 
 ```bash
 GET /api/games/share/pending
@@ -304,7 +365,9 @@ For each pending share, the bot should:
 3. Send to the gaming channel
 4. Mark as delivered (see below)
 
-### 10. Mark Game Share Delivered
+### 10. Mark Game Share Delivered (legacy)
+
+Legacy: send the ID in `acks.<guild>.game_shares` instead.
 
 ```bash
 PATCH /api/games/share/:id/delivered
@@ -414,5 +477,35 @@ async def poll_gather(guild_id, channel_id):
                 text += f" → {mentions}"
             await channel.send(text)
             requests.patch(f"{API_URL}/api/gather/{ping['id']}/delivered", headers=headers)
+        await asyncio.sleep(15)
+
+# Delivery loop (all guilds, one request per cycle) for rally actions, tree shares, game shares
+async def poll_deliveries(channels):  # channels: {guild_id: channel}
+    acks = {}  # guild_id -> {"rally_actions": [...], "tree_shares": [...], "game_shares": [...]}
+    while True:
+        try:
+            response = requests.post(f"{API_URL}/api/bot/poll", json={
+                "guild_ids": [str(g) for g in channels],
+                "acks": acks,
+            }, headers={"Content-Type": "application/json", "X-Bot-Token": BOT_API_KEY})
+            data = response.json()["data"]
+        except Exception:
+            await asyncio.sleep(15)
+            continue  # keep acks, resend next cycle
+
+        # Acks for guilds that failed server-side may not be applied: keep them.
+        acks = {g: a for g, a in acks.items() if g in data["errors"]}
+        for guild_id, items in data["guilds"].items():
+            channel = channels[guild_id]
+            done = acks.setdefault(guild_id, {"rally_actions": [], "tree_shares": [], "game_shares": []})
+            for action in items["rally_actions"]:
+                await channel.send(format_rally_action(action))
+                done["rally_actions"].append(action["id"])
+            for share in items["tree_shares"]:
+                await channel.send(file=decode_png(share["image_data"]))
+                done["tree_shares"].append(share["id"])
+            for share in items["game_shares"]:
+                await channel.send(embed=format_game_card(share))
+                done["game_shares"].append(share["id"])
         await asyncio.sleep(15)
 ```

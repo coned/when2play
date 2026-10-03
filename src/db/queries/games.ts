@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { uuid, now } from '../helpers';
+import { pendingCutoff } from '../../lib/pending';
 
 export interface GameRow {
 	id: string;
@@ -143,7 +144,10 @@ export async function createGameShare(db: D1Database, gameId: string, userId: st
 	return { id, game_id: gameId, requested_by: userId, delivered: 0, created_at: timestamp };
 }
 
-export async function getPendingGameShares(db: D1Database): Promise<Array<GameShareRow & { game_name: string; game_note: string | null; game_image_url: string | null; game_steam_app_id: string | null; like_count: number; dislike_count: number; requester_name: string }>> {
+export type PendingGameShareRow = GameShareRow & { game_name: string; game_note: string | null; game_image_url: string | null; game_steam_app_id: string | null; like_count: number; dislike_count: number; requester_name: string };
+
+/** Undelivered game shares not older than the cutoff (see PENDING_MAX_AGE_MS), oldest first. */
+export async function getPendingGameShares(db: D1Database, cutoff: string = pendingCutoff()): Promise<PendingGameShareRow[]> {
 	const result = await db
 		.prepare(`
 			SELECT gs.*, g.name as game_name, g.note as game_note, g.image_url as game_image_url, g.steam_app_id as game_steam_app_id,
@@ -153,11 +157,17 @@ export async function getPendingGameShares(db: D1Database): Promise<Array<GameSh
 			FROM game_shares gs
 			JOIN games g ON g.id = gs.game_id
 			JOIN users u ON u.id = gs.requested_by
-			WHERE gs.delivered = 0
+			WHERE gs.delivered = 0 AND gs.created_at >= ?
 			ORDER BY gs.created_at ASC
 		`)
+		.bind(cutoff)
 		.all();
 	return result.results as any;
+}
+
+/** Response shape of a pending game share, shared by the legacy and aggregated bot endpoints. */
+export function formatPendingGameShare(s: PendingGameShareRow) {
+	return { ...s, delivered: Boolean(s.delivered) };
 }
 
 export async function markGameShareDelivered(db: D1Database, shareId: string): Promise<void> {

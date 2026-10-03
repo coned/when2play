@@ -1,6 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { uuid, now } from '../helpers';
 import { getSetting } from './settings';
+import { pendingCutoff } from '../../lib/pending';
 import type { ActionType } from '@when2play/shared';
 
 // ---------- Row types ----------
@@ -153,15 +154,17 @@ export async function getRallyActions(db: D1Database, dayKey?: string): Promise<
 	return result.results;
 }
 
-export async function getPendingRallyActions(db: D1Database): Promise<RallyActionWithDiscord[]> {
+/** Undelivered actions not older than the cutoff (see PENDING_MAX_AGE_MS), oldest first. */
+export async function getPendingRallyActions(db: D1Database, cutoff: string = pendingCutoff()): Promise<RallyActionWithDiscord[]> {
 	const result = await db
 		.prepare(
 			`SELECT ra.*, u.discord_id as actor_discord_id, u.discord_username as actor_username, u.avatar_url as actor_avatar
 			FROM rally_actions ra
 			JOIN users u ON ra.actor_id = u.id
-			WHERE ra.delivered = 0
+			WHERE ra.delivered = 0 AND ra.created_at >= ?
 			ORDER BY ra.created_at ASC`,
 		)
+		.bind(cutoff)
 		.all<RallyActionWithUser>();
 
 	const actions: RallyActionWithDiscord[] = [];
@@ -182,6 +185,16 @@ export async function getPendingRallyActions(db: D1Database): Promise<RallyActio
 		actions.push({ ...row, target_discord_ids });
 	}
 	return actions;
+}
+
+/** Response shape of a pending rally action, shared by the legacy and aggregated bot endpoints. */
+export function formatPendingRallyAction(a: RallyActionWithDiscord) {
+	return {
+		...a,
+		delivered: Boolean(a.delivered),
+		target_user_ids: a.target_user_ids ? (JSON.parse(a.target_user_ids) as string[]) : null,
+		metadata: a.metadata ? (JSON.parse(a.metadata) as Record<string, unknown>) : null,
+	};
 }
 
 export async function markActionDelivered(db: D1Database, actionId: string): Promise<void> {
@@ -400,11 +413,18 @@ export async function createTreeShare(
 	return { id, requested_by: userId, day_key: dayKey, image_data: imageData, delivered: 0, created_at: timestamp };
 }
 
-export async function getPendingTreeShares(db: D1Database): Promise<TreeShareRow[]> {
+/** Undelivered tree shares not older than the cutoff (see PENDING_MAX_AGE_MS), oldest first. */
+export async function getPendingTreeShares(db: D1Database, cutoff: string = pendingCutoff()): Promise<TreeShareRow[]> {
 	const result = await db
-		.prepare('SELECT * FROM rally_tree_shares WHERE delivered = 0 ORDER BY created_at ASC')
+		.prepare('SELECT * FROM rally_tree_shares WHERE delivered = 0 AND created_at >= ? ORDER BY created_at ASC')
+		.bind(cutoff)
 		.all<TreeShareRow>();
 	return result.results;
+}
+
+/** Response shape of a pending tree share, shared by the legacy and aggregated bot endpoints. */
+export function formatPendingTreeShare(s: TreeShareRow) {
+	return { ...s, delivered: Boolean(s.delivered) };
 }
 
 export async function markTreeShareDelivered(db: D1Database, shareId: string): Promise<void> {

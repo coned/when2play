@@ -16,6 +16,7 @@ import shame from './routes/shame';
 import settings from './routes/settings';
 import rally from './routes/rally';
 import guilds from './routes/guilds';
+import bot from './routes/bot';
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -26,6 +27,9 @@ app.use('*', securityHeaders);
 app.get('/api/health', (c) => {
 	return c.json({ ok: true, data: { status: 'healthy', timestamp: new Date().toISOString() } });
 });
+
+// Cross-guild bot endpoints: mounted before /api so they skip guildDb/foreignKeys.
+app.route('/api/bot', bot);
 
 const api = new Hono<{ Bindings: Bindings }>();
 api.use('*', guildDb);

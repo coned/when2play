@@ -2,9 +2,10 @@ import { createMiddleware } from 'hono/factory';
 import type { Bindings } from '../env';
 
 /**
- * Requires X-Bot-Token header matching BOT_API_KEY env var.
- * Rejects with 500 if BOT_API_KEY is not configured (fail-closed).
- * Set BOT_API_KEY in .dev.vars for local development.
+ * Requires X-Bot-Token header matching BOT_API_KEY env var; rejects with 403
+ * otherwise. If BOT_API_KEY is not configured, the check is skipped and every
+ * request is let through (fail-open, meant for local dev and tests only), so
+ * production must always set BOT_API_KEY.
  */
 export const requireBotAuth = createMiddleware<{ Bindings: Bindings }>(async (c, next) => {
 	const key = c.env.BOT_API_KEY;

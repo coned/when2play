@@ -40,16 +40,16 @@
 when2play/
 ├── Makefile        # Project commands (make help)
 ├── docs/           # Documentation
-├── migrations/     # D1 SQL migrations (consolidated into 0000)
+├── migrations/     # D1 SQL migrations (0000 consolidated, new ones from 0008)
 ├── shared/         # Shared TypeScript types (npm workspace)
 ├── src/            # Backend (Hono API)
 │   ├── middleware/  # error, cors, auth, bot-auth, security-headers, fk, guild
-│   ├── routes/     # auth, users, games, votes, steam, availability, gather, shame, settings, rally, guilds
+│   ├── routes/     # auth, users, games, votes, steam, availability, gather, shame, settings, rally, guilds, bot
 │   ├── db/queries/ # Database query functions
 │   └── lib/        # crypto, time, steam utilities
 ├── frontend/       # Preact + Vite SPA (npm workspace)
 │   └── src/
-│       ├── hooks/      # useAuth, useTheme, useMediaQuery
+│       ├── hooks/      # useAuth, useTheme, useMediaQuery, useVisiblePolling
 │       ├── lib/        # time (dual timezone formatting)
 │       ├── styles/     # global.css, themes.css
 │       └── components/ # layout, games, availability, gather, shame, schedule, rally, tree, blog, ui

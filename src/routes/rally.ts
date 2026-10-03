@@ -16,6 +16,8 @@ import {
 	createTreeShare,
 	getPendingTreeShares,
 	markTreeShareDelivered,
+	formatPendingRallyAction,
+	formatPendingTreeShare,
 } from '../db/queries/rally';
 import type { ActionType } from '@when2play/shared';
 import { getGameRanking } from '../db/queries/votes';
@@ -227,15 +229,10 @@ rally.get('/tree', requireAuth, async (c) => {
 	return c.json({ ok: true, data: { nodes, edges: treeData.edges, rallies: treeData.rallies, participants: treeData.participants } });
 });
 
-// GET /api/rally/pending — bot polls for undelivered actions
+// GET /api/rally/pending — bot polls for undelivered actions (legacy, see /api/bot/poll)
 rally.get('/pending', requireBotAuth, async (c) => {
 	const actions = await getPendingRallyActions(c.env.DB);
-	const data = actions.map((a) => ({
-		...a,
-		delivered: Boolean(a.delivered),
-		target_user_ids: a.target_user_ids ? JSON.parse(a.target_user_ids) : null,
-		metadata: a.metadata ? JSON.parse(a.metadata) : null,
-	}));
+	const data = actions.map(formatPendingRallyAction);
 	return c.json({ ok: true, data });
 });
 
@@ -264,10 +261,10 @@ rally.post('/tree/share', requireAuth, async (c) => {
 	}, 201);
 });
 
-// GET /api/rally/tree/share/pending — bot polls for pending tree images
+// GET /api/rally/tree/share/pending — bot polls for pending tree images (legacy, see /api/bot/poll)
 rally.get('/tree/share/pending', requireBotAuth, async (c) => {
 	const shares = await getPendingTreeShares(c.env.DB);
-	const data = shares.map((s) => ({ ...s, delivered: Boolean(s.delivered) }));
+	const data = shares.map(formatPendingTreeShare);
 	return c.json({ ok: true, data });
 });
 
