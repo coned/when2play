@@ -51,8 +51,10 @@ export function createTestDb(): D1Database {
 			db.exec(query);
 			return { count: 0, duration: 0 } as any;
 		},
-		batch(statements: any[]) {
-			return Promise.all(statements.map((s: any) => s.run()));
+		// Like D1, a batch runs as one transaction: any failing statement rolls back the whole batch.
+		// Runs synchronously so concurrent batches cannot interleave inside the transaction.
+		async batch(statements: any[]) {
+			return db.transaction(() => statements.map((s: any) => s.runSync()))();
 		},
 		dump() {
 			return Promise.resolve(new ArrayBuffer(0));
@@ -88,6 +90,9 @@ function createStatement(db: Database.Database, query: string) {
 			return { results, success: true, meta: {} };
 		},
 		async run(): Promise<D1Result> {
+			return stmt.runSync();
+		},
+		runSync(): D1Result {
 			const prepared = db.prepare(query);
 			prepared.run(...bindings);
 			return { results: [], success: true, meta: {} };

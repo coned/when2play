@@ -36,31 +36,50 @@ export async function getAvailability(db: D1Database, filters: { user_id?: strin
 	return result.results;
 }
 
+/**
+ * Prepared single-row INSERT for an availability row. Rows are inserted one statement
+ * each (inside a batch) because D1 limits a statement to 100 bound parameters.
+ */
+export function insertAvailabilityRow(db: D1Database, row: AvailabilityRow) {
+	return db
+		.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at, slot_status) VALUES (?, ?, ?, ?, ?, ?, ?)')
+		.bind(row.id, row.user_id, row.date, row.start_time, row.end_time, row.created_at, row.slot_status);
+}
+
 export async function setAvailability(
 	db: D1Database,
 	userId: string,
 	date: string,
 	slots: Array<{ start_time: string; end_time: string; slot_status?: string }>,
 ): Promise<AvailabilityRow[]> {
-	// Clear existing slots for this user+date
-	await db.prepare('DELETE FROM availability WHERE user_id = ? AND date = ?').bind(userId, date).run();
+	// One row per start_time: a duplicate in the request replaces the earlier one (last wins)
+	const byStart = new Map<string, { start_time: string; end_time: string; slot_status?: string }>();
+	for (const slot of slots) byStart.set(slot.start_time, slot);
 
 	const timestamp = now();
 	const results: AvailabilityRow[] = [];
+	for (const slot of byStart.values()) {
+		results.push({
+			id: uuid(),
+			user_id: userId,
+			date,
+			start_time: slot.start_time,
+			end_time: slot.end_time,
+			created_at: timestamp,
+			slot_status: slot.slot_status ?? 'available',
+		});
+	}
 
+	// Clear existing slots and insert the new ones in one atomic batch, so a failed
+	// or concurrent save can never leave a half-written day behind.
 	// NOTE: This intentionally hard-fails if slot_status column is missing (migration 0006).
 	// A silent fallback previously caused slot_status to be lost without the caller knowing.
 	// Status helpers (getAvailabilityStatus etc.) degrade gracefully because their data is
 	// supplementary, but losing slot_status on write is unacceptable.
-	for (const slot of slots) {
-		const id = uuid();
-		const slotStatus = slot.slot_status ?? 'available';
-		await db
-			.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at, slot_status) VALUES (?, ?, ?, ?, ?, ?, ?)')
-			.bind(id, userId, date, slot.start_time, slot.end_time, timestamp, slotStatus)
-			.run();
-		results.push({ id, user_id: userId, date, start_time: slot.start_time, end_time: slot.end_time, created_at: timestamp, slot_status: slotStatus });
-	}
+	await db.batch([
+		db.prepare('DELETE FROM availability WHERE user_id = ? AND date = ?').bind(userId, date),
+		...results.map((r) => insertAvailabilityRow(db, r)),
+	]);
 
 	// Mark as manual so auto-fill won't override user action
 	await upsertAvailabilityStatus(db, userId, date, 'manual');

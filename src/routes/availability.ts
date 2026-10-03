@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
 import {
@@ -11,6 +11,8 @@ import {
 	getAvailabilityStatusForDate,
 	getDistinctAvailabilityDates,
 	getDatesWithTentativeSlots,
+	insertAvailabilityRow,
+	type AvailabilityRow,
 } from '../db/queries/availability';
 import { uuid, now } from '../db/helpers';
 import type { UserRow } from '../db/queries/users';
@@ -24,6 +26,38 @@ function parseDate(s: string): string | null {
 	if (isNaN(d.getTime())) return null;
 	// Round-trip check: rejects "2026-02-30" etc.
 	return d.toISOString().split('T')[0] === s ? s : null;
+}
+
+/** One grid slot: 96 per day at 15 minute granularity. */
+const MAX_SLOTS_PER_DAY = 96;
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const SLOT_STATUSES = new Set(['available', 'tentative']);
+
+type SlotInput = { start_time: string; end_time: string; slot_status?: string };
+
+/** Validate a PUT /api/availability body. Returns the typed body or an error message. */
+function parseSetAvailabilityBody(body: unknown): { date: string; slots: SlotInput[] } | string {
+	if (!body || typeof body !== 'object') return 'date and slots required';
+	const { date, slots } = body as { date?: unknown; slots?: unknown };
+	if (typeof date !== 'string' || !parseDate(date)) return 'invalid date format (YYYY-MM-DD)';
+	if (!Array.isArray(slots)) return 'slots must be an array';
+	if (slots.length > MAX_SLOTS_PER_DAY) return `at most ${MAX_SLOTS_PER_DAY} slots allowed`;
+	const out: SlotInput[] = [];
+	for (const slot of slots) {
+		if (!slot || typeof slot !== 'object') return 'each slot must be an object';
+		const { start_time, end_time, slot_status } = slot as Record<string, unknown>;
+		if (typeof start_time !== 'string' || !HHMM_RE.test(start_time)) return 'start_time must be HH:MM';
+		if (typeof end_time !== 'string' || !HHMM_RE.test(end_time)) return 'end_time must be HH:MM';
+		if (slot_status !== undefined && (typeof slot_status !== 'string' || !SLOT_STATUSES.has(slot_status))) {
+			return 'slot_status must be available or tentative';
+		}
+		out.push(slot_status === undefined ? { start_time, end_time } : { start_time, end_time, slot_status: slot_status as string });
+	}
+	return { date, slots: out };
+}
+
+function badRequest(c: Context, message: string) {
+	return c.json({ ok: false, error: { code: 'BAD_REQUEST', message } }, 400);
 }
 
 type AvailEnv = {
@@ -156,18 +190,18 @@ availability.post('/:date/confirm', async (c) => {
 		return c.json({ ok: false, error: { code: 'NOT_FOUND', message: 'no last-week slots to confirm' } }, 404);
 	}
 
-	// Insert copies for the target date
+	// Insert copies for the target date in one atomic batch (all or nothing)
 	const timestamp = now();
-	const results = [];
-	for (const slot of lastWeekSlots) {
-		const id = uuid();
-		const slotStatus = slot.slot_status ?? 'available';
-		await c.env.DB
-			.prepare('INSERT INTO availability (id, user_id, date, start_time, end_time, created_at, slot_status) VALUES (?, ?, ?, ?, ?, ?, ?)')
-			.bind(id, user.id, date, slot.start_time, slot.end_time, timestamp, slotStatus)
-			.run();
-		results.push({ id, user_id: user.id, date, start_time: slot.start_time, end_time: slot.end_time, created_at: timestamp, slot_status: slotStatus });
-	}
+	const results: AvailabilityRow[] = lastWeekSlots.map((slot) => ({
+		id: uuid(),
+		user_id: user.id,
+		date,
+		start_time: slot.start_time,
+		end_time: slot.end_time,
+		created_at: timestamp,
+		slot_status: slot.slot_status ?? 'available',
+	}));
+	await c.env.DB.batch(results.map((r) => insertAvailabilityRow(c.env.DB, r)));
 
 	await upsertAvailabilityStatus(c.env.DB, user.id, date, 'confirmed');
 
@@ -234,13 +268,17 @@ availability.get('/', async (c) => {
 // PUT /api/availability - bulk replace slots for a date
 availability.put('/', async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ date: string; slots: Array<{ start_time: string; end_time: string; slot_status?: string }> }>();
-
-	if (!body.date || !body.slots) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'date and slots required' } }, 400);
+	let body: unknown;
+	try {
+		body = await c.req.json();
+	} catch {
+		return badRequest(c, 'invalid JSON body');
 	}
 
-	const result = await setAvailability(c.env.DB, user.id, body.date, body.slots);
+	const parsed = parseSetAvailabilityBody(body);
+	if (typeof parsed === 'string') return badRequest(c, parsed);
+
+	const result = await setAvailability(c.env.DB, user.id, parsed.date, parsed.slots);
 	return c.json({ ok: true, data: result });
 });
 
@@ -251,6 +289,9 @@ availability.delete('/', async (c) => {
 
 	if (!date) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'date query param required' } }, 400);
+	}
+	if (!parseDate(date)) {
+		return badRequest(c, 'invalid date format (YYYY-MM-DD)');
 	}
 
 	await clearAvailability(c.env.DB, user.id, date);

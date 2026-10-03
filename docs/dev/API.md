@@ -361,8 +361,10 @@ Bulk-replaces all availability slots for a given date.
 
 `slot_status` defaults to `'available'` if omitted. Upserts an `availability_status` record for the user+date.
 
+The delete and all inserts run as one atomic D1 batch. Returns 400 `BAD_REQUEST` when the body is not valid JSON, `date` is not a real `YYYY-MM-DD` date, `slots` is not an array or has more than 96 entries, a `start_time`/`end_time` is not `HH:MM` (00:00 to 23:59), or `slot_status` is present and not `available`/`tentative`. Duplicate `start_time` values are collapsed (the last one wins).
+
 ### `DELETE /api/availability?date=YYYY-MM-DD`
-Clears all slots for the given date. Writes `status = 'filled'` to block auto-seed re-triggering.
+Clears all slots for the given date. `date` is validated like `PUT` (400 on an invalid date). Writes `status = 'filled'` to block auto-seed re-triggering.
 
 ### `GET /api/availability/my-status`
 Returns the user's availability status for a date range.
@@ -382,7 +384,7 @@ Returns the user's availability status for a date range.
 ```
 
 ### `POST /api/availability/:date/confirm`
-Confirms auto-filled availability for a date. Transitions status from `tentative_auto` to `tentative_confirmed`. Date is validated with calendar round-trip check.
+Confirms auto-filled availability for a date. Transitions status from `tentative_auto` to `tentative_confirmed`. Date is validated with calendar round-trip check. When the user has no slots for the date, last week's slots are copied in one atomic batch.
 
 **Response:**
 ```json
