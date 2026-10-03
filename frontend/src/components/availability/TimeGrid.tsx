@@ -39,6 +39,13 @@ function generateSlots() {
 
 const ALL_SLOTS = generateSlots();
 
+/** Slots to send for a selection, in grid order. */
+function selectionToSlots(sel: Map<string, 'available' | 'tentative'>) {
+	return ALL_SLOTS
+		.filter((s) => sel.has(s.start_time))
+		.map((s) => ({ ...s, slot_status: sel.get(s.start_time)! }));
+}
+
 function getNextDate(dateStr: string): string {
 	const d = new Date(dateStr + 'T12:00:00Z');
 	d.setUTCDate(d.getUTCDate() + 1);
@@ -269,14 +276,20 @@ function InlineAvatars({ voters, userMap }: { voters: Voter[]; userMap: Map<stri
 export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHourET, availEndHourET, totalGuildUsers, userMap, dateStatus, onConfirm }: TimeGridProps) {
 	const isTentative = dateStatus === 'tentative';
 	const [confirming, setConfirming] = useState(false);
+	// Initialised once per mount. The parent only mounts the grid once the slots and the
+	// day's status are known, and remounts it (new key) after a confirm, so this always
+	// equals what the next save would write.
 	const [selected, setSelected] = useState<Map<string, 'available' | 'tentative'>>(
-		new Map(mySlots.map((s: any) => [s.start_time, (s.slot_status as 'available' | 'tentative') ?? 'available']))
+		() => new Map(mySlots.map((s: any) => [s.start_time, (s.slot_status as 'available' | 'tentative') ?? 'available']))
 	);
 	const [brushMode, setBrushMode] = useState<'available' | 'tentative'>('available');
 	const [isDragging, setIsDragging] = useState(false);
 	const [dragAction, setDragAction] = useState<'paint' | 'remove'>('paint');
 	const [touchMode, setTouchMode] = useState<'scroll' | 'select' | 'lock'>('scroll');
 	const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+	// Message of the last failed save; stays visible until a later save succeeds
+	const [saveError, setSaveError] = useState<string | null>(null);
+	const [confirmError, setConfirmError] = useState<string | null>(null);
 	const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [containerHeight, setContainerHeight] = useState(400);
@@ -284,9 +297,16 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const isFirstRender = useRef(true);
+	const mountedRef = useRef(true);
 	const onSaveRef = useRef(onSave);
+	// Selection changed but the debounce has not fired yet
 	const pendingSelectedRef = useRef<Map<string, 'available' | 'tentative'> | null>(null);
+	// Selection waiting to be saved once the in-flight save finishes (latest wins)
+	const queuedSelectedRef = useRef<Map<string, 'available' | 'tentative'> | null>(null);
+	const saveInFlightRef = useRef(false);
+	const selectedRef = useRef(selected);
 	onSaveRef.current = onSave;
+	selectedRef.current = selected;
 
 	// Use filtered slots if time range is configured
 	const filteredSlots = useMemo((): FilteredSlot[] => {
@@ -306,6 +326,54 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 		}
 	}, [isMobile]);
 
+	/**
+	 * Save queued selections one at a time. Never runs two saves at once: a selection
+	 * queued while a save is in flight is saved (once, latest wins) after it finishes.
+	 * Only the outcome of the last save is shown. Keeps running after unmount so a
+	 * flushed save still completes.
+	 */
+	const drainSaves = async () => {
+		if (saveInFlightRef.current) return;
+		saveInFlightRef.current = true;
+		let error: string | null = null;
+		while (queuedSelectedRef.current) {
+			const sel = queuedSelectedRef.current;
+			queuedSelectedRef.current = null;
+			try {
+				await onSaveRef.current(selectionToSlots(sel));
+				error = null;
+			} catch (e) {
+				error = e instanceof Error && e.message ? e.message : 'Save failed';
+			}
+		}
+		saveInFlightRef.current = false;
+
+		// A newer change is still debouncing; its save will report the outcome
+		if (!mountedRef.current || pendingSelectedRef.current) return;
+		if (clearTimer.current) clearTimeout(clearTimer.current);
+		if (error) {
+			setSaveStatus('error');
+			setSaveError(error);
+		} else {
+			setSaveStatus('saved');
+			setSaveError(null);
+			clearTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
+		}
+	};
+
+	const saveNow = (sel: Map<string, 'available' | 'tentative'>) => {
+		if (saveTimer.current) clearTimeout(saveTimer.current);
+		saveTimer.current = null;
+		pendingSelectedRef.current = null;
+		queuedSelectedRef.current = sel;
+		drainSaves();
+	};
+
+	const retrySave = () => {
+		setSaveStatus('saving');
+		saveNow(selectedRef.current);
+	};
+
 	// Debounced auto-save when selected changes (1 second debounce)
 	useEffect(() => {
 		if (isFirstRender.current) {
@@ -317,36 +385,19 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 		if (clearTimer.current) clearTimeout(clearTimer.current);
 
 		pendingSelectedRef.current = selected;
-
-		saveTimer.current = setTimeout(async () => {
-			pendingSelectedRef.current = null;
-			try {
-				const slots = ALL_SLOTS
-					.filter((s) => selected.has(s.start_time))
-					.map((s) => ({ ...s, slot_status: selected.get(s.start_time)! }));
-				await onSave(slots);
-				setSaveStatus('saved');
-				clearTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
-			} catch {
-				setSaveStatus('error');
-				clearTimer.current = setTimeout(() => setSaveStatus('idle'), 3000);
-			}
-		}, 1000);
-
-		return () => {
-			if (saveTimer.current) clearTimeout(saveTimer.current);
-		};
+		saveTimer.current = setTimeout(() => saveNow(selected), 1000);
 	}, [selected]);
 
 	// Flush any pending save immediately when navigating away (component unmounts)
 	useEffect(() => {
+		mountedRef.current = true;
 		return () => {
+			mountedRef.current = false;
+			if (clearTimer.current) clearTimeout(clearTimer.current);
 			if (pendingSelectedRef.current !== null) {
-				const sel = pendingSelectedRef.current;
-				const slots = ALL_SLOTS
-					.filter((s) => sel.has(s.start_time))
-					.map((s) => ({ ...s, slot_status: sel.get(s.start_time)! }));
-				onSaveRef.current(slots).catch(() => {});
+				saveNow(pendingSelectedRef.current);
+			} else if (saveTimer.current) {
+				clearTimeout(saveTimer.current);
 			}
 		};
 	}, []);
@@ -455,6 +506,8 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 	};
 
 	const statusText = saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? '\u2713 Saved' : saveStatus === 'error' ? 'Save failed' : '';
+	// While a save is pending or in flight, Confirm is disabled (it would race the save)
+	const isSaving = saveStatus === 'saving';
 	const statusColor = saveStatus === 'saved' ? 'var(--success)' : saveStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)';
 
 	const mobileHint = touchMode === 'select'
@@ -524,6 +577,32 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 				</span>
 			</div>
 
+			{/* Save failure: stays until a later save succeeds */}
+			{saveError !== null && (
+				<div role="alert" style={{
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'space-between',
+					gap: '8px',
+					padding: '6px 10px',
+					marginBottom: '6px',
+					border: '1px solid var(--danger)',
+					borderRadius: 'var(--radius)',
+					fontSize: '12px',
+					color: 'var(--danger)',
+				}}>
+					<span>Your availability was not saved: {saveError}</span>
+					<button
+						class="btn btn-secondary"
+						style={{ fontSize: '12px', padding: '4px 12px', flexShrink: 0 }}
+						disabled={isSaving}
+						onClick={retrySave}
+					>
+						{isSaving ? 'Saving...' : 'Retry'}
+					</button>
+				</div>
+			)}
+
 			{/* Tentative confirm banner */}
 			{isTentative && onConfirm && (
 				<div style={{
@@ -539,17 +618,27 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 					fontSize: '12px',
 					color: 'var(--text-secondary)',
 				}}>
-					<span>Auto-filled from last week - toggle any slot or press Confirm</span>
+					<span>
+						Auto-filled from last week - toggle any slot or press Confirm
+						{confirmError !== null && (
+							<span role="alert" style={{ display: 'block', color: 'var(--danger)' }}>
+								Confirm failed: {confirmError}
+							</span>
+						)}
+					</span>
 					<button
 						class="btn btn-primary"
 						style={{ fontSize: '12px', padding: '4px 12px', flexShrink: 0 }}
-						disabled={confirming}
+						disabled={confirming || isSaving}
 						onClick={async () => {
 							setConfirming(true);
+							setConfirmError(null);
 							try {
 								await onConfirm();
+							} catch (e) {
+								if (mountedRef.current) setConfirmError(e instanceof Error && e.message ? e.message : 'Confirm failed');
 							} finally {
-								setConfirming(false);
+								if (mountedRef.current) setConfirming(false);
 							}
 						}}
 					>

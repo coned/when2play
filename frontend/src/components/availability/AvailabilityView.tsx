@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'preact/hooks';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'preact/hooks';
 import { api } from '../../api/client';
 import { TimeGrid } from './TimeGrid';
 import { DateStrip } from './DateStrip';
@@ -14,9 +14,18 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 	const [dates, setDates] = useState<string[]>(() => availabilityDateRange(5, 10));
 	const [selectedDate, setSelectedDate] = useState(() => dates[0]);
 	const [statusMap, setStatusMap] = useState<AvailabilityStatusMap>({});
+	// True once the status request has finished (a failed request counts as known, with no status).
+	// The grid must not become interactive before this, or auto-filled slots would be missing
+	// from its selection and the next save would drop them.
+	const [statusLoaded, setStatusLoaded] = useState(false);
 	const [mySlots, setMySlots] = useState<any[]>([]);
 	const [allSlots, setAllSlots] = useState<any[]>([]);
+	// Date the loaded mySlots/allSlots belong to (guards against stale responses)
+	const [slotsDate, setSlotsDate] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
+	const [slotsError, setSlotsError] = useState<string | null>(null);
+	// Bumped to remount the grid with fresh server data (after a confirm)
+	const [gridEpoch, setGridEpoch] = useState(0);
 	const [availStartHourET, setAvailStartHourET] = useState<number | undefined>(undefined);
 	const [availEndHourET, setAvailEndHourET] = useState<number | undefined>(undefined);
 	const [userMap, setUserMap] = useState<Map<string, { display_name: string | null; avatar_url: string | null }>>(new Map());
@@ -25,6 +34,16 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 	// Fetch settings + users + status map on mount
 	useEffect(() => {
 		(async () => {
+			try {
+				await loadSettingsAndStatus();
+			} catch {
+				// Network failure: render the grid without settings/status rather than spin forever
+			} finally {
+				setStatusLoaded(true);
+			}
+		})();
+
+		async function loadSettingsAndStatus() {
 			const [settingsResult, usersResult] = await Promise.all([
 				api.getSettings(),
 				api.getUsers(),
@@ -59,19 +78,53 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 			} catch {
 				// Status table may not exist yet
 			}
-		})();
+		}
 	}, []);
 
-	// Fetch slots when selectedDate changes
-	const fetchSlots = useCallback(async () => {
-		setLoading(true);
-		const [myResult, allResult] = await Promise.all([
-			api.getAvailability({ user_id: userId, date: selectedDate }),
-			api.getAvailability({ date: selectedDate }),
-		]);
+	// Track the selected date for async callbacks that finish after the user moved on
+	const selectedDateRef = useRef(selectedDate);
+	selectedDateRef.current = selectedDate;
 
-		if (myResult.ok) setMySlots(myResult.data);
-		if (allResult.ok) setAllSlots(allResult.data);
+	// All availability writes (saves and confirms, from any grid instance) run one at a time,
+	// in order. Reads of the user's own slots wait for queued writes, so a remounted grid
+	// never starts from data that a pending save is about to replace.
+	const writeChainRef = useRef<Promise<unknown>>(Promise.resolve());
+	const enqueueWrite = <T,>(fn: () => Promise<T>): Promise<T> => {
+		const p = writeChainRef.current.then(fn);
+		writeChainRef.current = p.catch(() => {});
+		return p;
+	};
+
+	// Fetch slots when selectedDate changes
+	const fetchSeq = useRef(0);
+	const fetchSlots = useCallback(async () => {
+		const seq = ++fetchSeq.current;
+		const date = selectedDate;
+		setLoading(true);
+		await writeChainRef.current;
+		let myResult, allResult;
+		try {
+			[myResult, allResult] = await Promise.all([
+				api.getAvailability({ user_id: userId, date }),
+				api.getAvailability({ date }),
+			]);
+		} catch {
+			myResult = allResult = null;
+		}
+		// A newer request (another date) superseded this one
+		if (seq !== fetchSeq.current) return;
+
+		// Both are needed to build the selection (auto-filled slots come from allSlots).
+		// Without them an interactive grid would start empty and its next save would wipe the day.
+		if (!myResult?.ok || !allResult?.ok) {
+			setSlotsError((myResult && !myResult.ok && myResult.error?.message) || (allResult && !allResult.ok && allResult.error?.message) || 'Could not reach the server');
+			setLoading(false);
+			return;
+		}
+		setSlotsError(null);
+		setMySlots(myResult.data);
+		setAllSlots(allResult.data);
+		setSlotsDate(date);
 		setLoading(false);
 	}, [userId, selectedDate]);
 
@@ -94,33 +147,55 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 		return mySlots;
 	}, [dateStatus, mySlots, allSlots, userId]);
 
-	// Auto-save from TimeGrid: persist to API then refresh overlap data
-	const handleSave = async (slots: Array<{ start_time: string; end_time: string; slot_status?: string }>) => {
-		const result = await api.setAvailability({ date: selectedDate, slots });
-		if (result.ok) {
-			// Update status map: user acted, so this becomes 'manual'
-			const hasTentativeSlots = slots.some((s) => s.slot_status === 'tentative');
-			setStatusMap((prev) => ({ ...prev, [selectedDate]: { status: 'manual', hasTentativeSlots: hasTentativeSlots || undefined } }));
-			// Refresh allSlots (other users' overlap) without resetting TimeGrid
-			const allResult = await api.getAvailability({ date: selectedDate });
-			if (allResult.ok) setAllSlots(allResult.data);
+	// Refresh the overlap data for a date, if it is still the one on screen (non-critical)
+	const refreshAllSlots = async (date: string) => {
+		try {
+			const allResult = await api.getAvailability({ date });
+			if (allResult.ok && selectedDateRef.current === date) setAllSlots(allResult.data);
+		} catch {
+			// Overlap view stays as it was
 		}
 	};
 
-	// Confirm tentative availability
+	// Auto-save from TimeGrid: persist to API then refresh overlap data.
+	// Throws on any failure so TimeGrid can show it; never reports a failed save as saved.
+	const handleSave = (date: string) => (slots: Array<{ start_time: string; end_time: string; slot_status?: string }>) =>
+		enqueueWrite(async () => {
+			let result;
+			try {
+				result = await api.setAvailability({ date, slots });
+			} catch {
+				throw new Error('Network error, could not reach the server');
+			}
+			if (!result.ok) throw new Error(result.error?.message || 'Save failed');
+			// Update status map: user acted, so this becomes 'manual'
+			const hasTentativeSlots = slots.some((s) => s.slot_status === 'tentative');
+			setStatusMap((prev) => ({ ...prev, [date]: { status: 'manual', hasTentativeSlots: hasTentativeSlots || undefined } }));
+			// Refresh allSlots (other users' overlap) without resetting TimeGrid
+			await refreshAllSlots(date);
+		});
+
+	// Confirm tentative availability. Throws on failure so TimeGrid can show it.
 	const handleConfirm = async () => {
-		const result = await api.confirmAvailability(selectedDate);
-		if (result.ok) {
-			setStatusMap((prev) => ({ ...prev, [selectedDate]: { status: 'confirmed' } }));
-			// Refresh slots to get the persisted data
-			const [myResult, allResult] = await Promise.all([
-				api.getAvailability({ user_id: userId, date: selectedDate }),
-				api.getAvailability({ date: selectedDate }),
-			]);
-			if (myResult.ok) setMySlots(myResult.data);
-			if (allResult.ok) setAllSlots(allResult.data);
+		const date = selectedDate;
+		let result;
+		try {
+			result = await enqueueWrite(() => api.confirmAvailability(date));
+		} catch {
+			throw new Error('Network error, could not reach the server');
 		}
+		if (!result.ok) throw new Error(result.error?.message || 'Confirm failed');
+
+		setStatusMap((prev) => ({ ...prev, [date]: { status: 'confirmed' } }));
+		if (selectedDateRef.current !== date) return;
+		// The response holds the persisted slots for this date; remount the grid so its
+		// selection shows exactly what was confirmed.
+		setMySlots(result.data);
+		setGridEpoch((e) => e + 1);
+		await refreshAllSlots(date);
 	};
+
+	const gridReady = statusLoaded && !loading && slotsDate === selectedDate;
 
 	return (
 		<div>
@@ -139,16 +214,23 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 				Times in {getTimezoneAbbreviation()}
 			</p>
 
-			{loading ? (
+			{!loading && slotsError !== null ? (
+				<div role="alert" style={{ margin: '20px 0', fontSize: '13px', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+					<span>Could not load availability: {slotsError}</span>
+					<button class="btn btn-secondary" style={{ fontSize: '12px', padding: '4px 12px' }} onClick={() => fetchSlots()}>
+						Retry
+					</button>
+				</div>
+			) : !gridReady ? (
 				<div class="spinner" style={{ margin: '20px auto' }} />
 			) : (
 				<TimeGrid
-					key={selectedDate}
+					key={`${selectedDate}#${gridEpoch}`}
 					date={selectedDate}
 					mySlots={effectiveMySlots}
 					allSlots={allSlots}
 					userId={userId}
-					onSave={handleSave}
+					onSave={handleSave(selectedDate)}
 					availStartHourET={availStartHourET}
 					availEndHourET={availEndHourET}
 					totalGuildUsers={totalGuildUsers}
