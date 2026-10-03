@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { setCookie, deleteCookie } from 'hono/cookie';
-import { z } from 'zod';
 import type { Bindings } from '../env';
+import { discordUserSchema, guildNameSchema } from '../lib/schemas';
 import { generateToken, generateSessionId } from '../lib/crypto';
 import { upsertUser } from '../db/queries/users';
-import { createAuthToken, consumeAuthToken, createSession, deleteSession } from '../db/queries/auth';
+import { createAuthToken, consumeAuthToken, createSession, deleteSession, deleteStaleAuthRows } from '../db/queries/auth';
 import { requireAuth } from '../middleware/auth';
 import { requireBotAuth } from '../middleware/bot-auth';
 import { updateSettings } from '../db/queries/settings';
@@ -19,11 +19,8 @@ type AuthEnv = {
 	};
 };
 
-const createTokenSchema = z.object({
-	discord_id: z.string().min(1).max(30),
-	discord_username: z.string().min(1).max(50),
-	avatar_url: z.string().max(500).optional(),
-	guild_name: z.string().max(100).optional(),
+const createTokenSchema = discordUserSchema.extend({
+	guild_name: guildNameSchema,
 });
 
 const auth = new Hono<AuthEnv>();
@@ -38,7 +35,8 @@ auth.post('/token', requireBotAuth, async (c) => {
 	}
 
 	const { discord_id, discord_username, avatar_url, guild_name } = parsed.data;
-	const user = await upsertUser(c.env.DB, discord_id, discord_username, avatar_url);
+	await deleteStaleAuthRows(c.env.DB);
+	const user = await upsertUser(c.env.DB, discord_id, discord_username, avatar_url ?? undefined);
 	const token = generateToken();
 	await createAuthToken(c.env.DB, user.id, token);
 
@@ -94,6 +92,7 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 		}
 	}
 
+	await deleteStaleAuthRows(c.env.DB);
 	const user = await upsertUser(c.env.DB, adminDiscordId, 'Administrator', null);
 	const token = generateToken();
 	await createAuthToken(c.env.DB, user.id, token, true);

@@ -69,6 +69,10 @@ export async function getAllUsers(db: D1Database): Promise<Array<{ id: string; d
 	return result.results;
 }
 
+export async function getUserByDiscordId(db: D1Database, discordId: string): Promise<UserRow | null> {
+	return db.prepare('SELECT * FROM users WHERE discord_id = ?').bind(discordId).first<UserRow>();
+}
+
 export async function getUserById(db: D1Database, id: string): Promise<UserRow | null> {
 	return db.prepare('SELECT * FROM users WHERE id = ?').bind(id).first<UserRow>();
 }

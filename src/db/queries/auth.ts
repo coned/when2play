@@ -82,6 +82,14 @@ export async function deleteSession(db: D1Database, sessionId: string): Promise<
 	await db.prepare('DELETE FROM sessions WHERE session_id = ?').bind(sessionId).run();
 }
 
-export async function deleteExpiredTokens(db: D1Database): Promise<void> {
-	await db.prepare('DELETE FROM auth_tokens WHERE expires_at < ?').bind(now()).run();
+/**
+ * Drop auth tokens that can no longer be used (used or expired) and expired
+ * sessions. Runs whenever the bot mints a token, as one batch.
+ */
+export async function deleteStaleAuthRows(db: D1Database): Promise<void> {
+	const timestamp = now();
+	await db.batch([
+		db.prepare('DELETE FROM auth_tokens WHERE used = 1 OR expires_at < ?').bind(timestamp),
+		db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(timestamp),
+	]);
 }
