@@ -446,6 +446,13 @@ describe('Game routes', () => {
 			testEnv(db),
 		);
 
+		// Ranking only lists games with at least one approved vote.
+		await app.request(
+			guildUrl(`/api/games/${game.id}/vote`),
+			{ method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: guildCookie(cookie) }, body: JSON.stringify({ rank: 1 }) },
+			testEnv(db),
+		);
+
 		const rankRes = await app.request(guildUrl('/api/games/ranking'), { headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
 		const ranking = await rankRes.json();
 		expect(ranking.data[0].like_count).toBe(1);

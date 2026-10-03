@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
 import { requireBotAuth } from '../middleware/bot-auth';
@@ -22,6 +22,21 @@ type GamesEnv = {
 };
 
 const games = new Hono<GamesEnv>();
+
+/**
+ * Schedule background work via waitUntil. Hono's executionCtx getter throws
+ * when there is no ExecutionContext (e.g. app.request() in tests), so the
+ * work is skipped there instead of failing the request.
+ */
+function runInBackground(c: Context<GamesEnv>, task: () => Promise<unknown>): void {
+	let ctx: Context<GamesEnv>['executionCtx'];
+	try {
+		ctx = c.executionCtx;
+	} catch {
+		return;
+	}
+	ctx.waitUntil(task());
+}
 
 // --- Bot-auth endpoints (registered before the blanket requireAuth) ---
 
@@ -57,7 +72,7 @@ games.get('/', async (c) => {
 			const lifespanRaw = await getSetting(c.env.DB, 'game_pool_lifespan_days');
 			const lifespan = typeof lifespanRaw === 'number' ? lifespanRaw : 7;
 			if (lifespan > 0) {
-				c.executionCtx?.waitUntil?.(autoArchiveStaleGames(c.env.DB, lifespan));
+				runInBackground(c, () => autoArchiveStaleGames(c.env.DB, lifespan));
 			}
 		}
 	}
@@ -76,7 +91,7 @@ games.get('/', async (c) => {
 		reaction_users: reactionUsers.get(g.id) ?? [],
 	}));
 
-	c.executionCtx?.waitUntil?.(refreshStaleImages(c.env.DB, results));
+	runInBackground(c, () => refreshStaleImages(c.env.DB, results));
 
 	return c.json({ ok: true, data });
 });

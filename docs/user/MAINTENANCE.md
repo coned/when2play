@@ -83,6 +83,10 @@ scripts/migrate-all.sh
 
 This iterates all when2play D1 databases and applies pending migrations. All guild databases share the same `migrations/` directory since they use identical schemas.
 
+### Numbering new migrations
+
+`0000_init.sql` is a consolidation of the original migrations `0000` to `0007`. Production databases still record those original file names in `d1_migrations`, so wrangler treats `0000_init.sql` as already applied and never re-runs it there. Every schema change must therefore go into a new file numbered `0008` or higher (the next one after the highest existing file), written idempotently (`IF NOT EXISTS`) so it is also safe on fresh databases. Editing `0000_init.sql` only affects fresh databases and tests.
+
 ### Deploy order
 
 1. Run `scripts/migrate-all.sh` to bring all databases to the latest schema

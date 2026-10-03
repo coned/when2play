@@ -67,6 +67,25 @@ CREATE TABLE IF NOT EXISTS game_votes (
 CREATE INDEX IF NOT EXISTS idx_game_votes_game_id ON game_votes(game_id);
 CREATE INDEX IF NOT EXISTS idx_game_votes_user_id ON game_votes(user_id);
 
+CREATE TABLE IF NOT EXISTS game_activity (
+	id TEXT PRIMARY KEY,
+	game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	action TEXT NOT NULL,
+	detail TEXT,
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_game_activity_created_at ON game_activity(created_at);
+
+CREATE TABLE IF NOT EXISTS game_reactions (
+	game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	type TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	PRIMARY KEY (game_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_game_reactions_user_id ON game_reactions(user_id);
+
 CREATE TABLE IF NOT EXISTS availability (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
