@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'preact/hooks';
 import { api } from '../../api/client';
-import { getTimezoneAbbreviation, formatLocalTimeRangeStructured, availabilityToday, type TimeRangeParts } from '../../lib/time';
+import { getTimezoneAbbreviation, formatLocalRangeStructured, availabilityToday, type TimeRangeParts } from '../../lib/time';
+import { gridOriginMinutes, slotStartOffset, minutesToHhmm, offsetToInstant } from '@when2play/shared';
 
 interface ScheduleSummaryProps {
 	userId: string;
@@ -9,8 +10,13 @@ interface ScheduleSummaryProps {
 interface SlotGroup {
 	startTime: string;
 	endTime: string;
+	/** Minutes from the gaming day's grid origin (see @when2play/shared gaming-day helpers) */
+	startOffset: number;
+	endOffset: number;
 	userIds: string[];
 }
+
+const SLOT_MINUTES = 15;
 
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
 	if (a.size !== b.size) return false;
@@ -18,61 +24,46 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 	return true;
 }
 
-function addMinutes(hhmm: string, minutes: number): string {
-	const [h, m] = hhmm.split(':').map(Number);
-	const total = (h * 60 + m + minutes) % (24 * 60);
-	return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-
-function groupAdjacentSlots(slots: Array<[string, Set<string>]>): SlotGroup[] {
-	if (slots.length === 0) return [];
-
-	const sorted = [...slots].sort(([a], [b]) => a.localeCompare(b));
-	const groups: SlotGroup[] = [];
-	let currentStart = sorted[0][0];
-	let currentEnd = addMinutes(sorted[0][0], 15);
-	let currentUsers = sorted[0][1];
-
-	for (let i = 1; i < sorted.length; i++) {
-		const [time, users] = sorted[i];
-		if (time === currentEnd && setsEqual(users, currentUsers)) {
-			currentEnd = addMinutes(time, 15);
+/**
+ * Merge adjacent 15 minute slots that share the same value into ranges, in chronological
+ * order of the gaming day. Ordering uses the offset from the grid origin, so a range that
+ * crosses UTC midnight (23:45 -> 00:00) stays one range.
+ */
+function groupByOffset<V>(
+	slots: Array<{ time: string; value: V }>,
+	origin: number,
+	same: (a: V, b: V) => boolean,
+): Array<{ startTime: string; endTime: string; startOffset: number; endOffset: number; value: V }> {
+	const sorted = slots
+		.map((s) => ({ ...s, offset: slotStartOffset(s.time, origin) }))
+		.sort((a, b) => a.offset - b.offset);
+	const groups: Array<{ startTime: string; endTime: string; startOffset: number; endOffset: number; value: V }> = [];
+	for (const slot of sorted) {
+		const last = groups[groups.length - 1];
+		if (last && last.endOffset === slot.offset && same(last.value, slot.value)) {
+			last.endOffset = slot.offset + SLOT_MINUTES;
+			last.endTime = minutesToHhmm(origin + last.endOffset);
 		} else {
-			groups.push({ startTime: currentStart, endTime: currentEnd, userIds: Array.from(currentUsers) });
-			currentStart = time;
-			currentEnd = addMinutes(time, 15);
-			currentUsers = users;
+			groups.push({
+				startTime: slot.time,
+				endTime: minutesToHhmm(origin + slot.offset + SLOT_MINUTES),
+				startOffset: slot.offset,
+				endOffset: slot.offset + SLOT_MINUTES,
+				value: slot.value,
+			});
 		}
 	}
-	groups.push({ startTime: currentStart, endTime: currentEnd, userIds: Array.from(currentUsers) });
-
 	return groups;
 }
 
-function groupMySlots(slots: Array<{ start_time: string; slot_status?: string }>): Array<{ startTime: string; endTime: string; slotStatus: string }> {
-	if (slots.length === 0) return [];
+function groupAdjacentSlots(slots: Array<[string, Set<string>]>, origin: number): SlotGroup[] {
+	return groupByOffset(slots.map(([time, users]) => ({ time, value: users })), origin, setsEqual)
+		.map(({ value, ...g }) => ({ ...g, userIds: Array.from(value) }));
+}
 
-	const sorted = [...slots].sort((a, b) => a.start_time.localeCompare(b.start_time));
-	const groups: Array<{ startTime: string; endTime: string; slotStatus: string }> = [];
-	let currentStart = sorted[0].start_time;
-	let currentEnd = addMinutes(sorted[0].start_time, 15);
-	let currentStatus = sorted[0].slot_status ?? 'available';
-
-	for (let i = 1; i < sorted.length; i++) {
-		const time = sorted[i].start_time;
-		const status = sorted[i].slot_status ?? 'available';
-		if (time === currentEnd && status === currentStatus) {
-			currentEnd = addMinutes(time, 15);
-		} else {
-			groups.push({ startTime: currentStart, endTime: currentEnd, slotStatus: currentStatus });
-			currentStart = time;
-			currentEnd = addMinutes(time, 15);
-			currentStatus = status;
-		}
-	}
-	groups.push({ startTime: currentStart, endTime: currentEnd, slotStatus: currentStatus });
-
-	return groups;
+function groupMySlots(slots: Array<{ start_time: string; slot_status?: string }>, origin: number): Array<Omit<SlotGroup, 'userIds'> & { slotStatus: string }> {
+	return groupByOffset(slots.map((s) => ({ time: s.start_time, value: s.slot_status ?? 'available' })), origin, (a, b) => a === b)
+		.map(({ value, ...g }) => ({ ...g, slotStatus: value }));
 }
 
 function DayBadge({ offset }: { offset: number }) {
@@ -98,13 +89,6 @@ function TimeRange({ parts }: { parts: TimeRangeParts }) {
 			{' '}{parts.tz}
 		</>
 	);
-}
-
-/** Sort key: local time of day in minutes, for displaying times in local order */
-function localSortKey(utcHHMM: string, dateStr: string): number {
-	const d = new Date(`${dateStr}T${utcHHMM}:00Z`);
-	if (isNaN(d.getTime())) return 0;
-	return d.getHours() * 60 + d.getMinutes();
 }
 
 function AvatarRow({ users }: { users: Array<{ avatar_url: string | null; display_name: string | null; discord_username?: string }> }) {
@@ -167,6 +151,8 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 	const [guildName, setGuildName] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [today, setToday] = useState(availabilityToday(5));
+	// Grid origin of `today` in minutes after 00:00 UTC (0 until settings say otherwise)
+	const [gridOrigin, setGridOrigin] = useState(0);
 	const [otherGuilds, setOtherGuilds] = useState<Array<{ guild_id: string; guild_name: string | null }>>([]);
 	const [guildDropdownOpen, setGuildDropdownOpen] = useState(false);
 	const [switching, setSwitching] = useState(false);
@@ -193,6 +179,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 				if (typeof s.guild_name === 'string') {
 					setGuildName(s.guild_name);
 				}
+				setGridOrigin(gridOriginMinutes(effectiveToday, s.avail_start_hour_et as number | undefined, s.avail_end_hour_et as number | undefined));
 			}
 			setToday(effectiveToday);
 
@@ -268,8 +255,13 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 	const hasMultiUserOverlap = Array.from(slotUsers.values()).some((users) => users.size >= 2);
 	const minUsers = hasMultiUserOverlap ? 2 : 1;
 	const overlapSlots = Array.from(slotUsers.entries()).filter(([, users]) => users.size >= minUsers);
-	const overlapGroups = groupAdjacentSlots(overlapSlots);
-	overlapGroups.sort((a, b) => localSortKey(a.startTime, today) - localSortKey(b.startTime, today));
+	// Already in chronological order of the gaming day
+	const overlapGroups = groupAdjacentSlots(overlapSlots, gridOrigin);
+	const rangeParts = (g: { startOffset: number; endOffset: number }) => formatLocalRangeStructured(
+		offsetToInstant(today, gridOrigin, g.startOffset),
+		offsetToInstant(today, gridOrigin, g.endOffset),
+		today,
+	);
 
 	return (
 		<div>
@@ -461,7 +453,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 									}}
 								>
 									<span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-										<TimeRange parts={formatLocalTimeRangeStructured(group.startTime, group.endTime, today)} />
+										<TimeRange parts={rangeParts(group)} />
 									</span>
 
 									{/* Avatar stack */}
@@ -546,8 +538,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 				{(() => {
 					const mySlots = availability.filter((s) => s.user_id === userId);
 					const myInfo = userStatusMap.get(userId);
-					const myGroups = groupMySlots(mySlots);
-					myGroups.sort((a, b) => localSortKey(a.startTime, today) - localSortKey(b.startTime, today));
+					const myGroups = groupMySlots(mySlots, gridOrigin);
 
 					if (myGroups.length === 0) return <p class="text-muted">You haven't set availability for today.</p>;
 
@@ -570,7 +561,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 											fontSize: '12px',
 										}}
 									>
-										<TimeRange parts={formatLocalTimeRangeStructured(g.startTime, g.endTime, today)} />
+										<TimeRange parts={rangeParts(g)} />
 									</span>
 								))}
 							</div>

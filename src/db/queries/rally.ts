@@ -3,6 +3,7 @@ import { uuid, now } from '../helpers';
 import { getSetting } from './settings';
 import { pendingCutoff } from '../../lib/pending';
 import type { ActionType } from '@when2play/shared';
+import { gridOriginMinutes, slotStartOffset, slotEndOffset, minutesToHhmm } from '@when2play/shared';
 
 // ---------- Row types ----------
 
@@ -320,8 +321,7 @@ export async function computeJudgeTime(
 	const availability = await db
 		.prepare(
 			`SELECT user_id, start_time, end_time FROM availability
-			WHERE date = ?
-			ORDER BY start_time ASC`,
+			WHERE date = ?`,
 		)
 		.bind(dk)
 		.all<{ user_id: string; start_time: string; end_time: string }>();
@@ -330,23 +330,35 @@ export async function computeJudgeTime(
 		return { windows: [], day_key: dk };
 	}
 
+	// Times are UTC HH:MM on the gaming day: slots after UTC midnight belong to the next
+	// UTC date. Work in minutes from the grid origin so 23:45 -> 00:00 and 00:00 -> 00:15
+	// are adjacent and evening windows sort before after-midnight ones.
+	const origin = gridOriginMinutes(
+		dk,
+		(await getSetting(db, 'avail_start_hour_et')) as number | null,
+		(await getSetting(db, 'avail_end_hour_et')) as number | null,
+	);
+	const slots: Array<{ user_id: string; start: number; end: number }> = availability.results.map((slot: { user_id: string; start_time: string; end_time: string }) => ({
+		user_id: slot.user_id,
+		start: slotStartOffset(slot.start_time, origin),
+		end: slotEndOffset(slot.end_time, origin),
+	}));
+
 	// Collect all unique time boundaries
-	const boundaries = new Set<string>();
-	for (const slot of availability.results) {
-		boundaries.add(slot.start_time);
-		boundaries.add(slot.end_time);
+	const boundaries = new Set<number>();
+	for (const slot of slots) {
+		boundaries.add(slot.start);
+		boundaries.add(slot.end);
 	}
-	const sorted = Array.from(boundaries).sort();
+	const sorted = Array.from(boundaries).sort((a, b) => a - b);
 
 	// For each interval between consecutive boundaries, count overlapping users
-	const windows: Array<{ start: string; end: string; user_count: number; user_ids: string[] }> = [];
+	const windows: Array<{ start: number; end: number; user_count: number; user_ids: string[] }> = [];
 	for (let i = 0; i < sorted.length - 1; i++) {
 		const start = sorted[i];
 		const end = sorted[i + 1];
-		const overlapping = availability.results.filter(
-			(slot: { user_id: string; start_time: string; end_time: string }) => slot.start_time <= start && slot.end_time >= end,
-		);
-		const overlapUserIds: string[] = Array.from(new Set(overlapping.map((s: { user_id: string }) => s.user_id)));
+		const overlapping = slots.filter((slot) => slot.start <= start && slot.end >= end);
+		const overlapUserIds: string[] = Array.from(new Set(overlapping.map((s) => s.user_id))).sort();
 		if (overlapUserIds.length >= 2) {
 			windows.push({ start, end, user_count: overlapUserIds.length, user_ids: overlapUserIds });
 		}
@@ -368,8 +380,8 @@ export async function computeJudgeTime(
 		}
 	}
 
-	// Sort by user_count desc, then start asc
-	merged.sort((a, b) => b.user_count - a.user_count || a.start.localeCompare(b.start));
+	// Sort by user_count desc, then chronologically within the gaming day
+	merged.sort((a, b) => b.user_count - a.user_count || a.start - b.start);
 
 	// Enrich with display names
 	const allUserIds = Array.from(new Set(merged.flatMap((w) => w.user_ids)));
@@ -385,8 +397,12 @@ export async function computeJudgeTime(
 		}
 	}
 
+	// Metadata shape is read by the Discord bot and ActionFeed: start/end stay UTC HH:MM
 	const enriched = merged.map((w) => ({
-		...w,
+		start: minutesToHhmm(origin + w.start),
+		end: minutesToHhmm(origin + w.end),
+		user_count: w.user_count,
+		user_ids: w.user_ids,
 		user_names: w.user_ids.map((id) => userNames.get(id) ?? id),
 	}));
 

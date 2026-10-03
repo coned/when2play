@@ -563,7 +563,7 @@ Requires session cookie. Computes all overlapping availability windows for today
 }
 ```
 
-`start`/`end` are UTC `HH:MM` strings. Windows are sorted by `user_count` descending, then `start` ascending. Adjacent windows with the same user set are merged.
+`start`/`end` are UTC `HH:MM` strings. Times are ordered within the gaming day (from the grid origin `avail_start_hour_et`, so `00:00` UTC comes after `23:45` UTC). Windows are sorted by `user_count` descending, then chronologically within the gaming day. Adjacent windows with the same user set are merged, including across UTC midnight.
 
 ### `POST /api/rally/judge/avail`
 Requires session cookie. Nudges a user to set availability.

@@ -98,27 +98,24 @@ export interface TimeRangeParts {
 }
 
 /**
- * Format a UTC time range into structured parts for custom rendering.
- * Day offsets are relative to the start time's local date (not today),
- * so midnight-crossing ranges correctly show +1 on the end time.
+ * Format a time range given as real instants into structured parts for custom rendering.
+ * Day offsets are relative to the local calendar day `dayStr` (the gaming day), so a range
+ * that crosses local midnight shows +1 on its end, and one entirely after local midnight
+ * shows +1 on both ends. Build the instants with the gaming-day helpers from
+ * `@when2play/shared` (slots after UTC midnight belong to the next UTC date).
  */
-export function formatLocalTimeRangeStructured(startUTC: string, endUTC: string, dateStr: string): TimeRangeParts {
-	const startDate = new Date(`${dateStr}T${startUTC}:00Z`);
-	const endDate = new Date(`${dateStr}T${endUTC}:00Z`);
-	const fallback = { startTime: startUTC, startDayOffset: 0, endTime: endUTC, endDayOffset: 0, tz: '' };
-	if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return fallback;
-
-	const startLocalDate = startDate.toLocaleDateString('en-CA');
-	const endLocalDate = endDate.toLocaleDateString('en-CA');
-	const endDayDiff = Math.round(
-		(new Date(endLocalDate + 'T12:00:00Z').getTime() - new Date(startLocalDate + 'T12:00:00Z').getTime()) / 86400000,
-	);
+export function formatLocalRangeStructured(start: Date, end: Date, dayStr: string): TimeRangeParts {
+	if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+		return { startTime: '?', startDayOffset: 0, endTime: '?', endDayOffset: 0, tz: '' };
+	}
+	const dayNoon = new Date(dayStr + 'T12:00:00Z').getTime();
+	const dayOffset = (d: Date) => Math.round((new Date(d.toLocaleDateString('en-CA') + 'T12:00:00Z').getTime() - dayNoon) / 86400000);
 
 	return {
-		startTime: startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
-		startDayOffset: 0,
-		endTime: endDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
-		endDayOffset: endDayDiff,
+		startTime: start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
+		startDayOffset: dayOffset(start),
+		endTime: end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
+		endDayOffset: dayOffset(end),
 		tz: getTimezoneAbbreviation(),
 	};
 }
