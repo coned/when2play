@@ -1,0 +1,34 @@
+# Unit tests for the Discord bot (branch discordbot). Needs no secrets.
+name: CI
+
+on:
+  pull_request:
+    branches: [discordbot]
+  push:
+    branches: [discordbot]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Tests
+        run: npm test
