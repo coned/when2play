@@ -1,4 +1,4 @@
-import type { ApiResult, AvailabilityStatusMap } from '@when2play/shared';
+import type { ApiError, ApiResult, AvailabilityStatusMap } from '@when2play/shared';
 
 const BASE = '/api';
 
@@ -14,25 +14,83 @@ function cachedGet<T>(path: string): Promise<ApiResult<T>> {
 	}
 	const rec: { promise: Promise<any>; result: any; at: number } = { promise: null!, result: null, at: 0 };
 	rec.promise = request<T>(path).then(r => {
-		rec.result = r;
-		rec.at = Date.now();
+		if (r.ok) {
+			rec.result = r;
+			rec.at = Date.now();
+		} else if (_getCache.get(path) === rec) {
+			// Never cache a failure: the next call (a Retry) must ask again
+			_getCache.delete(path);
+		}
 		return r;
 	});
 	_getCache.set(path, rec);
 	return rec.promise;
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResult<T>> {
-	const res = await fetch(`${BASE}${path}`, {
-		credentials: 'include',
-		headers: {
-			'Content-Type': 'application/json',
-			...(options.headers || {}),
-		},
-		...options,
-	});
+/** Error code of a request that got no usable answer: no connection, or a response that is not API JSON. */
+export const NETWORK_ERROR = 'NETWORK_ERROR';
 
-	return res.json();
+function networkError(message: string): ApiError {
+	return { ok: false, error: { code: NETWORK_ERROR, message } };
+}
+
+function isApiResult(body: unknown): body is ApiResult<unknown> {
+	if (!body || typeof body !== 'object') return false;
+	const b = body as { ok?: unknown; error?: { code?: unknown; message?: unknown } };
+	if (b.ok === true) return true;
+	return b.ok === false && !!b.error && typeof b.error.code === 'string' && typeof b.error.message === 'string';
+}
+
+/**
+ * Called when an API request shows that the browser has no valid session any more:
+ * 401 UNAUTHORIZED (session expired or deleted) or 400 MISSING_GUILD (the guild
+ * cookie expired together with the session cookie). useAuth decides what to do
+ * with it (only a logged-in app reacts).
+ */
+let sessionLostHandler: (() => void) | null = null;
+
+export function setSessionLostHandler(handler: (() => void) | null) {
+	sessionLostHandler = handler;
+}
+
+function isSessionLost(status: number, code: string): boolean {
+	return (status === 401 && code === 'UNAUTHORIZED') || (status === 400 && code === 'MISSING_GUILD');
+}
+
+/**
+ * Sends an API request. Never throws: a network failure or a response that is not
+ * API JSON (for example an HTML error page from a proxy) comes back as
+ * `{ ok: false, error: { code: 'NETWORK_ERROR', message } }`.
+ */
+async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResult<T>> {
+	let res: Response;
+	try {
+		res = await fetch(`${BASE}${path}`, {
+			credentials: 'include',
+			headers: {
+				'Content-Type': 'application/json',
+				...(options.headers || {}),
+			},
+			...options,
+		});
+	} catch {
+		return networkError('Could not reach the server. Check your connection and try again.');
+	}
+
+	let body: unknown;
+	try {
+		body = await res.json();
+	} catch {
+		body = undefined;
+	}
+	if (!isApiResult(body)) {
+		return networkError(`The server sent an unexpected response (HTTP ${res.status}). Try again in a moment.`);
+	}
+	if (!body.ok && isSessionLost(res.status, body.error.code)) {
+		_getCache.clear();
+		sessionLostHandler?.();
+	}
+	return body as ApiResult<T>;
 }
 
 export const api = {

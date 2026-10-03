@@ -36,9 +36,8 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 		(async () => {
 			try {
 				await loadSettingsAndStatus();
-			} catch {
-				// Network failure: render the grid without settings/status rather than spin forever
 			} finally {
+				// Also after a failed request: render the grid without settings/status rather than spin forever
 				setStatusLoaded(true);
 			}
 		})();
@@ -69,14 +68,10 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 				setTotalGuildUsers(usersResult.data.length);
 			}
 
-			// Fetch status map for all 10 dates (non-critical, degrade gracefully)
-			try {
-				const statusResult = await api.getMyAvailabilityStatus(effectiveDates[0], effectiveDates[effectiveDates.length - 1]);
-				if (statusResult.ok) {
-					setStatusMap(statusResult.data as AvailabilityStatusMap);
-				}
-			} catch {
-				// Status table may not exist yet
+			// Fetch status map for all 10 dates (non-critical: without it the grid shows no status)
+			const statusResult = await api.getMyAvailabilityStatus(effectiveDates[0], effectiveDates[effectiveDates.length - 1]);
+			if (statusResult.ok) {
+				setStatusMap(statusResult.data as AvailabilityStatusMap);
 			}
 		}
 	}, []);
@@ -102,22 +97,17 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 		const date = selectedDate;
 		setLoading(true);
 		await writeChainRef.current;
-		let myResult, allResult;
-		try {
-			[myResult, allResult] = await Promise.all([
-				api.getAvailability({ user_id: userId, date }),
-				api.getAvailability({ date }),
-			]);
-		} catch {
-			myResult = allResult = null;
-		}
+		const [myResult, allResult] = await Promise.all([
+			api.getAvailability({ user_id: userId, date }),
+			api.getAvailability({ date }),
+		]);
 		// A newer request (another date) superseded this one
 		if (seq !== fetchSeq.current) return;
 
 		// Both are needed to build the selection (auto-filled slots come from allSlots).
 		// Without them an interactive grid would start empty and its next save would wipe the day.
-		if (!myResult?.ok || !allResult?.ok) {
-			setSlotsError((myResult && !myResult.ok && myResult.error?.message) || (allResult && !allResult.ok && allResult.error?.message) || 'Could not reach the server');
+		if (!myResult.ok || !allResult.ok) {
+			setSlotsError((!myResult.ok && myResult.error.message) || (!allResult.ok && allResult.error.message) || 'Could not reach the server');
 			setLoading(false);
 			return;
 		}
@@ -149,24 +139,17 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 
 	// Refresh the overlap data for a date, if it is still the one on screen (non-critical)
 	const refreshAllSlots = async (date: string) => {
-		try {
-			const allResult = await api.getAvailability({ date });
-			if (allResult.ok && selectedDateRef.current === date) setAllSlots(allResult.data);
-		} catch {
-			// Overlap view stays as it was
-		}
+		// On failure the overlap view stays as it was
+		const allResult = await api.getAvailability({ date });
+		if (allResult.ok && selectedDateRef.current === date) setAllSlots(allResult.data);
 	};
 
 	// Auto-save from TimeGrid: persist to API then refresh overlap data.
 	// Throws on any failure so TimeGrid can show it; never reports a failed save as saved.
 	const handleSave = (date: string) => (slots: Array<{ start_time: string; end_time: string; slot_status?: string }>) =>
 		enqueueWrite(async () => {
-			let result;
-			try {
-				result = await api.setAvailability({ date, slots });
-			} catch {
-				throw new Error('Network error, could not reach the server');
-			}
+			// A network failure comes back as a NETWORK_ERROR result with a readable message
+			const result = await api.setAvailability({ date, slots });
 			if (!result.ok) throw new Error(result.error?.message || 'Save failed');
 			// Update status map: user acted, so this becomes 'manual'
 			const hasTentativeSlots = slots.some((s) => s.slot_status === 'tentative');
@@ -178,12 +161,7 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 	// Confirm tentative availability. Throws on failure so TimeGrid can show it.
 	const handleConfirm = async () => {
 		const date = selectedDate;
-		let result;
-		try {
-			result = await enqueueWrite(() => api.confirmAvailability(date));
-		} catch {
-			throw new Error('Network error, could not reach the server');
-		}
+		const result = await enqueueWrite(() => api.confirmAvailability(date));
 		if (!result.ok) throw new Error(result.error?.message || 'Confirm failed');
 
 		setStatusMap((prev) => ({ ...prev, [date]: { status: 'confirmed' } }));
