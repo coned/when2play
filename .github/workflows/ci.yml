@@ -1,0 +1,44 @@
+# Type check, tests and frontend build for the app (branch master).
+# Needs no wrangler.jsonc and no secrets: tests run on Node with an in-memory
+# SQLite database, and the build only produces frontend/dist.
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # The root lockfile covers the shared and frontend workspaces;
+      # frontend/package-lock.json is not used.
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Tests
+        run: npx vitest run
+
+      - name: Build frontend
+        run: npm run build
