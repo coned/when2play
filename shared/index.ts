@@ -7,7 +7,7 @@ export type { GatherPing, CreateGatherRequest } from './types/gather';
 export type { ShameVote, CreateShameRequest, ShameLeaderboardEntry } from './types/shame';
 export type { Setting, SettingsMap, UpdateSettingsRequest } from './types/settings';
 export type { ActionType, Rally, RallyAction, RallyTreeNode, RallyTreeData, JudgeTimeResult, CreateRallyRequest, CreateActionRequest, ShareTreeRequest } from './types/rally';
-export { ANONYMOUS_ACTOR_ID } from './types/rally';
+export { ANONYMOUS_ACTOR_ID, TREE_SHARE_MAX_IMAGE_CHARS } from './types/rally';
 export {
 	MINUTES_PER_DAY,
 	hhmmToMinutes,

@@ -67,6 +67,12 @@ export interface CreateActionRequest {
   is_anonymous?: boolean;
 }
 
+/**
+ * Max length of ShareTreeRequest.image_data (base64 PNG, no data: prefix).
+ * Keeps the row well under D1's 2 MB row limit; larger uploads get 413.
+ */
+export const TREE_SHARE_MAX_IMAGE_CHARS = 1_400_000;
+
 export interface ShareTreeRequest {
   image_data: string;
 }

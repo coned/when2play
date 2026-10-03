@@ -22,7 +22,7 @@ import {
 	toPublicRally,
 	type RallyActionWithUser,
 } from '../db/queries/rally';
-import type { ActionType } from '@when2play/shared';
+import { TREE_SHARE_MAX_IMAGE_CHARS, type ActionType } from '@when2play/shared';
 import { getGameRanking } from '../db/queries/votes';
 import { getSetting } from '../db/queries/settings';
 import { checkRallyRateLimit, checkShareCooldown, rateLimited } from '../db/queries/rate-limit';
@@ -69,6 +69,7 @@ function badRequest(message: string) {
 }
 
 const MAX_MESSAGE_LENGTH = 500;
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 const MAX_TARGET_USERS = 20;
 
 type JsonObject = Record<string, unknown>;
@@ -352,12 +353,25 @@ rally.post('/tree/share', requireAuth, async (c) => {
 	if (typeof body.image_data !== 'string' || !body.image_data) {
 		return c.json(badRequest('image_data required'), 400);
 	}
+	const imageData = body.image_data;
+	if (imageData.length > TREE_SHARE_MAX_IMAGE_CHARS) {
+		return c.json({
+			ok: false,
+			error: {
+				code: 'PAYLOAD_TOO_LARGE',
+				message: `Tree image is too large (${imageData.length} characters, max ${TREE_SHARE_MAX_IMAGE_CHARS}). Filter the tree or share a smaller view.`,
+			},
+		}, 413);
+	}
+	if (imageData.length % 4 !== 0 || !BASE64_RE.test(imageData)) {
+		return c.json(badRequest('image_data must be a base64 encoded PNG without a data: prefix'), 400);
+	}
 
 	const limited = await checkShareCooldown(c.env.DB, user.id, 'tree_share');
 	if (limited) return c.json(rateLimited(limited), 429);
 
 	const dayKey = await getDayKey(c.env.DB);
-	const share = await createTreeShare(c.env.DB, user.id, dayKey, body.image_data as string);
+	const share = await createTreeShare(c.env.DB, user.id, dayKey, imageData);
 	const bot = await getBotStatus(c.env.DB);
 
 	return c.json({

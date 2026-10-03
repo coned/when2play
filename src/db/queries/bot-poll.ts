@@ -17,6 +17,14 @@ export const DELIVERY_TABLES = {
 
 export type DeliveryKind = keyof typeof DELIVERY_TABLES;
 
+/**
+ * Extra SET clause applied when a row is acknowledged or expired: the tree
+ * share PNG is only needed until the bot posts it (or it is dropped).
+ */
+const CLEAR_ON_FINAL: Partial<Record<DeliveryKind, string>> = {
+	tree_shares: ', image_data = NULL',
+};
+
 export const DELIVERY_KINDS = Object.keys(DELIVERY_TABLES) as DeliveryKind[];
 
 export type GuildAcks = Partial<Record<DeliveryKind, string[]>>;
@@ -30,7 +38,7 @@ export interface GuildPending {
 /** Max bound parameters per statement (D1 allows 100). */
 const ACK_CHUNK_SIZE = 50;
 
-/** Mark the given ids delivered. Idempotent; unknown ids are ignored. */
+/** Mark the given ids delivered (tree shares also drop their image). Idempotent; unknown ids are ignored. */
 export async function applyAcks(db: D1Database, acks: GuildAcks): Promise<void> {
 	const statements = [];
 	for (const kind of DELIVERY_KINDS) {
@@ -41,7 +49,7 @@ export async function applyAcks(db: D1Database, acks: GuildAcks): Promise<void> 
 			const chunk = unique.slice(i, i + ACK_CHUNK_SIZE);
 			const ph = chunk.map(() => '?').join(',');
 			statements.push(
-				db.prepare(`UPDATE ${DELIVERY_TABLES[kind]} SET delivered = ${DELIVERY_STATE.DELIVERED} WHERE id IN (${ph})`).bind(...chunk),
+				db.prepare(`UPDATE ${DELIVERY_TABLES[kind]} SET delivered = ${DELIVERY_STATE.DELIVERED}${CLEAR_ON_FINAL[kind] ?? ''} WHERE id IN (${ph})`).bind(...chunk),
 			);
 		}
 	}
@@ -78,13 +86,14 @@ export async function readPollState(db: D1Database): Promise<PollState> {
 
 /**
  * Mark undelivered rows older than the cutoff as expired (delivered = 2) so
- * they are never sent and can be told apart from delivered ones.
+ * they are never sent and can be told apart from delivered ones. Expired tree
+ * shares also drop their image.
  */
 export async function expireStalePending(db: D1Database, cutoff: string, kinds: DeliveryKind[] = DELIVERY_KINDS): Promise<void> {
 	if (kinds.length === 0) return;
 	await db.batch(
 		kinds.map((kind) =>
-			db.prepare(`UPDATE ${DELIVERY_TABLES[kind]} SET delivered = ${DELIVERY_STATE.EXPIRED} WHERE delivered = 0 AND created_at < ?`).bind(cutoff),
+			db.prepare(`UPDATE ${DELIVERY_TABLES[kind]} SET delivered = ${DELIVERY_STATE.EXPIRED}${CLEAR_ON_FINAL[kind] ?? ''} WHERE delivered = 0 AND created_at < ?`).bind(cutoff),
 		),
 	);
 }

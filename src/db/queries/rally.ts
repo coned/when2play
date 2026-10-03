@@ -508,5 +508,6 @@ export function formatPendingTreeShare(s: TreeShareRow) {
 }
 
 export async function markTreeShareDelivered(db: D1Database, shareId: string): Promise<void> {
-	await db.prepare(`UPDATE rally_tree_shares SET delivered = ${DELIVERY_STATE.DELIVERED} WHERE id = ?`).bind(shareId).run();
+	// The PNG is only kept until the bot has posted it
+	await db.prepare(`UPDATE rally_tree_shares SET delivered = ${DELIVERY_STATE.DELIVERED}, image_data = NULL WHERE id = ?`).bind(shareId).run();
 }

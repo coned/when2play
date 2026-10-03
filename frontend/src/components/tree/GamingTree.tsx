@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from 'preact/hooks';
 import { api } from '../../api/client';
+import { TREE_SHARE_MAX_IMAGE_CHARS } from '@when2play/shared';
 import type { TreeNode, TreeEdge, Participant } from './treeConstants';
 import { useTreeInteraction } from './useTreeInteraction';
 import { SequenceDiagram } from './SequenceDiagram';
@@ -31,6 +32,11 @@ async function fetchAsDataUrl(url: string): Promise<string | null> {
 		return null;
 	}
 }
+
+/** PNG export scales, tried in order until the image fits the share limit. */
+const EXPORT_SCALES = [3, 2, 1];
+
+class TreeImageTooLargeError extends Error {}
 
 async function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
 	// Clone SVG for export-safe processing
@@ -124,11 +130,27 @@ async function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
 	clone.setAttribute('style', updatedStyle);
 
 	// Read the viewBox to get the logical SVG size, fall back to element dimensions
-	const scale = 3;
 	const vb = svgElement.viewBox?.baseVal;
 	const logicalW = (vb && vb.width > 0 ? vb.width : svgElement.clientWidth) || 800;
 	const logicalH = (vb && vb.height > 0 ? vb.height : svgElement.clientHeight) || 600;
+	const background = cssVarMap['var(--bg-primary)'];
 
+	// Render at 3x for a sharp image; the server rejects images over
+	// TREE_SHARE_MAX_IMAGE_CHARS, so step down to 2x and 1x if needed.
+	let lastLength = 0;
+	for (const scale of EXPORT_SCALES) {
+		const base64 = await rasterizeSvg(clone, logicalW, logicalH, scale, background);
+		if (base64.length <= TREE_SHARE_MAX_IMAGE_CHARS) return base64;
+		lastLength = base64.length;
+	}
+	const mb = (n: number) => (n * 0.75 / 1024 / 1024).toFixed(1);
+	throw new TreeImageTooLargeError(
+		`The tree image is too large to share (${mb(lastLength)} MB at normal size, the limit is ${mb(TREE_SHARE_MAX_IMAGE_CHARS)} MB). Filter it to fewer users and try again.`,
+	);
+}
+
+/** Rasterize the prepared SVG clone at the given scale; resolves to base64 PNG data (no data: prefix). */
+function rasterizeSvg(clone: SVGSVGElement, logicalW: number, logicalH: number, scale: number, background: string): Promise<string> {
 	// Set explicit pixel dimensions on the clone so the browser rasterizes at high res
 	clone.setAttribute('width', String(logicalW * scale));
 	clone.setAttribute('height', String(logicalH * scale));
@@ -144,7 +166,7 @@ async function exportSvgToPng(svgElement: SVGSVGElement): Promise<string> {
 		img.onload = () => {
 			canvas.width = img.width;
 			canvas.height = img.height;
-			ctx.fillStyle = cssVarMap['var(--bg-primary)'];
+			ctx.fillStyle = background;
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
 			ctx.drawImage(img, 0, 0);
 			URL.revokeObjectURL(url);
@@ -203,8 +225,8 @@ export function GamingTree() {
 			} else {
 				setShareStatus(`Failed: ${result.error.message}`);
 			}
-		} catch {
-			setShareStatus('Failed to export tree image.');
+		} catch (err) {
+			setShareStatus(err instanceof TreeImageTooLargeError ? `Failed: ${err.message}` : 'Failed to export tree image.');
 		}
 
 		setSharing(false);

@@ -31,7 +31,7 @@ async function seedGuild(db: D1Database, prefix: string) {
 	const bob = await createAuthenticatedUser(db, `${prefix}2`, `${prefix}-bob`);
 	const call = await post(db, alice.cookie, '/api/rally/call', { message: 'game?' });
 	const ping = await post(db, alice.cookie, '/api/rally/action', { action_type: 'ping', target_user_ids: [bob.userId], message: 'hey' });
-	const tree = await post(db, alice.cookie, '/api/rally/tree/share', { image_data: 'data:image/png;base64,AAAA' });
+	const tree = await post(db, alice.cookie, '/api/rally/tree/share', { image_data: 'AAAA' });
 	const game = await post(db, alice.cookie, '/api/games', { name: `${prefix} Game` });
 	const gameShare = await post(db, alice.cookie, `/api/games/${game.id}/share`, {});
 	return { alice, bob, callId: call.action.id as string, pingId: ping.id as string, treeId: tree.id as string, gameShareId: gameShare.id as string };
@@ -137,7 +137,7 @@ describe('POST /api/bot/poll', () => {
 		expect(ping.actor_username).toBe('1000000000000000-alice');
 		expect(ping.actor_discord_id).toBe('10000000000000001');
 		expect(ping).toHaveProperty('metadata', null);
-		expect(data.tree_shares[0].image_data).toBe('data:image/png;base64,AAAA');
+		expect(data.tree_shares[0].image_data).toBe('AAAA');
 		const gs = data.game_shares[0];
 		for (const key of ['game_name', 'game_note', 'game_image_url', 'game_steam_app_id', 'like_count', 'dislike_count', 'requester_name']) {
 			expect(gs).toHaveProperty(key);
