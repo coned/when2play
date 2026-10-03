@@ -5,7 +5,7 @@ import { join, dirname } from 'node:path';
 import { createPoller, fmtDiscordTime, formatRallyAction, formatTreeShare, formatGameShare } from './lib/poller.mjs';
 import { readApiResult, errorReply } from './lib/api.mjs';
 import {
-    memberDisplayName, avatarUrlFor, buildSyncBody, findSyncedUser, truncate, MAX_GUILD_NAME_LENGTH,
+    memberDisplayName, avatarUrlFor, buildSyncBody, findSyncedUser, truncate, MAX_GUILD_NAME_LENGTH, buildTreeSummary,
 } from './lib/commands.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -385,20 +385,14 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
                     await interaction.editReply('No output channel configured. An admin should run `/setchannel` first.');
                     return;
                 }
-                const { rally, actions } = active;
-                let summary = `**Gaming Tree** -- ${rally.day_key}\n`;
-                if (actions.length === 0) {
-                    summary += 'No actions yet.';
-                } else {
-                    for (const a of actions) {
-                        const icon = { call: '📢', in: '✅', out: '❌', ping: '👋', judge_time: '🤖', judge_avail: '🤖', brb: '⏳', where: '❓' }[a.action_type] ?? '•';
-                        summary += `${icon} **${a.actor_username}**: ${a.action_type}${a.message ? ` -- ${a.message}` : ''}\n`;
-                    }
-                }
+                const content = buildTreeSummary({
+                    dayKey: active.rally.day_key,
+                    actions: active.actions,
+                    actorName: caller.display_name ?? caller.discord_username,
+                });
                 const channel = await client.channels.fetch(channelId);
                 if (channel?.isTextBased()) {
-                    const actor = caller.display_name ?? caller.discord_username;
-                    await channel.send({ content: `${summary}_On behalf of ${actor}_`, allowedMentions: { parse: [], users: [] } });
+                    await channel.send({ content, allowedMentions: { parse: [], users: [] } });
                 }
                 await interaction.editReply('Gaming tree posted to the channel!');
             }
