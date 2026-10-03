@@ -20,9 +20,7 @@ This is the standalone Discord bot for [when2play](https://github.com/your-org/w
   - `/post gametree` — post today's gaming tree diagram to the channel
 - **Admin commands:**
   - `/setchannel` — set the current channel as the bot output channel (requires ADMINISTRATOR)
-- **Gather polling** — checks for pending gather bell pings every 15 seconds and posts them to a Discord channel
-- **Rally polling** — checks for pending rally actions every 15 seconds and posts formatted messages
-- **Tree share polling** — checks for pending gaming tree images and posts them as attachments
+- **Delivery polling** -- one `POST /api/bot/poll` request every 15 seconds fetches pending rally actions, gaming tree images and game shares for all guilds and posts them to each guild's output channel (see `docs/DATAFLOW.md`)
 
 The bot connects to the when2play Cloudflare Worker backend via HTTP.
 
@@ -91,6 +89,7 @@ GAMING_CHANNEL_ID=123456789012345678
 | `WHEN2PLAY_API_URL` | Yes | Base URL of the deployed when2play Worker |
 | `BOT_API_KEY` | Yes (production) | Shared secret -- must match `BOT_API_KEY` set via `npx wrangler secret put BOT_API_KEY` in the main repo |
 | `GAMING_CHANNEL_ID` | No | Fallback channel ID. Optional if using `/setchannel` instead |
+| `POLL_INTERVAL_MS` | No | Base delivery poll interval in milliseconds. Default `15000`; values below `5000` are ignored |
 
 > `BOT_API_KEY` can be omitted for local development against a Worker that also has no `BOT_API_KEY` set.
 
@@ -108,8 +107,18 @@ Expected output on success:
 Logged in as when2play#1234
 Slash commands registered (N guild(s): ...).
 Loaded settings for N guild(s) from D1
-Polling N guild(s) every 15s (with exponential backoff on errors)
+Polling N guild(s) every 15s via /api/bot/poll (with exponential backoff on errors)
 ```
+
+To check that the code loads without connecting to Discord or the Worker (catches import
+and reference errors before a deploy), run a dry run with dummy values:
+
+```bash
+W2P_DRY_RUN=1 DISCORD_TOKEN=dummy WHEN2PLAY_API_URL=http://127.0.0.1:9 BOT_API_KEY=dummy node bot.mjs
+# prints "dry run ok" and exits 0
+```
+
+Unit tests for the poller and the message formatters: `npm test`.
 
 ---
 
@@ -117,7 +126,33 @@ Polling N guild(s) every 15s (with exponential backoff on errors)
 
 The bot must stay running 24/7. Options:
 
-### systemd (Linux VPS / home server)
+### systemd user service (recommended)
+
+`deploy/when2play-bot.service` is a user-level unit that needs no root. It expects the bot in
+`~/deploy/when2play_discordbot` (edit `WorkingDirectory` otherwise) and restarts the bot on
+any exit with a growing delay (10 s up to 120 s), because Discord resets a bot token after
+about 1000 logins in 24 hours. `RestartSteps`/`RestartMaxDelaySec` need systemd 254 or newer.
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/when2play-bot.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now when2play-bot
+loginctl enable-linger "$USER"   # keep user services running without an open login session
+```
+
+Check it and read the logs:
+
+```bash
+systemctl --user status when2play-bot
+journalctl --user -u when2play-bot -n 50 --no-pager
+```
+
+Errors are also appended to `errors.log` in the bot directory. From the main repo, the root
+`Makefile` wraps this for the production host: `make deploy_discordbot` (sync + restart),
+`make install_service_discordbot`, `make restart_discordbot`, `make logs_discordbot`.
+
+### systemd system service
 
 Create `/etc/systemd/system/when2play-bot.service`:
 
@@ -211,10 +246,7 @@ Discord Gateway (WebSocket)
 
 **Multi-guild support:** The bot sends `X-Guild-Id` with every API request. The Worker's guild middleware routes each request to the correct guild's D1 database. See `docs/MULTI_GUILD.md` for the full design.
 
-**Polling loops** (per-guild, all run in parallel every 15s with per-guild exponential backoff):
-1. Gather pings: `GET /api/gather/pending` -> format -> send -> `PATCH /api/gather/:id/delivered`
-2. Rally actions: `GET /api/rally/pending` -> format by action_type -> send -> `PATCH /api/rally/:id/delivered`
-3. Tree shares: `GET /api/rally/tree/share/pending` -> decode base64 -> send as attachment -> `PATCH /api/rally/tree/share/:id/delivered`
+**Delivery polling** (`lib/poller.mjs`): every 15s one `POST /api/bot/poll` carries all guild ids plus the ids delivered since the last poll (acks), and returns pending rally actions, tree shares and game shares per guild. Each item is formatted and posted to the guild's channel; its id is acked on the next poll. Failed deliveries are retried up to 3 times, failed requests back off exponentially up to 2 minutes. See `docs/DATAFLOW.md` for details.
 
 **Rally commands** authenticate users via the auth token flow (`POST /api/auth/token` -> `GET /api/auth/callback/:token`) to get a session, then call rally API endpoints on behalf of the user.
 

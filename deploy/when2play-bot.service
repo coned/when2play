@@ -1,0 +1,23 @@
+# User-level systemd unit for the when2play Discord bot.
+# Install: copy to ~/.config/systemd/user/, then
+#   systemctl --user daemon-reload && systemctl --user enable --now when2play-bot
+#   loginctl enable-linger "$USER"   # keep it running without an open login session
+#
+# Restart backoff: Discord resets a bot token after about 1000 logins in 24 hours, so a
+# crash loop must not restart every 10 s forever. RestartSteps/RestartMaxDelaySec
+# (systemd >= 254) grow the delay from 10 s to 120 s over 5 consecutive restarts.
+
+[Unit]
+Description=when2play Discord Bot
+
+[Service]
+Type=simple
+WorkingDirectory=%h/deploy/when2play_discordbot
+ExecStart=/usr/bin/node --env-file=.env bot.mjs
+Restart=always
+RestartSec=10
+RestartSteps=5
+RestartMaxDelaySec=120
+
+[Install]
+WantedBy=default.target
