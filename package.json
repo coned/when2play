@@ -7,7 +7,7 @@
 		"frontend"
 	],
 	"scripts": {
-		"deploy": "npm run build && wrangler deploy",
+		"deploy": "make deploy",
 		"dev": "bash scripts/dev.sh",
 		"build": "cd frontend && npx vite build",
 		"start": "wrangler dev",

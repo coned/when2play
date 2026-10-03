@@ -24,8 +24,11 @@ app.use('*', errorHandler);
 app.use('*', cors);
 app.use('*', securityHeaders);
 
+// version is the commit the Worker was deployed from (set by `make deploy` via --var GIT_SHA).
+// c.env can be missing when the app is called without bindings (tests).
 app.get('/api/health', (c) => {
-	return c.json({ ok: true, data: { status: 'healthy', timestamp: new Date().toISOString() } });
+	const version = c.env?.GIT_SHA || 'dev';
+	return c.json({ ok: true, data: { status: 'healthy', version, timestamp: new Date().toISOString() } });
 });
 
 // Cross-guild bot endpoints: mounted before /api so they skip guildDb/foreignKeys.
