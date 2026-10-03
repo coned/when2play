@@ -187,7 +187,7 @@ describe('POST /api/bot/poll', () => {
 		expect(await deliveredFlag(db1, 'rally_actions', g1.callId)).toBe(1);
 	});
 
-	it('never returns rows older than 30 minutes and marks them delivered', async () => {
+	it('never returns rows older than 30 minutes and marks them expired (delivered = 2)', async () => {
 		const g1 = await seedGuild(db1, '1000000000000000');
 		const old = staleIso();
 		await db1.prepare('UPDATE rally_actions SET created_at = ? WHERE id = ?').bind(old, g1.callId).run();
@@ -200,10 +200,10 @@ describe('POST /api/bot/poll', () => {
 		expect(data.tree_shares).toEqual([]);
 		expect(data.game_shares).toEqual([]);
 
-		expect(await deliveredFlag(db1, 'rally_actions', g1.callId)).toBe(1);
+		expect(await deliveredFlag(db1, 'rally_actions', g1.callId)).toBe(2);
 		expect(await deliveredFlag(db1, 'rally_actions', g1.pingId)).toBe(0);
-		expect(await deliveredFlag(db1, 'rally_tree_shares', g1.treeId)).toBe(1);
-		expect(await deliveredFlag(db1, 'game_shares', g1.gameShareId)).toBe(1);
+		expect(await deliveredFlag(db1, 'rally_tree_shares', g1.treeId)).toBe(2);
+		expect(await deliveredFlag(db1, 'game_shares', g1.gameShareId)).toBe(2);
 	});
 
 	it('omits a guild whose pending rows are all stale', async () => {

@@ -197,7 +197,9 @@ export function GamingTree() {
 			const base64 = await exportSvgToPng(svg);
 			const result = await api.shareTree({ image_data: base64 });
 			if (result.ok) {
-				setShareStatus('Tree shared to Discord!');
+				setShareStatus(result.data?.bot_online === false
+					? 'Tree queued, but the Discord bot looks offline: it is dropped if not posted within 30 minutes.'
+					: 'Tree shared to Discord!');
 			} else {
 				setShareStatus(`Failed: ${result.error.message}`);
 			}
@@ -257,7 +259,7 @@ export function GamingTree() {
 					{sharing ? 'Sharing...' : 'Share to Discord'}
 				</button>
 				{shareStatus && (
-					<span style={{ fontSize: '12px', color: shareStatus.startsWith('Failed') ? 'var(--danger)' : 'var(--success)' }}>
+					<span style={{ fontSize: '12px', color: shareStatus.startsWith('Failed') ? 'var(--danger)' : shareStatus.includes('offline') ? 'var(--warning)' : 'var(--success)' }}>
 						{shareStatus}
 					</span>
 				)}

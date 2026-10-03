@@ -13,6 +13,8 @@ import type { UserRow } from '../db/queries/users';
 import { refreshStaleImages } from '../lib/image-refresh';
 import { getSetting } from '../db/queries/settings';
 import { checkShareCooldown, rateLimited } from '../db/queries/rate-limit';
+import { getBotStatus } from '../lib/bot-status';
+import { isDelivered } from '../lib/pending';
 
 type GamesEnv = {
 	Bindings: Bindings;
@@ -288,7 +290,8 @@ games.post('/:id/share', async (c) => {
 	const share = await createGameShare(c.env.DB, id, user.id);
 	await logActivity(c.env.DB, id, user.id, 'share');
 	await touchGameActivity(c.env.DB, id);
-	return c.json({ ok: true, data: { ...share, delivered: Boolean(share.delivered) } }, 201);
+	const bot = await getBotStatus(c.env.DB);
+	return c.json({ ok: true, data: { ...share, delivered: isDelivered(share.delivered), bot_online: bot.online } }, 201);
 });
 
 export default games;

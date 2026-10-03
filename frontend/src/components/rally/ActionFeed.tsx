@@ -9,7 +9,14 @@ interface ActionItem {
 	message: string | null;
 	metadata: Record<string, unknown> | null;
 	created_at: string;
+	delivery_status?: 'pending' | 'delivered' | 'expired';
 }
+
+const DELIVERY_LABELS: Record<string, { label: string; color: string; title: string }> = {
+	pending: { label: 'pending', color: 'var(--warning)', title: 'Waiting for the Discord bot to post it' },
+	delivered: { label: 'delivered', color: 'var(--success)', title: 'Posted to Discord' },
+	expired: { label: 'expired', color: 'var(--danger)', title: 'Not posted: the bot did not pick it up within 30 minutes' },
+};
 
 interface ActionFeedProps {
 	actions: ActionItem[];
@@ -123,8 +130,16 @@ export function ActionFeed({ actions, users }: ActionFeedProps) {
 								{formatAction(action, users)}
 							</span>
 						</div>
-						<span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0, marginTop: '2px' }}>
+						<span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0, marginTop: '2px', textAlign: 'right' }}>
 							{formatTime(action.created_at)}
+							{action.delivery_status && DELIVERY_LABELS[action.delivery_status] && (
+								<span
+									title={DELIVERY_LABELS[action.delivery_status].title}
+									style={{ display: 'block', fontSize: '10px', color: DELIVERY_LABELS[action.delivery_status].color }}
+								>
+									{DELIVERY_LABELS[action.delivery_status].label}
+								</span>
+							)}
 						</span>
 					</div>
 				);

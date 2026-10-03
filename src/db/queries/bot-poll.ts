@@ -1,4 +1,5 @@
-import { pendingCutoff } from '../../lib/pending';
+import { pendingCutoff, DELIVERY_STATE } from '../../lib/pending';
+import { BOT_HEARTBEAT_KEY, heartbeatDue, writeHeartbeat } from '../../lib/bot-status';
 import {
 	getPendingRallyActions,
 	getPendingTreeShares,
@@ -40,50 +41,66 @@ export async function applyAcks(db: D1Database, acks: GuildAcks): Promise<void> 
 			const chunk = unique.slice(i, i + ACK_CHUNK_SIZE);
 			const ph = chunk.map(() => '?').join(',');
 			statements.push(
-				db.prepare(`UPDATE ${DELIVERY_TABLES[kind]} SET delivered = 1 WHERE id IN (${ph})`).bind(...chunk),
+				db.prepare(`UPDATE ${DELIVERY_TABLES[kind]} SET delivered = ${DELIVERY_STATE.DELIVERED} WHERE id IN (${ph})`).bind(...chunk),
 			);
 		}
 	}
 	if (statements.length > 0) await db.batch(statements);
 }
 
-/** Count undelivered rows of each kind in a single statement. */
-export async function countUndelivered(db: D1Database): Promise<Record<DeliveryKind, number>> {
+export interface PollState {
+	counts: Record<DeliveryKind, number>;
+	/** Stored bot heartbeat (settings.bot_last_poll_at), or null. */
+	lastPollAt: string | null;
+}
+
+/** Count undelivered rows of each kind and read the bot heartbeat, in a single statement. */
+export async function readPollState(db: D1Database): Promise<PollState> {
 	const row = await db
 		.prepare(
 			`SELECT
 				(SELECT COUNT(*) FROM rally_actions WHERE delivered = 0) AS rally_actions,
 				(SELECT COUNT(*) FROM rally_tree_shares WHERE delivered = 0) AS tree_shares,
-				(SELECT COUNT(*) FROM game_shares WHERE delivered = 0) AS game_shares`,
+				(SELECT COUNT(*) FROM game_shares WHERE delivered = 0) AS game_shares,
+				(SELECT value FROM settings WHERE key = ?) AS last_poll_at`,
 		)
-		.first<Record<DeliveryKind, number>>();
+		.bind(BOT_HEARTBEAT_KEY)
+		.first<Record<DeliveryKind, number> & { last_poll_at: string | null }>();
 	return {
-		rally_actions: Number(row?.rally_actions ?? 0),
-		tree_shares: Number(row?.tree_shares ?? 0),
-		game_shares: Number(row?.game_shares ?? 0),
+		counts: {
+			rally_actions: Number(row?.rally_actions ?? 0),
+			tree_shares: Number(row?.tree_shares ?? 0),
+			game_shares: Number(row?.game_shares ?? 0),
+		},
+		lastPollAt: row?.last_poll_at ?? null,
 	};
 }
 
-/** Mark undelivered rows older than the cutoff as delivered so they are never sent. */
+/**
+ * Mark undelivered rows older than the cutoff as expired (delivered = 2) so
+ * they are never sent and can be told apart from delivered ones.
+ */
 export async function expireStalePending(db: D1Database, cutoff: string, kinds: DeliveryKind[] = DELIVERY_KINDS): Promise<void> {
 	if (kinds.length === 0) return;
 	await db.batch(
 		kinds.map((kind) =>
-			db.prepare(`UPDATE ${DELIVERY_TABLES[kind]} SET delivered = 1 WHERE delivered = 0 AND created_at < ?`).bind(cutoff),
+			db.prepare(`UPDATE ${DELIVERY_TABLES[kind]} SET delivered = ${DELIVERY_STATE.EXPIRED} WHERE delivered = 0 AND created_at < ?`).bind(cutoff),
 		),
 	);
 }
 
 /**
- * One poll cycle for one guild: apply acks, then return what is left to
- * deliver, or null when the guild is idle. The idle path costs one query
+ * One poll cycle for one guild: apply acks, record the bot heartbeat, then
+ * return what is left to deliver, or null when the guild is idle. The idle
+ * path costs one query plus, at most once per minute, the heartbeat write
  * (plus the ack statements, if any). Every step is idempotent, so the caller
  * may safely retry the whole function.
  */
 export async function pollGuild(db: D1Database, acks: GuildAcks | undefined, nowMs: number = Date.now()): Promise<GuildPending | null> {
 	if (acks) await applyAcks(db, acks);
 
-	const counts = await countUndelivered(db);
+	const { counts, lastPollAt } = await readPollState(db);
+	if (heartbeatDue(lastPollAt, nowMs)) await writeHeartbeat(db, nowMs);
 	const busy = DELIVERY_KINDS.filter((kind) => counts[kind] > 0);
 	if (busy.length === 0) return null;
 

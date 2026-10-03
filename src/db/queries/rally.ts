@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { uuid, now } from '../helpers';
 import { getSetting } from './settings';
-import { pendingCutoff } from '../../lib/pending';
+import { pendingCutoff, isDelivered, DELIVERY_STATE } from '../../lib/pending';
 import type { ActionType } from '@when2play/shared';
 import { gridOriginMinutes, slotStartOffset, slotEndOffset, minutesToHhmm, ANONYMOUS_ACTOR_ID } from '@when2play/shared';
 
@@ -86,12 +86,18 @@ export function scrubAnonymousActor<T extends RallyActionRow>(row: T): T {
 	return scrubbed as T;
 }
 
+export type FormattedRallyAction<T extends RallyActionRow> = Omit<T, 'delivered' | 'target_user_ids' | 'metadata'> & {
+	delivered: boolean;
+	target_user_ids: string[] | null;
+	metadata: Record<string, unknown> | null;
+};
+
 /** Client shape of a rally action: JSON columns parsed, anonymous actor scrubbed. */
-export function formatRallyAction<T extends RallyActionRow>(a: T) {
+export function formatRallyAction<T extends RallyActionRow>(a: T): FormattedRallyAction<T> {
 	const scrubbed = scrubAnonymousActor(a);
 	return {
 		...scrubbed,
-		delivered: Boolean(scrubbed.delivered),
+		delivered: isDelivered(scrubbed.delivered),
 		target_user_ids: scrubbed.target_user_ids ? (JSON.parse(scrubbed.target_user_ids) as string[]) : null,
 		metadata: parseMetadata(scrubbed.metadata),
 	};
@@ -252,7 +258,7 @@ export function formatPendingRallyAction(a: RallyActionWithDiscord) {
 }
 
 export async function markActionDelivered(db: D1Database, actionId: string): Promise<void> {
-	await db.prepare('UPDATE rally_actions SET delivered = 1 WHERE id = ?').bind(actionId).run();
+	await db.prepare(`UPDATE rally_actions SET delivered = ${DELIVERY_STATE.DELIVERED} WHERE id = ?`).bind(actionId).run();
 }
 
 // ---------- Tree Data ----------
@@ -498,9 +504,9 @@ export async function getPendingTreeShares(db: D1Database, cutoff: string = pend
 
 /** Response shape of a pending tree share, shared by the legacy and aggregated bot endpoints. */
 export function formatPendingTreeShare(s: TreeShareRow) {
-	return { ...s, delivered: Boolean(s.delivered) };
+	return { ...s, delivered: isDelivered(s.delivered) };
 }
 
 export async function markTreeShareDelivered(db: D1Database, shareId: string): Promise<void> {
-	await db.prepare('UPDATE rally_tree_shares SET delivered = 1 WHERE id = ?').bind(shareId).run();
+	await db.prepare(`UPDATE rally_tree_shares SET delivered = ${DELIVERY_STATE.DELIVERED} WHERE id = ?`).bind(shareId).run();
 }

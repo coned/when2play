@@ -20,11 +20,14 @@ import {
 	formatPendingTreeShare,
 	formatRallyAction,
 	toPublicRally,
+	type RallyActionWithUser,
 } from '../db/queries/rally';
 import type { ActionType } from '@when2play/shared';
 import { getGameRanking } from '../db/queries/votes';
 import { getSetting } from '../db/queries/settings';
 import { checkRallyRateLimit, checkShareCooldown, rateLimited } from '../db/queries/rate-limit';
+import { getBotStatus } from '../lib/bot-status';
+import { isDelivered, deliveryStatus } from '../lib/pending';
 
 type RallyEnv = {
 	Bindings: Bindings;
@@ -226,7 +229,7 @@ rally.post('/judge/time', requireAuth, async (c) => {
 		ok: true,
 		data: {
 			...action,
-			delivered: Boolean(action.delivered),
+			delivered: isDelivered(action.delivered),
 			target_user_ids: null,
 			metadata: result,
 		},
@@ -266,7 +269,7 @@ rally.post('/judge/avail', requireAuth, async (c) => {
 		ok: true,
 		data: {
 			...action,
-			delivered: Boolean(action.delivered),
+			delivered: isDelivered(action.delivered),
 			target_user_ids: targets.ids,
 			metadata: null,
 		},
@@ -293,7 +296,7 @@ rally.post('/share-ranking', requireAuth, async (c) => {
 		ok: true,
 		data: {
 			...action,
-			delivered: Boolean(action.delivered),
+			delivered: isDelivered(action.delivered),
 			target_user_ids: null,
 			metadata: { ranking },
 		},
@@ -306,9 +309,14 @@ rally.get('/active', requireAuth, async (c) => {
 	const activeRally = await getActiveRally(c.env.DB, dayKey);
 	const actions = await getRallyActions(c.env.DB, dayKey);
 
-	const formattedActions = actions.map((a) => formatRallyAction(a));
+	const bot = await getBotStatus(c.env.DB);
+	const nowMs = Date.now();
+	const formattedActions = actions.map((a: RallyActionWithUser) => ({
+		...formatRallyAction(a),
+		delivery_status: deliveryStatus(a.delivered, a.created_at, nowMs),
+	}));
 
-	return c.json({ ok: true, data: { rally: toPublicRally(activeRally), actions: formattedActions } });
+	return c.json({ ok: true, data: { rally: toPublicRally(activeRally), actions: formattedActions, bot } });
 });
 
 // GET /api/rally/tree — get tree DAG data for visualization
@@ -350,10 +358,11 @@ rally.post('/tree/share', requireAuth, async (c) => {
 
 	const dayKey = await getDayKey(c.env.DB);
 	const share = await createTreeShare(c.env.DB, user.id, dayKey, body.image_data as string);
+	const bot = await getBotStatus(c.env.DB);
 
 	return c.json({
 		ok: true,
-		data: { ...share, delivered: Boolean(share.delivered) },
+		data: { ...share, delivered: isDelivered(share.delivered), bot_online: bot.online },
 	}, 201);
 });
 

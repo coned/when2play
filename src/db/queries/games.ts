@@ -1,6 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { uuid, now } from '../helpers';
-import { pendingCutoff } from '../../lib/pending';
+import { pendingCutoff, isDelivered, DELIVERY_STATE } from '../../lib/pending';
 
 export interface GameRow {
 	id: string;
@@ -167,9 +167,9 @@ export async function getPendingGameShares(db: D1Database, cutoff: string = pend
 
 /** Response shape of a pending game share, shared by the legacy and aggregated bot endpoints. */
 export function formatPendingGameShare(s: PendingGameShareRow) {
-	return { ...s, delivered: Boolean(s.delivered) };
+	return { ...s, delivered: isDelivered(s.delivered) };
 }
 
 export async function markGameShareDelivered(db: D1Database, shareId: string): Promise<void> {
-	await db.prepare('UPDATE game_shares SET delivered = 1 WHERE id = ?').bind(shareId).run();
+	await db.prepare(`UPDATE game_shares SET delivered = ${DELIVERY_STATE.DELIVERED} WHERE id = ?`).bind(shareId).run();
 }

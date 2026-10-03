@@ -20,7 +20,10 @@ interface RallyData {
 		message: string | null;
 		metadata: Record<string, unknown> | null;
 		created_at: string;
+		delivery_status?: 'pending' | 'delivered' | 'expired';
 	}>;
+	/** Discord bot liveness for this server, from its last poll. */
+	bot?: { online: boolean; last_seen_at: string | null };
 }
 
 interface RallySettings {
@@ -275,6 +278,31 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 				<p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
 					No active rally today. Hit Call to start one!
 				</p>
+			)}
+
+			{data?.bot && !data.bot.online && (
+				<div
+					role="alert"
+					style={{
+						marginBottom: '16px',
+						padding: '10px 14px',
+						border: '1px solid var(--warning)',
+						borderLeft: '4px solid var(--warning)',
+						borderRadius: '6px',
+						background: 'var(--bg-tertiary)',
+						fontSize: '13px',
+						color: 'var(--text-primary)',
+					}}
+				>
+					<strong style={{ color: 'var(--warning)' }}>Discord bot is not picking up messages for this server.</strong>{' '}
+					Either the bot is offline or no output channel is set (an admin can run <code>/setchannel</code> in Discord).
+					Actions are queued, but anything not delivered within 30 minutes is dropped.
+					{data.bot.last_seen_at && (
+						<span style={{ color: 'var(--text-muted)' }}>
+							{' '}Last seen {new Date(data.bot.last_seen_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}.
+						</span>
+					)}
+				</div>
 			)}
 
 			{/* Action buttons */}

@@ -134,9 +134,11 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 		setSharing(true);
 		setShareMsg('');
 		const result = await api.shareGame(game.id);
-		setShareMsg(result.ok ? 'Shared!' : 'Failed');
+		if (!result.ok) setShareMsg(result.error?.code === 'RATE_LIMITED' ? 'Wait a moment' : 'Failed');
+		else if (result.data?.bot_online === false) setShareMsg('Queued, bot looks offline');
+		else setShareMsg('Shared!');
 		setSharing(false);
-		setTimeout(() => setShareMsg(''), 3000);
+		setTimeout(() => setShareMsg(''), result.ok && result.data?.bot_online === false ? 6000 : 3000);
 	};
 
 	const steamUrl = game.steam_app_id ? `https://store.steampowered.com/app/${game.steam_app_id}/` : null;
