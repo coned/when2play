@@ -1,0 +1,14 @@
+# Response headers for the static assets (Cloudflare Workers static assets).
+# Vite copies this file to frontend/dist/_headers. It only applies to files
+# served from the assets binding; /api/* responses get their headers from
+# src/middleware/security-headers.ts instead.
+
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+
+# Vite puts a content hash in every file name under /assets/, so these never change.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
