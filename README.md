@@ -53,6 +53,7 @@ DISCORD_TOKEN=your-bot-token-here
 WHEN2PLAY_API_URL=https://when2play.<your-subdomain>.workers.dev
 BOT_API_KEY=your-shared-secret-here
 GAMING_CHANNEL_ID=123456789012345678   # optional if using /setchannel
+POLL_INTERVAL_MS=15000                 # optional, delivery poll interval (min 5000)
 ```
 
 > **Channel setup:** You can either set `GAMING_CHANNEL_ID` in `.env`, or use the `/setchannel` slash command in Discord (requires ADMINISTRATOR). The slash command is preferred -- it persists in `guild-config.json` and takes priority over the env var.
@@ -71,6 +72,14 @@ Slash commands registered.
 ```
 
 That's it — slash commands like `/call`, `/in`, `/when2play`, and `/help` are now live in your server.
+
+### Tests
+
+```bash
+npm test
+```
+
+Runs the unit tests for the delivery poller and message formatters (`node:test`, no network).
 
 ## Commands at a Glance
 

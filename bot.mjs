@@ -2,9 +2,58 @@ import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Attachmen
 import { appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import { createPoller, fmtDiscordTime, formatRallyAction, formatTreeShare, formatGameShare } from './lib/poller.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ERROR_LOG_PATH = join(__dirname, 'errors.log');
+
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const API_URL = process.env.WHEN2PLAY_API_URL;
+const BOT_API_KEY = process.env.BOT_API_KEY;
+const GAMING_CHANNEL_ID = process.env.GAMING_CHANNEL_ID;
+const DRY_RUN = process.env.W2P_DRY_RUN === '1';
+const ENV_POLL_MS = Number(process.env.POLL_INTERVAL_MS);
+const BASE_POLL_MS = Number.isFinite(ENV_POLL_MS) && ENV_POLL_MS >= 5000 ? ENV_POLL_MS : 15_000;
+const MAX_POLL_MS = 2 * 60 * 1000;
+const API_TIMEOUT_MS = 10_000;
+
+if (!DISCORD_TOKEN || !API_URL) {
+    console.error('Missing required env vars (DISCORD_TOKEN, WHEN2PLAY_API_URL)');
+    process.exit(1);
+}
+
+function logError(context, err) {
+    const ts = new Date().toISOString();
+    const message = err?.message ?? String(err);
+    const cause = err?.cause ? ` | cause: ${err.cause.message ?? err.cause}` : '';
+    const line = `[${ts}] ${context}: ${message}${cause}\n`;
+    try { appendFileSync(ERROR_LOG_PATH, line); } catch {}
+}
+
+async function safeJson(res) {
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+    return res.json();
+}
+
+function buildGuildHeaders(guildId) {
+    return {
+        'Content-Type': 'application/json',
+        ...(BOT_API_KEY ? { 'X-Bot-Token': BOT_API_KEY } : {}),
+        ...(guildId ? { 'X-Guild-Id': guildId } : {}),
+    };
+}
+
+/** Every request to the Worker goes through here: bot headers plus a request timeout. */
+function apiFetch(path, options = {}, guildId) {
+    return fetch(`${API_URL}${path}`, {
+        ...options,
+        headers: { ...buildGuildHeaders(guildId), ...(options.headers || {}) },
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+}
 
 // In-memory guild config cache, populated from D1 on startup
 let cachedConfig = { guilds: {} };
@@ -16,9 +65,7 @@ function getChannelId(guildId) {
 /** Fetch channel_id setting from the API for a given guild and update cache. */
 async function fetchGuildSettings(guildId) {
     try {
-        const res = await fetch(`${API_URL}/api/settings/bot`, {
-            headers: buildGuildHeaders(guildId),
-        });
+        const res = await apiFetch('/api/settings/bot', {}, guildId);
         const json = await safeJson(res);
         if (json.ok && json.data.channel_id) {
             cachedConfig.guilds ??= {};
@@ -34,51 +81,15 @@ async function fetchGuildSettings(guildId) {
 
 /** Save channel_id to D1 via the API. */
 async function saveChannelToApi(guildId, channelId) {
-    const res = await fetch(`${API_URL}/api/settings/bot`, {
+    const res = await apiFetch('/api/settings/bot', {
         method: 'PATCH',
-        headers: buildGuildHeaders(guildId),
         body: JSON.stringify({ channel_id: channelId }),
-    });
+    }, guildId);
     return safeJson(res);
 }
 
-async function safeJson(res) {
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-    }
-    return res.json();
-}
-
-function logError(context, err) {
-    const ts = new Date().toISOString();
-    const cause = err.cause ? ` | cause: ${err.cause.message ?? err.cause}` : '';
-    const line = `[${ts}] ${context}: ${err.message}${cause}\n`;
-    try { appendFileSync(ERROR_LOG_PATH, line); } catch {}
-}
-
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const API_URL = process.env.WHEN2PLAY_API_URL;
-const BOT_API_KEY = process.env.BOT_API_KEY;
-const GAMING_CHANNEL_ID = process.env.GAMING_CHANNEL_ID;
-const BASE_POLL_MS = 15_000;
-const MAX_POLL_MS = 2 * 60 * 1000;
-const guildErrors = {};
-
-if (!DISCORD_TOKEN || !API_URL) {
-    console.error('Missing required env vars (DISCORD_TOKEN, WHEN2PLAY_API_URL)');
-    process.exit(1);
-}
-
-function buildGuildHeaders(guildId) {
-    return {
-        'Content-Type': 'application/json',
-        ...(BOT_API_KEY ? { 'X-Bot-Token': BOT_API_KEY } : {}),
-        ...(guildId ? { 'X-Guild-Id': guildId } : {}),
-    };
-}
-
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const rest = new REST().setToken(DISCORD_TOKEN);
 
 const commands = [
     new SlashCommandBuilder().setName('when2play').setDescription('Get a login link for when2play'),
@@ -134,28 +145,55 @@ const commands = [
         .setName('welcome')
         .setDescription('Post a welcome message introducing when2play (requires ADMINISTRATOR)'),
 ];
+const commandBody = commands.map(c => c.toJSON());
+
+function registerGuildCommands(guildId) {
+    return rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commandBody });
+}
 
 async function registerCommands() {
-    const rest = new REST().setToken(DISCORD_TOKEN);
-    const body = commands.map(c => c.toJSON());
     // Register guild-scoped commands (instant) for every guild the bot is in
     const guilds = client.guilds.cache;
     if (guilds.size > 0) {
-        await Promise.all(guilds.map(g =>
-            rest.put(Routes.applicationGuildCommands(client.user.id, g.id), { body })
-        ));
+        await Promise.all(guilds.map(g => registerGuildCommands(g.id)));
         // Clear stale global commands so old commands don't linger
         await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
         console.log(`Slash commands registered (${guilds.size} guild(s): ${guilds.map(g => g.id).join(', ')}).`);
     } else {
-        await rest.put(Routes.applicationCommands(client.user.id), { body });
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commandBody });
         console.log('Slash commands registered (global -- may take up to 1h to propagate).');
     }
 }
 
-// /when2play handler
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'when2play') return;
+/**
+ * Register a slash-command handler. Nothing the handler throws or rejects with escapes:
+ * it is logged and the user gets a generic error reply (itself guarded).
+ */
+function onCommand(names, handler) {
+    const wanted = new Set(Array.isArray(names) ? names : [names]);
+    client.on('interactionCreate', async (interaction) => {
+        try {
+            if (!interaction.isChatInputCommand() || !wanted.has(interaction.commandName)) return;
+            await handler(interaction);
+        } catch (err) {
+            const name = interaction?.commandName ?? 'unknown';
+            logError(`/${name} handler`, err);
+            console.error(`Unhandled error in /${name}:`, err);
+            try {
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.editReply('Something went wrong.');
+                } else {
+                    await interaction.reply({ content: 'Something went wrong.', flags: 64 });
+                }
+            } catch (replyErr) {
+                logError(`/${name} error reply`, replyErr);
+            }
+        }
+    });
+}
+
+// --- /when2play handler ---
+onCommand('when2play', async (interaction) => {
     if (!interaction.guildId) {
         await interaction.reply({ content: 'This command can only be used in a server.', flags: 64 });
         return;
@@ -163,16 +201,15 @@ client.on('interactionCreate', async (interaction) => {
     await interaction.deferReply({ flags: 64 });
 
     try {
-        const res = await fetch(`${API_URL}/api/auth/token`, {
+        const res = await apiFetch('/api/auth/token', {
             method: 'POST',
-            headers: buildGuildHeaders(interaction.guildId),
             body: JSON.stringify({
                 discord_id: interaction.user.id,
                 discord_username: interaction.member?.displayName ?? interaction.user.displayName,
                 avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
                 guild_name: interaction.guild?.name,
             }),
-        });
+        }, interaction.guildId);
         const json = await safeJson(res);
 
         if (!json.ok) {
@@ -189,20 +226,19 @@ client.on('interactionCreate', async (interaction) => {
 
 // --- Helper: resolve Discord user ID to when2play user ID via auth token flow ---
 async function ensureUser(discordUser, guildMember, guildId) {
-    const res = await fetch(`${API_URL}/api/auth/token`, {
+    const res = await apiFetch('/api/auth/token', {
         method: 'POST',
-        headers: buildGuildHeaders(guildId),
         body: JSON.stringify({
             discord_id: discordUser.id,
             discord_username: guildMember?.displayName ?? discordUser.displayName ?? discordUser.username,
             avatar_url: discordUser.displayAvatarURL?.({ size: 128 }) ?? null,
             guild_name: guildId ? client.guilds.cache.get(guildId)?.name : undefined,
         }),
-    });
+    }, guildId);
     const json = await safeJson(res);
     if (!json.ok) return null;
     const token = json.data.token;
-    const cbRes = await fetch(`${API_URL}/api/auth/callback/${token}`, { headers: buildGuildHeaders(guildId) });
+    const cbRes = await apiFetch(`/api/auth/callback/${token}`, {}, guildId);
     const cbJson = await safeJson(cbRes);
     if (!cbJson.ok) return null;
     return cbJson.data; // { user, session }
@@ -210,32 +246,25 @@ async function ensureUser(discordUser, guildMember, guildId) {
 
 // --- Helper: make an authenticated API call on behalf of a user session ---
 async function apiCallWithSession(sessionId, path, options = {}, guildId) {
-    const res = await fetch(`${API_URL}${path}`, {
+    const res = await apiFetch(path, {
         ...options,
         headers: {
-            'Content-Type': 'application/json',
             'Cookie': `session_id=${sessionId}`,
-            ...(BOT_API_KEY ? { 'X-Bot-Token': BOT_API_KEY } : {}),
-            ...(guildId ? { 'X-Guild-Id': guildId } : {}),
             ...(options.headers || {}),
         },
-    });
+    }, guildId);
     return safeJson(res);
 }
 
 // --- /url handler ---
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'url') return;
+onCommand('url', async (interaction) => {
     await interaction.deferReply({ flags: 64 });
     await interaction.editReply(API_URL);
 });
 
 // --- Rally command handlers ---
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
+onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], async (interaction) => {
     const { commandName } = interaction;
-
-    if (!['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'].includes(commandName)) return;
 
     if (!interaction.guildId) {
         await interaction.reply({ content: 'This command can only be used in a server.', flags: 64 });
@@ -397,9 +426,9 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             else if (sub === 'gametree') {
-                const res = await fetch(`${API_URL}/api/rally/active`, {
-                    headers: { ...buildGuildHeaders(interaction.guildId), 'Cookie': `session_id=${session.session_id}` },
-                });
+                const res = await apiFetch('/api/rally/active', {
+                    headers: { 'Cookie': `session_id=${session.session_id}` },
+                }, interaction.guildId);
                 const json = await safeJson(res);
                 if (!json.ok || !json.data.rally) {
                     await interaction.editReply('No active rally today. Use `/call` to start one!');
@@ -435,141 +464,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// Convert a UTC HH:MM time + YYYY-MM-DD day_key to a Discord timestamp token
-// that renders in each viewer's local timezone automatically.
-function fmtDiscordTime(utcHHMM, dayKey) {
-    const ts = Math.floor(new Date(`${dayKey}T${utcHHMM}:00Z`).getTime() / 1000);
-    return `<t:${ts}:t>`;
-}
-
-// --- Rally action polling ---
-async function pollRallyActions(guildId, config) {
-    const channelId = config.channelId || GAMING_CHANNEL_ID;
-    if (!channelId) return;
-
-    const headers = buildGuildHeaders(guildId);
-    const res = await fetch(`${API_URL}/api/rally/pending`, { headers });
-    const json = await safeJson(res);
-    if (!json.ok || json.data.length === 0) return;
-
-    const channel = await client.channels.fetch(channelId);
-    if (!channel?.isTextBased()) return;
-
-    for (const action of json.data) {
-        // Use bold plaintext name instead of @mention to avoid pinging the sender
-        const isAnon = action.metadata?.is_anonymous === true;
-        const actor = isAnon ? '**Someone**' : `**${action.actor_username}**`;
-        const actorPlain = isAnon ? 'Someone' : action.actor_username;
-        let text = '';
-
-        switch (action.action_type) {
-            case 'call':
-                text = `📢 ${actor} called${action.message ? ` -- "${action.message}"` : ''}`;
-                break;
-            case 'in':
-                text = `✅ ${actor} is in${action.message ? ` -- "${action.message}"` : '!'}`;
-                break;
-            case 'out':
-                text = `❌ ${actor} is out${action.message ? ` -- "${action.message}"` : ''}`;
-                break;
-            case 'ping': {
-                const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
-                text = `👋 ${actor} → ${targets}${action.message ? ` -- "${action.message}"` : ''}`;
-                break;
-            }
-            case 'judge_time': {
-                const meta = action.metadata;
-                if (meta?.windows?.length > 0) {
-                    const fmtNames = (w) => (w.user_names?.map(n => n.trim()).join(', ') ?? `${w.user_count} people`);
-                    const fmt = (t) => fmtDiscordTime(t, meta.day_key);
-                    const best = meta.windows[0];
-                    text = `📅 **Best window:** ${fmt(best.start)}--${fmt(best.end)} (${fmtNames(best)})`;
-                    const allLines = meta.windows.slice(0, 8).map(w => `• ${fmt(w.start)}--${fmt(w.end)}: ${fmtNames(w)}`);
-                    text += `\n📋 **All windows today (${meta.windows.length}):**\n${allLines.join('\n')}`;
-                    text += `\n_On behalf of ${actorPlain}_`;
-                } else {
-                    text = `🤖 No overlapping availability found today. Ask everyone to set their times!\n_On behalf of ${actorPlain}_`;
-                }
-                break;
-            }
-            case 'judge_avail': {
-                const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
-                const nudgeMsg = action.message || 'Please set your availability!';
-                text = `🤖 ${actor} → ${targets}: ${nudgeMsg}`;
-                break;
-            }
-            case 'brb':
-                text = `⏳ ${actor} brb${action.message ? ` -- "${action.message}"` : ''}`;
-                break;
-            case 'where': {
-                const targets = action.target_discord_ids?.map(id => `<@${id}>`).join(', ') ?? 'someone';
-                text = `❓ ${actor} → ${targets}${action.message ? ` -- "${action.message}"` : ''}`;
-                break;
-            }
-            case 'share_ranking': {
-                const meta = action.metadata;
-                if (meta?.ranking?.length > 0) {
-                    const lines = meta.ranking.map((r, i) => {
-                        const name = r.steam_app_id
-                            ? `[${r.name}](https://store.steampowered.com/app/${r.steam_app_id}/)`
-                            : r.name;
-                        const likes = r.like_count ? `, ${r.like_count} likes` : '';
-                        return `#${i + 1} ${name} (${r.total_score} pts, ${r.vote_count} votes${likes})`;
-                    });
-                    text = `🏆 **Game Rankings:**\n${lines.join('\n')}\n_On behalf of ${actorPlain}_`;
-                } else {
-                    text = `🏆 ${actor} shared rankings -- no games ranked yet`;
-                }
-                break;
-            }
-            default:
-                text = `${actor}: ${action.action_type}`;
-        }
-
-        const mentionUsers = (action.target_discord_ids ?? []).filter(id => /^\d{17,20}$/.test(id));
-        if (text) await channel.send({ content: text, allowedMentions: { parse: [], users: mentionUsers } });
-
-        await fetch(`${API_URL}/api/rally/${action.id}/delivered`, {
-            method: 'PATCH',
-            headers,
-        });
-    }
-}
-
-// --- Tree share polling ---
-async function pollTreeShares(guildId, config) {
-    const channelId = config.channelId || GAMING_CHANNEL_ID;
-    if (!channelId) return;
-
-    const headers = buildGuildHeaders(guildId);
-    const res = await fetch(`${API_URL}/api/rally/tree/share/pending`, { headers });
-    const json = await safeJson(res);
-    if (!json.ok || json.data.length === 0) return;
-
-    const channel = await client.channels.fetch(channelId);
-    if (!channel?.isTextBased()) return;
-
-    for (const share of json.data) {
-        if (share.image_data) {
-            const buffer = Buffer.from(share.image_data, 'base64');
-            const attachment = new AttachmentBuilder(buffer, { name: `gaming-tree-${share.day_key}.png` });
-            await channel.send({ content: `📊 **Gaming Tree** -- ${share.day_key}`, files: [attachment], allowedMentions: { parse: [], users: [] } });
-        }
-
-        await fetch(`${API_URL}/api/rally/tree/share/${share.id}/delivered`, {
-            method: 'PATCH',
-            headers,
-        });
-    }
-}
-
-// --- Gather ping polling (DEPRECATED: gather was merged into rally; UI hidden since v0.3) ---
-// Kept as dead code for reference. Remove entirely once gather_pings table is dropped.
-// async function pollGatherPings(guildId, config) { ... }
-
 // --- /help handler ---
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'help') return;
+onCommand('help', async (interaction) => {
     await interaction.deferReply({ flags: 64 });
 
     const helpText = [
@@ -605,95 +501,8 @@ client.on('interactionCreate', async (interaction) => {
     await interaction.editReply(helpText);
 });
 
-// --- Game share polling ---
-async function pollGameShares(guildId, config) {
-    const channelId = config.channelId || GAMING_CHANNEL_ID;
-    if (!channelId) return;
-
-    const headers = buildGuildHeaders(guildId);
-    const res = await fetch(`${API_URL}/api/games/share/pending`, { headers });
-    const json = await safeJson(res);
-    if (!json.ok || json.data.length === 0) return;
-
-    const channel = await client.channels.fetch(channelId);
-    if (!channel?.isTextBased()) return;
-
-    for (const share of json.data) {
-        const likes = share.like_count ?? 0;
-        const dislikes = share.dislike_count ?? 0;
-        const net = likes - dislikes;
-        const scoreStr = net > 0 ? `+${net}` : String(net);
-
-        let text = `**${share.game_name}**`;
-        if (share.game_note) text += `\n> ${share.game_note}`;
-        const steamUrl = share.game_steam_app_id ? `https://store.steampowered.com/app/${share.game_steam_app_id}/` : null;
-        const stats = [];
-        if (likes > 0 || dislikes > 0) stats.push(`Score: ${scoreStr} (${likes} like${likes !== 1 ? 's' : ''}, ${dislikes} dislike${dislikes !== 1 ? 's' : ''})`);
-        if (steamUrl) stats.push(`Steam: ${steamUrl}`);
-        if (stats.length > 0) text += `\n${stats.join(' | ')}`;
-        text += `\n_Shared by ${share.requester_name}_`;
-
-        const msgPayload = { content: text, allowedMentions: { parse: [], users: [] } };
-        if (share.game_image_url) {
-            // Embed the Steam header image
-            msgPayload.embeds = [{ image: { url: share.game_image_url }, color: 0x4a9eff }];
-        }
-        await channel.send(msgPayload);
-
-        await fetch(`${API_URL}/api/games/share/${share.id}/delivered`, {
-            method: 'PATCH',
-            headers,
-        });
-    }
-}
-
-function scheduleNextPoll() {
-    const maxErrors = Math.max(0, ...Object.values(guildErrors));
-    const delay = maxErrors === 0
-        ? BASE_POLL_MS
-        : Math.min(BASE_POLL_MS * Math.pow(2, maxErrors - 1), MAX_POLL_MS);
-    setTimeout(async () => {
-        // Poll all guilds the bot is in (uses D1-cached config + env fallback)
-        const guilds = client.guilds.cache;
-        await Promise.all(guilds.map(async (guild) => {
-            const guildId = guild.id;
-            const config = cachedConfig.guilds?.[guildId] || {};
-            try {
-                await Promise.all([
-                    pollRallyActions(guildId, config),
-                    pollTreeShares(guildId, config),
-                    pollGameShares(guildId, config),
-                ]);
-                guildErrors[guildId] = 0;
-            } catch (err) {
-                guildErrors[guildId] = (guildErrors[guildId] || 0) + 1;
-                logError(`guild ${guildId} polling (errors: ${guildErrors[guildId]})`, err);
-                console.error(`Error polling guild ${guildId} (errors: ${guildErrors[guildId]}):`, err);
-            }
-        }));
-        scheduleNextPoll();
-    }, delay);
-}
-
-client.once('clientReady', async () => {
-    console.log(`Logged in as ${client.user.tag}`);
-    await registerCommands();
-
-    // Populate guild config from D1 for each guild the bot is in
-    const guilds = client.guilds.cache;
-    await Promise.all(guilds.map(g => fetchGuildSettings(g.id)));
-    console.log(`Loaded settings for ${guilds.size} guild(s) from D1`);
-
-    scheduleNextPoll();
-    console.log(`Polling ${guilds.size} guild(s) every ${BASE_POLL_MS / 1000}s (with exponential backoff on errors)`);
-});
-
-client.login(DISCORD_TOKEN);
-
-
-// Handle the interaction
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'when2play-admin') return;
+// --- /when2play-admin handler ---
+onCommand('when2play-admin', async (interaction) => {
     if (!interaction.guildId) {
         await interaction.reply({ content: 'This command can only be used in a server.', flags: 64 });
         return;
@@ -707,16 +516,15 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     try {
-        const res = await fetch(`${API_URL}/api/auth/admin-token`, {
+        const res = await apiFetch('/api/auth/admin-token', {
             method: 'POST',
-            headers: buildGuildHeaders(interaction.guildId),
             body: JSON.stringify({
                 discord_id: interaction.user.id,
                 discord_username: interaction.member?.displayName ?? interaction.user.displayName,
                 avatar_url: interaction.user.displayAvatarURL({ size: 128 }),
                 guild_name: interaction.guild?.name,
             }),
-        });
+        }, interaction.guildId);
         const json = await safeJson(res);
 
         if (!json.ok) {
@@ -737,8 +545,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // --- /setchannel handler ---
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'setchannel') return;
+onCommand('setchannel', async (interaction) => {
     if (!interaction.guildId) {
         await interaction.reply({ content: 'This command can only be used in a server.', flags: 64 });
         return;
@@ -765,8 +572,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // --- /welcome handler ---
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'welcome') return;
+onCommand('welcome', async (interaction) => {
     if (!interaction.guildId) {
         await interaction.reply({ content: 'This command can only be used in a server.', flags: 64 });
         return;
@@ -791,4 +597,116 @@ client.on('interactionCreate', async (interaction) => {
         console.error('Error handling /welcome:', err);
         await interaction.editReply('Failed to post the welcome message.');
     }
+});
+
+// --- Delivery of pending items (rally actions, tree shares, game shares) ---
+async function deliverItem(guildId, kind, item) {
+    const channelId = getChannelId(guildId);
+    if (!channelId) throw new Error(`no output channel configured for guild ${guildId}`);
+    const channel = await client.channels.fetch(channelId);
+    if (!channel?.isTextBased()) throw new Error(`channel ${channelId} is missing or not text-based`);
+
+    if (kind === 'rally_actions') {
+        const { text, mentionUsers } = formatRallyAction(item);
+        if (text) await channel.send({ content: text, allowedMentions: { parse: [], users: mentionUsers } });
+    } else if (kind === 'tree_shares') {
+        const share = formatTreeShare(item);
+        if (share) {
+            const buffer = Buffer.from(item.image_data, 'base64');
+            const attachment = new AttachmentBuilder(buffer, { name: share.fileName });
+            await channel.send({ content: share.content, files: [attachment], allowedMentions: { parse: [], users: [] } });
+        }
+    } else if (kind === 'game_shares') {
+        const { content, embeds } = formatGameShare(item);
+        const msgPayload = { content, allowedMentions: { parse: [], users: [] } };
+        if (embeds) msgPayload.embeds = embeds;
+        await channel.send(msgPayload);
+    } else {
+        throw new Error(`unknown delivery kind ${kind}`);
+    }
+}
+
+const poller = createPoller({
+    fetch: (...args) => fetch(...args),
+    apiUrl: API_URL,
+    getHeaders: () => buildGuildHeaders(null),
+    // Only guilds with an output channel have anywhere to deliver to
+    getGuildIds: () => client.guilds.cache.map(g => g.id).filter(id => getChannelId(id)),
+    deliver: deliverItem,
+    logError,
+    consoleError: (...args) => console.error(...args),
+    baseIntervalMs: BASE_POLL_MS,
+    maxIntervalMs: MAX_POLL_MS,
+});
+
+client.on('error', (err) => {
+    logError('client error', err);
+    console.error('Discord client error:', err);
+});
+
+client.on('shardError', (err, shardId) => {
+    logError(`shard ${shardId} error`, err);
+    console.error(`Discord shard ${shardId} error:`, err);
+});
+
+client.once('clientReady', async () => {
+    try {
+        console.log(`Logged in as ${client.user.tag}`);
+        try {
+            await registerCommands();
+        } catch (err) {
+            logError('registerCommands', err);
+            console.error('Failed to register slash commands:', err);
+        }
+
+        // Populate guild config from D1 for each guild the bot is in
+        const guilds = client.guilds.cache;
+        try {
+            await Promise.all(guilds.map(g => fetchGuildSettings(g.id)));
+            console.log(`Loaded settings for ${guilds.size} guild(s) from D1`);
+        } catch (err) {
+            logError('loading guild settings', err);
+            console.error('Failed to load guild settings:', err);
+        }
+    } catch (err) {
+        logError('clientReady', err);
+        console.error('Error during startup:', err);
+    }
+
+    poller.start();
+    console.log(`Polling ${client.guilds.cache.size} guild(s) every ${BASE_POLL_MS / 1000}s via /api/bot/poll (with exponential backoff on errors)`);
+});
+
+client.on('guildCreate', async (guild) => {
+    try {
+        console.log(`Joined guild ${guild.id}`);
+        await registerGuildCommands(guild.id);
+        await fetchGuildSettings(guild.id);
+        console.log(`Registered commands and loaded settings for guild ${guild.id}`);
+    } catch (err) {
+        logError(`guildCreate(${guild?.id})`, err);
+        console.error(`Failed to set up new guild ${guild?.id}:`, err);
+    }
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection:', reason);
+    logError('unhandledRejection', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught exception:', err);
+    logError('uncaughtException', err);
+    process.exit(1);
+});
+
+if (DRY_RUN) {
+    console.log('dry run ok');
+    process.exit(0);
+}
+
+client.login(DISCORD_TOKEN).catch((err) => {
+    logError('login', err);
+    console.error('Discord login failed:', err);
+    process.exit(1);
 });

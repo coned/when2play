@@ -20,16 +20,16 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 │                  bot.mjs (single instance, multi-guild)          │
 │                                                                  │
 │   ┌──────────────────┐    ┌────────────────────────────────────┐ │
-│   │ Command handlers │    │ Per-guild polling loops (every 15s)│ │
-│   │ /when2play, /call,    │    │  For each guild in config:         │ │
-│   │ /in, /out, ...   │    │  * pollRallyActions(guildId, cfg)  │ │
-│   └────────┬─────────┘    │  * pollTreeShares(guildId, cfg)    │ │
-│            │              │  * pollGameShares(guildId, cfg)    │ │
+│   │ Command handlers │    │ Aggregated poller (lib/poller.mjs) │ │
+│   │ /when2play, /call,    │    │ One POST /api/bot/poll per 15s:    │ │
+│   │ /in, /out, ...   │    │ * guild_ids + acks of last cycle   │ │
+│   └────────┬─────────┘    │ * deliver(guild, kind, item)       │ │
+│            │              │ * ids queued for the next ack      │ │
 │            │              └──────────────┬─────────────────────┘ │
 └────────────┼─────────────────────────────┼───────────────────────┘
              │  HTTPS                      │  HTTPS
              │  Cookie: session_id=...     │  X-Bot-Token: ...
-             │  X-Bot-Token: ...           │  X-Guild-Id: <guild_id>
+             │  X-Bot-Token: ...           │  body: { guild_ids, acks }
              │  X-Guild-Id: <guild_id>     │
              ▼                             ▼
 ┌──────────────────────────────────────────────────────────────────┐
@@ -39,13 +39,11 @@ listening port. All delivery to Discord is driven by the bot's polling loops.
 │   requireAuth middleware      requireBotAuth middleware          │
 │   (session_id cookie)         (X-Bot-Token header)               │
 │                                                                  │
-│   /api/auth/*                 /api/rally/pending                 │
-│   /api/rally/action           /api/rally/:id/delivered           │
-│   /api/rally/judge/*          /api/rally/tree/share/pending      │
-│   /api/rally/share-ranking    /api/rally/tree/share/:id/...      │
-│   /api/gather (write)         /api/gather/pending                │
-│                               /api/gather/:id/delivered          │
-│                               /api/settings/bot                  │
+│   /api/auth/*                 /api/bot/poll                      │
+│   /api/rally/action           /api/settings/bot                  │
+│   /api/rally/judge/*          (legacy, unused by this bot:       │
+│   /api/rally/share-ranking      */pending, */:id/delivered)      │
+│   /api/gather (write)                                            │
 │                                                                  │
 │         ┌──────────┬──────────┬──────────┐                      │
 │         │ D1 Guild │ D1 Guild │ D1 Guild │                      │
@@ -77,7 +75,7 @@ Bot Server                          Discord Gateway
      │──────────── HTTP response ─────────►│  (reply or follow-up)
      │                                     │
      │  (every 15 s, independently)        │
-     │────── GET /api/rally/pending ──────►│  (not Discord — this goes to when2play)
+     │────── POST /api/bot/poll ──────────►│  (not Discord -- this goes to when2play)
 ```
 
 This is distinct from the **Interactions Endpoint URL** (HTTP webhook) model, where Discord
@@ -211,80 +209,94 @@ All rally commands call `ensureUser()` first to obtain a session.
 
 ---
 
-## Polling Loops
+## Polling Loop
 
-The bot runs three polling loops per guild (rally actions, tree shares, game shares),
-scheduled via `scheduleNextPoll()`. For each
-guild the bot has joined (`client.guilds.cache`), all three loops fire every 15 seconds under normal
-conditions, with per-guild exponential backoff on errors (doubles each failure, capped at
-2 minutes, resets on first success for that guild). All API requests include the
-`X-Guild-Id` header so the Worker routes them to the correct guild database.
+The bot delivers everything the web dashboard queues for Discord (rally actions, tree share
+images, game shares) through **one aggregated request per cycle**, implemented in
+`lib/poller.mjs` and wired up in `bot.mjs`. Earlier versions made three `GET .../pending`
+requests per guild per cycle plus one `PATCH .../delivered` per item; those endpoints still
+exist on the Worker but are legacy and no longer used by this bot.
 
-### Loop 1: Rally actions (`pollRallyActions`)
-
-Fetches undelivered rally actions and posts them to `GAMING_CHANNEL_ID`.
+### Request
 
 ```
-GET /api/rally/pending  (X-Bot-Token)
-  ↓
-Returns: RallyAction[] with resolved target_discord_ids
-  ↓
-For each action (action_type ∈ {call, in, out, ping, brb, where,
-                                judge_time, judge_avail, share_ranking}):
-  Format Discord message
-  Post to GAMING_CHANNEL_ID
-  ↓
-PATCH /api/rally/:id/delivered  (X-Bot-Token)
+POST /api/bot/poll  (X-Bot-Token, no X-Guild-Id)
+body: {
+  "guild_ids": ["<guild id>", ...],
+  "acks": { "<guild id>": { "rally_actions": [id...], "tree_shares": [id...], "game_shares": [id...] } }
+}
 ```
 
-`judge_time` actions contain a `metadata.windows` array of overlap time windows.
-The bot formats these with Discord timestamp tags (`<t:unix:t>`) for auto-localization.
+- `guild_ids`: the guilds in `client.guilds.cache` that have an output channel
+  (`/setchannel` value or `GAMING_CHANNEL_ID`). Guilds without a channel are not polled.
+- `acks`: ids delivered to Discord since the last successful request (omitted when empty).
+- Limits: at most 100 guilds and 200 ids per list per request. Anything above that is sent
+  in the following cycles (logged once to `errors.log`).
 
-`share_ranking` actions contain a `metadata.ranking` array of games. Posted as a numbered list.
+### Response
 
-`judge_avail` actions mention the target user(s) and link to the when2play site.
+```
+{ "ok": true, "data": {
+    "guilds": { "<guild id>": { "rally_actions": [...], "tree_shares": [...], "game_shares": [...] } },
+    "unknown_guilds": ["<guild id with no database on the server>"],
+    "errors": { "<guild id>": "<short message>" } } }
+```
 
-### ~~Loop 2: Gather pings (`pollGatherPings`)~~ (DEPRECATED)
+`guilds` contains only guilds with something to deliver, oldest item first. Item shapes are
+the same as the legacy pending endpoints returned. The server applies the acks of a request
+**before** selecting pending items, so an acked item never comes back.
+
+### Delivery and acks
+
+```
+POST /api/bot/poll (guild_ids + acks from the previous cycle)
+  ↓
+For each guild (in parallel), for each kind in order rally -> tree -> game, for each item:
+  Format with the pure formatters in lib/poller.mjs
+  Post to the guild's output channel
+    success -> queue the id for ack on the next request
+    failure -> log, do not ack (the item comes back next poll);
+               after 3 failed attempts for the same id, give up and ack it
+  ↓
+Wait, then poll again (the next request carries the queued acks)
+```
+
+- Acks piggyback on the next poll, so there is no per-item `PATCH` request.
+- After a successful response the acks sent in that request are forgotten, except for
+  guilds listed in `errors` (their acks may not have been applied, so they are sent again).
+  Acks for guilds in `unknown_guilds` are dropped.
+- If the request itself fails (network error, timeout, non-200, `ok !== true`), every ack is
+  kept and sent again next cycle. Re-sending an ack is harmless.
+- An item stays pending on the server until it is acked or is **older than 30 minutes**;
+  the server then drops it silently. A message can therefore be lost if the bot is down
+  for more than 30 minutes, but a missing ack never causes endless duplicates.
+- One failing item never blocks the others.
+
+`judge_time` actions contain a `metadata.windows` array of overlap time windows. The bot
+formats these with Discord timestamp tags (`<t:unix:t>`) for auto-localization.
+`share_ranking` actions contain a `metadata.ranking` array of games, posted as a numbered
+list. `judge_avail` actions mention the target user(s). Tree shares are decoded from base64
+and posted as a PNG attachment; game shares are posted with the game image as an embed.
+
+### Timing, backoff and logging
+
+- Base interval: 15 s, or `POLL_INTERVAL_MS` from the environment (minimum 5000).
+- Polls never overlap: the next one is scheduled only after the previous request and all
+  its deliveries finished.
+- Request timeout: 20 s (tree shares carry images). Other Worker calls use 10 s.
+- After consecutive request failures the delay is `min(base * 2^(failures - 1), 2 min)`,
+  reset on the first success. Each failure is written to `errors.log` and the console.
+- An HTTP 404 from `/api/bot/poll` means the Worker is older than the bot: deploy the
+  Worker first.
+- `unknown_guilds` are logged once per process; a guild in `errors` is logged on first
+  occurrence and then at most once every 10 minutes.
+- Delivery failures are logged to `errors.log` and the console with the attempt count.
+
+### Gather pings (DEPRECATED)
 
 Gather was merged into the rally system. The bot no longer polls `/api/gather/pending`.
 The server-side endpoints still exist for backward compatibility but no new pings can be
 created (UI tab hidden since v0.3).
-
-### Loop 2: Tree share images (`pollTreeShares`)
-
-Fetches pending gaming-tree PNG uploads (submitted via the web dashboard) and posts them
-as image attachments.
-
-```
-GET /api/rally/tree/share/pending  (X-Bot-Token)
-  ↓
-Returns: TreeShare[] with base64-encoded PNG in image_data field
-  ↓
-For each share:
-  Decode base64 → Buffer
-  Post as Discord file attachment to GAMING_CHANNEL_ID
-  ↓
-PATCH /api/rally/tree/share/:id/delivered  (X-Bot-Token)
-```
-
-### Loop 3: Game shares (`pollGameShares`)
-
-Fetches pending game share requests (triggered by the "Share" button on game cards in the web
-dashboard) and posts them as Discord messages with game details and an image embed.
-
-```
-GET /api/games/share/pending  (X-Bot-Token)
-  ↓
-Returns: GameShare[] with joined game data (name, note, image_url, steam_app_id,
-         like_count, dislike_count, requester_name)
-  ↓
-For each share:
-  Format message: game name, note, like/dislike score, Steam store link
-  Attach game image as embed thumbnail (if image_url present)
-  Post to GAMING_CHANNEL_ID
-  ↓
-PATCH /api/games/share/:id/delivered  (X-Bot-Token)
-```
 
 ---
 
@@ -304,22 +316,24 @@ PATCH /api/games/share/:id/delivered  (X-Bot-Token)
 ### Bot-authenticated (`X-Bot-Token` + `X-Guild-Id`)
 
 All bot-authenticated requests include `X-Guild-Id: <guild_id>` to route to the correct
-guild database. The Worker's guild middleware trusts this header only when `X-Bot-Token`
-matches `BOT_API_KEY`.
+guild database, except `POST /api/bot/poll`, which carries its guild ids in the body.
+The Worker's guild middleware trusts this header only when `X-Bot-Token` matches
+`BOT_API_KEY`.
 
 | Method | Path | Purpose |
 |--------|------|---------|
+| `POST` | `/api/bot/poll` | Aggregated poll: ack delivered items and fetch pending items for many guilds (no `X-Guild-Id`) |
 | `POST` | `/api/auth/token` | Create one-time login token for a user |
 | `POST` | `/api/auth/admin-token` | Create one-time admin login token |
 | `GET` | `/api/auth/callback/:token` | Exchange token for session (JSON response, no cookie) |
-| `GET` | `/api/rally/pending` | Fetch undelivered rally actions |
-| `PATCH` | `/api/rally/:id/delivered` | Mark rally action delivered |
-| `GET` | `/api/rally/tree/share/pending` | Fetch pending tree share images |
-| `PATCH` | `/api/rally/tree/share/:id/delivered` | Mark tree share delivered |
+| `GET` | `/api/rally/pending` | Legacy, no longer used by this bot (replaced by `/api/bot/poll`) |
+| `PATCH` | `/api/rally/:id/delivered` | Legacy, no longer used by this bot (replaced by `/api/bot/poll` acks) |
+| `GET` | `/api/rally/tree/share/pending` | Legacy, no longer used by this bot |
+| `PATCH` | `/api/rally/tree/share/:id/delivered` | Legacy, no longer used by this bot |
 | `GET` | `/api/gather/pending` | ~~Fetch undelivered gather pings~~ (deprecated, no longer polled) |
 | `PATCH` | `/api/gather/:id/delivered` | ~~Mark gather ping delivered~~ (deprecated) |
-| `GET` | `/api/games/share/pending` | Fetch pending game shares |
-| `PATCH` | `/api/games/share/:id/delivered` | Mark game share delivered |
+| `GET` | `/api/games/share/pending` | Legacy, no longer used by this bot |
+| `PATCH` | `/api/games/share/:id/delivered` | Legacy, no longer used by this bot |
 | `GET` | `/api/settings/bot` | Fetch guild settings (channel_id, guild_name) |
 | `PATCH` | `/api/settings/bot` | Update guild settings (used by `/setchannel`) |
 
@@ -335,6 +349,7 @@ Both the bot and server must share exactly one secret: `BOT_API_KEY`.
 | `DISCORD_TOKEN` | Bot `.env` only | Discord bot token |
 | `WHEN2PLAY_API_URL` | Bot `.env` only | Base URL of the server (e.g. `https://when2play.example.workers.dev`) |
 | `GAMING_CHANNEL_ID` | Bot `.env`, optional | Fallback Discord channel ID. Optional if using `/setchannel` (which persists to D1) |
+| `POLL_INTERVAL_MS` | Bot `.env`, optional | Base poll interval in ms (default 15000, values below 5000 are ignored) |
 
 `X-Guild-Id` is **not a secret**. It is a Discord guild snowflake (public identifier) sent
 as a plain header. The Worker's guild middleware only trusts it from bot-authenticated
