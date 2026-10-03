@@ -3,6 +3,7 @@ import { appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { createPoller, fmtDiscordTime, formatRallyAction, formatTreeShare, formatGameShare } from './lib/poller.mjs';
+import { readApiResult, errorReply } from './lib/api.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ERROR_LOG_PATH = join(__dirname, 'errors.log');
@@ -30,14 +31,6 @@ function logError(context, err) {
     try { appendFileSync(ERROR_LOG_PATH, line); } catch {}
 }
 
-async function safeJson(res) {
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-    }
-    return res.json();
-}
-
 function buildGuildHeaders(guildId) {
     return {
         'Content-Type': 'application/json',
@@ -55,6 +48,16 @@ function apiFetch(path, options = {}, guildId) {
     });
 }
 
+/**
+ * apiFetch plus response handling: resolves to `data` of a `{ ok: true }` body, rejects with an
+ * ApiError otherwise (its `userMessage` is set for 4xx errors the user should see).
+ */
+async function apiRequest(path, options = {}, guildId) {
+    const result = await readApiResult(await apiFetch(path, options, guildId));
+    if (!result.ok) throw result.error;
+    return result.data;
+}
+
 // In-memory guild config cache, populated from D1 on startup
 let cachedConfig = { guilds: {} };
 
@@ -65,13 +68,12 @@ function getChannelId(guildId) {
 /** Fetch channel_id setting from the API for a given guild and update cache. */
 async function fetchGuildSettings(guildId) {
     try {
-        const res = await apiFetch('/api/settings/bot', {}, guildId);
-        const json = await safeJson(res);
-        if (json.ok && json.data.channel_id) {
+        const data = await apiRequest('/api/settings/bot', {}, guildId);
+        if (data?.channel_id) {
             cachedConfig.guilds ??= {};
             cachedConfig.guilds[guildId] = {
                 ...(cachedConfig.guilds[guildId] || {}),
-                channelId: json.data.channel_id,
+                channelId: data.channel_id,
             };
         }
     } catch (err) {
@@ -81,11 +83,10 @@ async function fetchGuildSettings(guildId) {
 
 /** Save channel_id to D1 via the API. */
 async function saveChannelToApi(guildId, channelId) {
-    const res = await apiFetch('/api/settings/bot', {
+    return apiRequest('/api/settings/bot', {
         method: 'PATCH',
         body: JSON.stringify({ channel_id: channelId }),
     }, guildId);
-    return safeJson(res);
 }
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -201,7 +202,7 @@ onCommand('when2play', async (interaction) => {
     await interaction.deferReply({ flags: 64 });
 
     try {
-        const res = await apiFetch('/api/auth/token', {
+        const data = await apiRequest('/api/auth/token', {
             method: 'POST',
             body: JSON.stringify({
                 discord_id: interaction.user.id,
@@ -210,23 +211,17 @@ onCommand('when2play', async (interaction) => {
                 guild_name: interaction.guild?.name,
             }),
         }, interaction.guildId);
-        const json = await safeJson(res);
 
-        if (!json.ok) {
-            await interaction.editReply(`Failed: ${json.error.message}`);
-            return;
-        }
-
-        await interaction.editReply(`Click to open **when2play**: ${json.data.url}\n\nExpires in 10 minutes.`);
+        await interaction.editReply(`Click to open **when2play**: ${data.url}\n\nExpires in 10 minutes.`);
     } catch (err) {
-        console.error('Error handling /when2play:', err);
-        await interaction.editReply('Something went wrong. Is the when2play server running?');
+        if (!err?.userMessage) console.error('Error handling /when2play:', err);
+        await interaction.editReply(errorReply(err));
     }
 });
 
 // --- Helper: resolve Discord user ID to when2play user ID via auth token flow ---
 async function ensureUser(discordUser, guildMember, guildId) {
-    const res = await apiFetch('/api/auth/token', {
+    const tokenRequest = {
         method: 'POST',
         body: JSON.stringify({
             discord_id: discordUser.id,
@@ -234,26 +229,20 @@ async function ensureUser(discordUser, guildMember, guildId) {
             avatar_url: discordUser.displayAvatarURL?.({ size: 128 }) ?? null,
             guild_name: guildId ? client.guilds.cache.get(guildId)?.name : undefined,
         }),
-    }, guildId);
-    const json = await safeJson(res);
-    if (!json.ok) return null;
-    const token = json.data.token;
-    const cbRes = await apiFetch(`/api/auth/callback/${token}`, {}, guildId);
-    const cbJson = await safeJson(cbRes);
-    if (!cbJson.ok) return null;
-    return cbJson.data; // { user, session }
+    };
+    const { token } = await apiRequest('/api/auth/token', tokenRequest, guildId);
+    return apiRequest(`/api/auth/callback/${token}`, {}, guildId); // { user, session }
 }
 
 // --- Helper: make an authenticated API call on behalf of a user session ---
 async function apiCallWithSession(sessionId, path, options = {}, guildId) {
-    const res = await apiFetch(path, {
+    return apiRequest(path, {
         ...options,
         headers: {
             'Cookie': `session_id=${sessionId}`,
             ...(options.headers || {}),
         },
     }, guildId);
-    return safeJson(res);
 }
 
 // --- /url handler ---
@@ -283,40 +272,28 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
 
         if (commandName === 'call') {
             const message = interaction.options.getString('message') ?? undefined;
-            const json = await apiCallWithSession(session.session_id, '/api/rally/call', {
+            await apiCallWithSession(session.session_id, '/api/rally/call', {
                 method: 'POST',
                 body: JSON.stringify({ message }),
             }, interaction.guildId);
-            if (!json.ok) {
-                await interaction.editReply(`Failed: ${json.error.message}`);
-                return;
-            }
             await interaction.editReply('Rally started!');
         }
 
         else if (commandName === 'in') {
             const message = interaction.options.getString('message') ?? undefined;
-            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiCallWithSession(session.session_id, '/api/rally/action', {
                 method: 'POST',
                 body: JSON.stringify({ action_type: 'in', message }),
             }, interaction.guildId);
-            if (!json.ok) {
-                await interaction.editReply(`Failed: ${json.error.message}`);
-                return;
-            }
             await interaction.editReply("You're in!");
         }
 
         else if (commandName === 'out') {
             const reason = interaction.options.getString('reason') ?? undefined;
-            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiCallWithSession(session.session_id, '/api/rally/action', {
                 method: 'POST',
                 body: JSON.stringify({ action_type: 'out', message: reason }),
             }, interaction.guildId);
-            if (!json.ok) {
-                await interaction.editReply(`Failed: ${json.error.message}`);
-                return;
-            }
             await interaction.editReply("You're out.");
         }
 
@@ -328,27 +305,19 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
                 await interaction.editReply('Could not find that user. They may need to use `/when2play` first.');
                 return;
             }
-            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiCallWithSession(session.session_id, '/api/rally/action', {
                 method: 'POST',
                 body: JSON.stringify({ action_type: 'ping', target_user_ids: [targetAuth.user.id], message }),
             }, interaction.guildId);
-            if (!json.ok) {
-                await interaction.editReply(`Failed: ${json.error.message}`);
-                return;
-            }
             await interaction.editReply(`Pinged ${targetDiscordUser.displayName}!`);
         }
 
         else if (commandName === 'brb') {
             const message = interaction.options.getString('message') ?? undefined;
-            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiCallWithSession(session.session_id, '/api/rally/action', {
                 method: 'POST',
                 body: JSON.stringify({ action_type: 'brb', message }),
             }, interaction.guildId);
-            if (!json.ok) {
-                await interaction.editReply(`Failed: ${json.error.message}`);
-                return;
-            }
             await interaction.editReply('Marked as BRB.');
         }
 
@@ -359,14 +328,10 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
                 await interaction.editReply('Could not find that user.');
                 return;
             }
-            const json = await apiCallWithSession(session.session_id, '/api/rally/action', {
+            await apiCallWithSession(session.session_id, '/api/rally/action', {
                 method: 'POST',
                 body: JSON.stringify({ action_type: 'where', target_user_ids: [targetAuth.user.id] }),
             }, interaction.guildId);
-            if (!json.ok) {
-                await interaction.editReply(`Failed: ${json.error.message}`);
-                return;
-            }
             await interaction.editReply(`Asked where ${targetDiscordUser.displayName} is.`);
         }
 
@@ -378,14 +343,10 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
                 await interaction.editReply('Could not find that user. They may need to use `/when2play` first.');
                 return;
             }
-            const json = await apiCallWithSession(session.session_id, '/api/rally/judge/avail', {
+            await apiCallWithSession(session.session_id, '/api/rally/judge/avail', {
                 method: 'POST',
                 body: JSON.stringify({ target_user_ids: [targetAuth.user.id], message }),
             }, interaction.guildId);
-            if (!json.ok) {
-                await interaction.editReply(`Failed: ${json.error.message}`);
-                return;
-            }
             await interaction.editReply(`Nudged ${targetDiscordUser.displayName} to set their availability.`);
         }
 
@@ -393,14 +354,10 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
             const sub = interaction.options.getSubcommand();
 
             if (sub === 'schedule') {
-                const json = await apiCallWithSession(session.session_id, '/api/rally/judge/time', {
+                const data = await apiCallWithSession(session.session_id, '/api/rally/judge/time', {
                     method: 'POST',
                 }, interaction.guildId);
-                if (!json.ok) {
-                    await interaction.editReply(`Failed: ${json.error.message}`);
-                    return;
-                }
-                const meta = json.data?.metadata;
+                const meta = data?.metadata;
                 if (!meta?.windows?.length) {
                     await interaction.editReply('No overlapping availability windows found today. Ask everyone to set their times!');
                     return;
@@ -415,22 +372,15 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
             }
 
             else if (sub === 'gamerank') {
-                const json = await apiCallWithSession(session.session_id, '/api/rally/share-ranking', {
+                await apiCallWithSession(session.session_id, '/api/rally/share-ranking', {
                     method: 'POST',
                 }, interaction.guildId);
-                if (!json.ok) {
-                    await interaction.editReply(`Failed: ${json.error.message}`);
-                    return;
-                }
                 await interaction.editReply('Game rankings posted to the channel!');
             }
 
             else if (sub === 'gametree') {
-                const res = await apiFetch('/api/rally/active', {
-                    headers: { 'Cookie': `session_id=${session.session_id}` },
-                }, interaction.guildId);
-                const json = await safeJson(res);
-                if (!json.ok || !json.data.rally) {
+                const active = await apiCallWithSession(session.session_id, '/api/rally/active', {}, interaction.guildId);
+                if (!active?.rally) {
                     await interaction.editReply('No active rally today. Use `/call` to start one!');
                     return;
                 }
@@ -439,7 +389,7 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
                     await interaction.editReply('No output channel configured. An admin should run `/setchannel` first.');
                     return;
                 }
-                const { rally, actions } = json.data;
+                const { rally, actions } = active;
                 let summary = `**Gaming Tree** -- ${rally.day_key}\n`;
                 if (actions.length === 0) {
                     summary += 'No actions yet.';
@@ -459,8 +409,11 @@ onCommand(['call', 'in', 'out', 'ping', 'brb', 'where', 'call2select', 'post'], 
         }
 
     } catch (err) {
-        console.error(`Error handling /${commandName}:`, err);
-        await interaction.editReply('Something went wrong. Is the when2play server running?');
+        if (!err?.userMessage) {
+            logError(`/${commandName}`, err);
+            console.error(`Error handling /${commandName}:`, err);
+        }
+        await interaction.editReply(errorReply(err));
     }
 });
 
@@ -516,7 +469,7 @@ onCommand('when2play-admin', async (interaction) => {
     }
 
     try {
-        const res = await apiFetch('/api/auth/admin-token', {
+        const data = await apiRequest('/api/auth/admin-token', {
             method: 'POST',
             body: JSON.stringify({
                 discord_id: interaction.user.id,
@@ -525,22 +478,16 @@ onCommand('when2play-admin', async (interaction) => {
                 guild_name: interaction.guild?.name,
             }),
         }, interaction.guildId);
-        const json = await safeJson(res);
-
-        if (!json.ok) {
-            await interaction.editReply(`Failed: ${json.error.message}`);
-            return;
-        }
 
         try {
-            await interaction.user.send(`Admin link for **when2play** (expires in 10 min, session lasts 1h):\n${json.data.url}`);
+            await interaction.user.send(`Admin link for **when2play** (expires in 10 min, session lasts 1h):\n${data.url}`);
             await interaction.editReply('Check your DMs for the admin link!');
         } catch {
-            await interaction.editReply(`Admin link (expires in 10 min):\n${json.data.url}`);
+            await interaction.editReply(`Admin link (expires in 10 min):\n${data.url}`);
         }
     } catch (err) {
-        console.error('Error handling /when2play-admin:', err);
-        await interaction.editReply('Something went wrong.');
+        if (!err?.userMessage) console.error('Error handling /when2play-admin:', err);
+        await interaction.editReply(errorReply(err, 'Something went wrong.'));
     }
 });
 
@@ -566,8 +513,8 @@ onCommand('setchannel', async (interaction) => {
         };
         await interaction.editReply(`Messages will now be sent to <#${interaction.channelId}>.`);
     } catch (err) {
-        console.error('Error handling /setchannel:', err);
-        await interaction.editReply('Failed to save channel configuration.');
+        if (!err?.userMessage) console.error('Error handling /setchannel:', err);
+        await interaction.editReply(errorReply(err, 'Failed to save channel configuration.'));
     }
 });
 
