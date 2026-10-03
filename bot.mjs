@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { createPoller, fmtDiscordTime, formatRallyAction, formatTreeShare, formatGameShare } from './lib/poller.mjs';
 import { readApiResult, errorReply } from './lib/api.mjs';
+import { createSettingsRetrier } from './lib/settings-retry.mjs';
 import {
     memberDisplayName, avatarUrlFor, buildSyncBody, findSyncedUser, truncate, MAX_GUILD_NAME_LENGTH, buildTreeSummary,
 } from './lib/commands.mjs';
@@ -20,6 +21,7 @@ const ENV_POLL_MS = Number(process.env.POLL_INTERVAL_MS);
 const BASE_POLL_MS = Number.isFinite(ENV_POLL_MS) && ENV_POLL_MS >= 5000 ? ENV_POLL_MS : 15_000;
 const MAX_POLL_MS = 2 * 60 * 1000;
 const API_TIMEOUT_MS = 10_000;
+const SETTINGS_RETRY_MS = 5 * 60 * 1000;
 
 if (!DISCORD_TOKEN || !API_URL) {
     console.error('Missing required env vars (DISCORD_TOKEN, WHEN2PLAY_API_URL)');
@@ -68,17 +70,26 @@ function getChannelId(guildId) {
     return cachedConfig.guilds?.[guildId]?.channelId || GAMING_CHANNEL_ID || null;
 }
 
-/** Fetch channel_id setting from the API for a given guild and update cache. */
+function hasCachedChannel(guildId) {
+    return Boolean(cachedConfig.guilds?.[guildId]?.channelId);
+}
+
+/** Fetch the channel_id setting for a guild and update the cache. Rejects on failure. */
+async function loadGuildSettings(guildId) {
+    const data = await apiRequest('/api/settings/bot', {}, guildId);
+    if (data?.channel_id) {
+        cachedConfig.guilds ??= {};
+        cachedConfig.guilds[guildId] = {
+            ...(cachedConfig.guilds[guildId] || {}),
+            channelId: data.channel_id,
+        };
+    }
+}
+
+/** loadGuildSettings that logs instead of rejecting (startup, guildCreate). */
 async function fetchGuildSettings(guildId) {
     try {
-        const data = await apiRequest('/api/settings/bot', {}, guildId);
-        if (data?.channel_id) {
-            cachedConfig.guilds ??= {};
-            cachedConfig.guilds[guildId] = {
-                ...(cachedConfig.guilds[guildId] || {}),
-                channelId: data.channel_id,
-            };
-        }
+        await loadGuildSettings(guildId);
     } catch (err) {
         logError(`fetchGuildSettings(${guildId})`, err);
     }
@@ -576,6 +587,17 @@ const poller = createPoller({
     maxIntervalMs: MAX_POLL_MS,
 });
 
+// Guilds whose settings did not load (or that have no channel yet) are retried every 5 minutes,
+// one request at a time, so a failed startup fetch does not keep a guild out of polling until restart
+const settingsRetrier = createSettingsRetrier({
+    getGuildIds: () => client.guilds.cache.map(g => g.id).filter(id => !hasCachedChannel(id)),
+    load: loadGuildSettings,
+    intervalMs: SETTINGS_RETRY_MS,
+    logError,
+    consoleLog: (...args) => console.log(...args),
+    consoleError: (...args) => console.error(...args),
+});
+
 client.on('error', (err) => {
     logError('client error', err);
     console.error('Discord client error:', err);
@@ -611,6 +633,7 @@ client.once('clientReady', async () => {
     }
 
     poller.start();
+    settingsRetrier.start();
     console.log(`Polling ${client.guilds.cache.size} guild(s) every ${BASE_POLL_MS / 1000}s via /api/bot/poll (with exponential backoff on errors)`);
 });
 
