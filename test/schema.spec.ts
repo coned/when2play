@@ -44,4 +44,25 @@ describe('Database schema', () => {
 			expect(names).toContain(idx);
 		}
 	});
+
+	it('has the per-user indexes the rate limit checks rely on, and the queries use them', async () => {
+		const db = createTestDb();
+		const { results } = await db
+			.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%'")
+			.all<{ name: string }>();
+		const names = results.map((r) => r.name);
+		for (const idx of ['idx_rally_actions_actor_created', 'idx_game_shares_requested_by_created', 'idx_tree_shares_requested_by_created']) {
+			expect(names).toContain(idx);
+		}
+
+		const plans: Array<[string, unknown[], string]> = [
+			['SELECT COUNT(*) FROM rally_actions WHERE actor_id = ? AND created_at >= ?', ['u', '2026-01-01'], 'idx_rally_actions_actor_created'],
+			['SELECT MAX(created_at) FROM game_shares WHERE requested_by = ?', ['u'], 'idx_game_shares_requested_by_created'],
+			['SELECT MAX(created_at) FROM rally_tree_shares WHERE requested_by = ?', ['u'], 'idx_tree_shares_requested_by_created'],
+		];
+		for (const [query, params, idx] of plans) {
+			const plan = await db.prepare(`EXPLAIN QUERY PLAN ${query}`).bind(...params).all<{ detail: string }>();
+			expect(plan.results.map((r) => r.detail).join('\n')).toContain(idx);
+		}
+	});
 });
