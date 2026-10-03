@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import { api } from '../../api/client';
 import { ActionFeed } from './ActionFeed';
+import { useVisiblePolling } from '../../hooks/useVisiblePolling';
 
 interface RallyPanelProps {
 	userId: string;
@@ -68,13 +69,16 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 
 	const userMap = new Map(users.map((u) => [u.id, { discord_username: u.discord_username, display_name: u.display_name, avatar_url: u.avatar_url }]));
 
-	const fetchData = useCallback(async () => {
-		const [rallyResult, usersResult, settingsResult] = await Promise.all([
-			api.getActiveRally(),
+	const fetchRally = useCallback(async () => {
+		const rallyResult = await api.getActiveRally();
+		if (rallyResult.ok) setData(rallyResult.data);
+	}, []);
+
+	const fetchUsersAndSettings = useCallback(async () => {
+		const [usersResult, settingsResult] = await Promise.all([
 			api.getUsers(),
 			api.getSettings(),
 		]);
-		if (rallyResult.ok) setData(rallyResult.data);
 		if (usersResult.ok) setUsers(usersResult.data);
 		if (settingsResult.ok) {
 			const s = settingsResult.data as Record<string, unknown>;
@@ -87,11 +91,17 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 		}
 	}, []);
 
+	// Full reload, used after the user's own actions.
+	const fetchData = useCallback(async () => {
+		await Promise.all([fetchRally(), fetchUsersAndSettings()]);
+	}, [fetchRally, fetchUsersAndSettings]);
+
+	// Users and settings rarely change: load once. Only the rally is polled.
 	useEffect(() => {
-		fetchData();
-		const interval = setInterval(fetchData, 20_000);
-		return () => clearInterval(interval);
-	}, [fetchData]);
+		fetchUsersAndSettings();
+	}, [fetchUsersAndSettings]);
+
+	useVisiblePolling(fetchRally, 20_000);
 
 	const clearFeedback = () => {
 		setError('');

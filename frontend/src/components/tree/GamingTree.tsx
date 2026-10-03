@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'preact/hooks';
+import { useState, useCallback, useRef, useMemo } from 'preact/hooks';
 import { api } from '../../api/client';
 import type { TreeNode, TreeEdge, Participant } from './treeConstants';
 import { useTreeInteraction } from './useTreeInteraction';
@@ -6,6 +6,7 @@ import { SequenceDiagram } from './SequenceDiagram';
 import { RadialGraph } from './RadialGraph';
 import { NodeDetailPanel } from './NodeDetailPanel';
 import { UserFilterBar } from './UserFilterBar';
+import { useVisiblePolling } from '../../hooks/useVisiblePolling';
 
 interface TreeData {
 	nodes: TreeNode[];
@@ -170,11 +171,8 @@ export function GamingTree() {
 		if (result.ok) setData(result.data);
 	}, [dayKey]);
 
-	useEffect(() => {
-		fetchTree();
-		const interval = setInterval(fetchTree, 20_000);
-		return () => clearInterval(interval);
-	}, [fetchTree]);
+	// Re-runs immediately when dayKey changes (fetchTree identity changes).
+	useVisiblePolling(fetchTree, 20_000);
 
 	const rawNodes: TreeNode[] = data?.nodes ?? [];
 	const rawEdges: TreeEdge[] = data?.edges ?? [];
