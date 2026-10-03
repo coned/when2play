@@ -1,4 +1,4 @@
-import type { RallyTreeNode } from '@when2play/shared';
+import { ANONYMOUS_ACTOR_ID, type RallyTreeNode } from '@when2play/shared';
 
 // -- View mode --
 
@@ -74,7 +74,8 @@ export const LANE_HEADER_HEIGHT = 80;
 
 // -- Anonymous sentinel --
 
-export const ANONYMOUS_ID = '__anonymous__';
+/** Same value the API reports as actor_id of anonymous actions. */
+export const ANONYMOUS_ID = ANONYMOUS_ACTOR_ID;
 
 // -- Utilities --
 

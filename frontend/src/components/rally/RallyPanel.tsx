@@ -8,7 +8,7 @@ interface RallyPanelProps {
 }
 
 interface RallyData {
-	rally: { id: string; creator_id: string; timing: string; day_key: string; status: string; created_at: string } | null;
+	rally: { id: string; timing: string; day_key: string; status: string; created_at: string } | null;
 	actions: Array<{
 		id: string;
 		rally_id: string | null;

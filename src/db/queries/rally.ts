@@ -3,7 +3,7 @@ import { uuid, now } from '../helpers';
 import { getSetting } from './settings';
 import { pendingCutoff } from '../../lib/pending';
 import type { ActionType } from '@when2play/shared';
-import { gridOriginMinutes, slotStartOffset, slotEndOffset, minutesToHhmm } from '@when2play/shared';
+import { gridOriginMinutes, slotStartOffset, slotEndOffset, minutesToHhmm, ANONYMOUS_ACTOR_ID } from '@when2play/shared';
 
 // ---------- Row types ----------
 
@@ -30,13 +30,71 @@ export interface RallyActionRow {
 }
 
 export interface RallyActionWithUser extends RallyActionRow {
-	actor_discord_id: string;
+	/** null only on an anonymous action after scrubAnonymousActor. */
+	actor_discord_id: string | null;
 	actor_username: string;
 	actor_avatar: string | null;
 }
 
 export interface RallyActionWithDiscord extends RallyActionWithUser {
 	target_discord_ids: string[] | null;
+}
+
+/** A rally as returned to clients: creator_id is withheld (it would reveal the caller of an anonymous first call). */
+export type PublicRally = Omit<RallyRow, 'creator_id'>;
+
+export function toPublicRally(r: RallyRow): PublicRally;
+export function toPublicRally(r: RallyRow | null): PublicRally | null;
+export function toPublicRally(r: RallyRow | null): PublicRally | null {
+	if (!r) return null;
+	const { creator_id: _creatorId, ...rest } = r;
+	return rest;
+}
+
+// ---------- Anonymous actions ----------
+
+/**
+ * Actor placeholder for anonymous actions is ANONYMOUS_ACTOR_ID (shared with
+ * the frontend tree code, so anonymous nodes share one lane / radial node).
+ */
+export { ANONYMOUS_ACTOR_ID };
+export const ANONYMOUS_ACTOR_NAME = 'Anonymous';
+
+function parseMetadata(metadata: string | null): Record<string, unknown> | null {
+	if (!metadata) return null;
+	try {
+		return JSON.parse(metadata) as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+}
+
+export function isAnonymousAction(row: { metadata: string | null }): boolean {
+	return parseMetadata(row.metadata)?.is_anonymous === true;
+}
+
+/**
+ * Replace the actor identity of an anonymous action with the placeholder.
+ * Every response that carries actions (user or bot facing) goes through this.
+ */
+export function scrubAnonymousActor<T extends RallyActionRow>(row: T): T {
+	if (!isAnonymousAction(row)) return row;
+	const scrubbed: Record<string, unknown> = { ...(row as unknown as Record<string, unknown>), actor_id: ANONYMOUS_ACTOR_ID };
+	if ('actor_discord_id' in row) scrubbed.actor_discord_id = null;
+	if ('actor_username' in row) scrubbed.actor_username = ANONYMOUS_ACTOR_NAME;
+	if ('actor_avatar' in row) scrubbed.actor_avatar = null;
+	return scrubbed as T;
+}
+
+/** Client shape of a rally action: JSON columns parsed, anonymous actor scrubbed. */
+export function formatRallyAction<T extends RallyActionRow>(a: T) {
+	const scrubbed = scrubAnonymousActor(a);
+	return {
+		...scrubbed,
+		delivered: Boolean(scrubbed.delivered),
+		target_user_ids: scrubbed.target_user_ids ? (JSON.parse(scrubbed.target_user_ids) as string[]) : null,
+		metadata: parseMetadata(scrubbed.metadata),
+	};
 }
 
 export interface TreeShareRow {
@@ -190,12 +248,7 @@ export async function getPendingRallyActions(db: D1Database, cutoff: string = pe
 
 /** Response shape of a pending rally action, shared by the legacy and aggregated bot endpoints. */
 export function formatPendingRallyAction(a: RallyActionWithDiscord) {
-	return {
-		...a,
-		delivered: Boolean(a.delivered),
-		target_user_ids: a.target_user_ids ? (JSON.parse(a.target_user_ids) as string[]) : null,
-		metadata: a.metadata ? (JSON.parse(a.metadata) as Record<string, unknown>) : null,
-	};
+	return formatRallyAction(a);
 }
 
 export async function markActionDelivered(db: D1Database, actionId: string): Promise<void> {
@@ -210,7 +263,7 @@ export async function getTreeData(
 ): Promise<{
 	nodes: RallyActionWithUser[];
 	edges: Array<{ source: string; target: string; type: 'response' | 'ping' | 'sequence' }>;
-	rallies: RallyRow[];
+	rallies: PublicRally[];
 	participants: Record<string, { username: string; avatar: string | null }>;
 }> {
 	const dk = dayKey ?? (await getDayKey(db));
@@ -220,7 +273,7 @@ export async function getTreeData(
 		.prepare('SELECT * FROM rallies WHERE day_key = ?')
 		.bind(dk)
 		.all<RallyRow>();
-	const rallies = ralliesResult.results;
+	const rallies = ralliesResult.results.map((r: RallyRow) => toPublicRally(r));
 
 	const edges: Array<{ source: string; target: string; type: 'response' | 'ping' | 'sequence' }> = [];
 
@@ -251,14 +304,16 @@ export async function getTreeData(
 				if (callNode) {
 					edges.push({ source: callNode.id, target: action.id, type: 'ping' });
 				}
-				// Find target's next response after this action
+				// Find target's next response after this action. Anonymous responses are
+				// skipped: an edge from a ping to them would name their actor.
 				const targetIds: string[] = JSON.parse(action.target_user_ids);
 				for (const targetId of targetIds) {
 					const targetResponse = actions.find(
 						(a) =>
 							a.actor_id === targetId &&
 							['in', 'out', 'brb'].includes(a.action_type) &&
-							a.created_at > action.created_at,
+							a.created_at > action.created_at &&
+							!isAnonymousAction(a),
 					);
 					if (targetResponse) {
 						edges.push({ source: action.id, target: targetResponse.id, type: 'ping' });
@@ -273,10 +328,11 @@ export async function getTreeData(
 		}
 	}
 
-	// Build participants map from actor IDs and target user IDs
+	// Build participants map from actor IDs and target user IDs. Actors of
+	// anonymous actions are left out so the map does not reveal them.
 	const userIdSet = new Set<string>();
 	for (const node of nodes) {
-		userIdSet.add(node.actor_id);
+		if (!isAnonymousAction(node)) userIdSet.add(node.actor_id);
 		if (node.target_user_ids) {
 			const targetIds: string[] = JSON.parse(node.target_user_ids);
 			for (const id of targetIds) userIdSet.add(id);
@@ -286,6 +342,7 @@ export async function getTreeData(
 	const participants: Record<string, { username: string; avatar: string | null }> = {};
 	// Populate from already-joined actor data
 	for (const node of nodes) {
+		if (isAnonymousAction(node)) continue;
 		if (!participants[node.actor_id]) {
 			participants[node.actor_id] = { username: node.actor_username, avatar: node.actor_avatar };
 		}
@@ -303,7 +360,8 @@ export async function getTreeData(
 		}
 	}
 
-	return { nodes, edges, rallies, participants };
+	// Edges were built from real actor ids above; only now hide anonymous actors.
+	return { nodes: nodes.map((n) => scrubAnonymousActor(n)), edges, rallies, participants };
 }
 
 // ---------- Judge ----------

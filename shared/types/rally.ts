@@ -1,14 +1,22 @@
 export type ActionType = 'call' | 'in' | 'out' | 'ping' | 'judge_time' | 'judge_avail' | 'brb' | 'where' | 'share_ranking';
 
+/** creator_id is never sent to clients: it would reveal the caller of an anonymous first call. */
 export interface Rally {
   id: string;
-  creator_id: string;
   timing: string;
   day_key: string;
   status: 'open' | 'closed';
   created_at: string;
 }
 
+/** Actor id the API reports for every anonymous action (metadata.is_anonymous). */
+export const ANONYMOUS_ACTOR_ID = '__anonymous__';
+
+/**
+ * For an anonymous action (metadata.is_anonymous === true) the API replaces the
+ * actor: actor_id is ANONYMOUS_ACTOR_ID, actor_username is 'Anonymous',
+ * actor_avatar and actor_discord_id are null.
+ */
 export interface RallyAction {
   id: string;
   rally_id: string | null;

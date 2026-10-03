@@ -18,9 +18,12 @@ import {
 	markTreeShareDelivered,
 	formatPendingRallyAction,
 	formatPendingTreeShare,
+	formatRallyAction,
+	toPublicRally,
 } from '../db/queries/rally';
 import type { ActionType } from '@when2play/shared';
 import { getGameRanking } from '../db/queries/votes';
+import { getSetting } from '../db/queries/settings';
 
 type RallyEnv = {
 	Bindings: Bindings;
@@ -34,10 +37,40 @@ const rally = new Hono<RallyEnv>();
 
 const VALID_ACTION_TYPES: ActionType[] = ['in', 'out', 'ping', 'brb', 'where'];
 
+/** Default of the rally_anonymous_enabled setting (seeded in 0000_init.sql). */
+const DEFAULT_ANONYMOUS_ENABLED: Record<string, boolean> = { call: true, ping: true };
+
+/**
+ * Whether the admin allows anonymous actions of this type. Enforced here so
+ * that nobody believes they posted anonymously when the UI was bypassed.
+ */
+async function isAnonymousAllowed(db: D1Database, actionType: ActionType): Promise<boolean> {
+	const raw = await getSetting(db, 'rally_anonymous_enabled');
+	const enabled = raw && typeof raw === 'object' && !Array.isArray(raw)
+		? (raw as Record<string, unknown>)
+		: DEFAULT_ANONYMOUS_ENABLED;
+	return enabled[actionType] === true;
+}
+
+/** Validate is_anonymous; returns an error message, or null when the request may proceed. */
+async function checkAnonymous(db: D1Database, actionType: ActionType, isAnonymous: unknown): Promise<string | null> {
+	if (isAnonymous === undefined || isAnonymous === false) return null;
+	if (isAnonymous !== true) return 'is_anonymous must be a boolean';
+	if (!(await isAnonymousAllowed(db, actionType))) return `Anonymous ${actionType} actions are disabled on this server`;
+	return null;
+}
+
+function badRequest(message: string) {
+	return { ok: false as const, error: { code: 'BAD_REQUEST', message } };
+}
+
 // POST /api/rally/call — create or get today's rally + record call action
 rally.post('/call', requireAuth, async (c) => {
 	const user = c.get('user');
 	const body = await c.req.json<{ message?: string; is_anonymous?: boolean }>().catch(() => ({} as { message?: string; is_anonymous?: boolean }));
+
+	const anonError = await checkAnonymous(c.env.DB, 'call', body.is_anonymous);
+	if (anonError) return c.json(badRequest(anonError), 400);
 
 	const dayKey = await getDayKey(c.env.DB);
 	const rallyRow = await createOrGetRally(c.env.DB, user.id, 'now', dayKey);
@@ -53,13 +86,8 @@ rally.post('/call', requireAuth, async (c) => {
 	return c.json({
 		ok: true,
 		data: {
-			rally: rallyRow,
-			action: {
-				...action,
-				delivered: Boolean(action.delivered),
-				target_user_ids: null,
-				metadata: action.metadata ? JSON.parse(action.metadata) : null,
-			},
+			rally: toPublicRally(rallyRow),
+			action: formatRallyAction(action),
 		},
 	}, 201);
 });
@@ -87,6 +115,9 @@ rally.post('/action', requireAuth, async (c) => {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Message must be 500 characters or less' } }, 400);
 	}
 
+	const anonError = await checkAnonymous(c.env.DB, body.action_type, body.is_anonymous);
+	if (anonError) return c.json(badRequest(anonError), 400);
+
 	const dayKey = await getDayKey(c.env.DB);
 	// Auto-attach to active rally if no rally_id specified
 	let rallyId = body.rally_id;
@@ -104,15 +135,7 @@ rally.post('/action', requireAuth, async (c) => {
 		metadata,
 	});
 
-	return c.json({
-		ok: true,
-		data: {
-			...action,
-			delivered: Boolean(action.delivered),
-			target_user_ids: action.target_user_ids ? JSON.parse(action.target_user_ids) : null,
-			metadata: action.metadata ? JSON.parse(action.metadata) : null,
-		},
-	}, 201);
+	return c.json({ ok: true, data: formatRallyAction(action) }, 201);
 });
 
 // POST /api/rally/judge/time — compute & broadcast optimal time slots
@@ -204,14 +227,9 @@ rally.get('/active', requireAuth, async (c) => {
 	const activeRally = await getActiveRally(c.env.DB, dayKey);
 	const actions = await getRallyActions(c.env.DB, dayKey);
 
-	const formattedActions = actions.map((a) => ({
-		...a,
-		delivered: Boolean(a.delivered),
-		target_user_ids: a.target_user_ids ? JSON.parse(a.target_user_ids) : null,
-		metadata: a.metadata ? JSON.parse(a.metadata) : null,
-	}));
+	const formattedActions = actions.map((a) => formatRallyAction(a));
 
-	return c.json({ ok: true, data: { rally: activeRally, actions: formattedActions } });
+	return c.json({ ok: true, data: { rally: toPublicRally(activeRally), actions: formattedActions } });
 });
 
 // GET /api/rally/tree — get tree DAG data for visualization
@@ -219,12 +237,7 @@ rally.get('/tree', requireAuth, async (c) => {
 	const dayKey = c.req.query('day_key') ?? (await getDayKey(c.env.DB));
 	const treeData = await getTreeData(c.env.DB, dayKey);
 
-	const nodes = treeData.nodes.map((n) => ({
-		...n,
-		delivered: Boolean(n.delivered),
-		target_user_ids: n.target_user_ids ? JSON.parse(n.target_user_ids) : null,
-		metadata: n.metadata ? JSON.parse(n.metadata) : null,
-	}));
+	const nodes = treeData.nodes.map((n) => formatRallyAction(n));
 
 	return c.json({ ok: true, data: { nodes, edges: treeData.edges, rallies: treeData.rallies, participants: treeData.participants } });
 });
