@@ -22,6 +22,8 @@ const BASE_POLL_MS = Number.isFinite(ENV_POLL_MS) && ENV_POLL_MS >= 5000 ? ENV_P
 const MAX_POLL_MS = 2 * 60 * 1000;
 const API_TIMEOUT_MS = 10_000;
 const SETTINGS_RETRY_MS = 5 * 60 * 1000;
+// Free text options (message, reason): the Worker rejects messages over 500 characters
+const MAX_TEXT_OPTION_LENGTH = 500;
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 const SHUTDOWN_FLUSH_TIMEOUT_MS = 8_000;
 
@@ -116,24 +118,24 @@ const commands = [
     new SlashCommandBuilder()
         .setName('call')
         .setDescription('Call everyone to play!')
-        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false).setMaxLength(MAX_TEXT_OPTION_LENGTH)),
     new SlashCommandBuilder()
         .setName('in')
         .setDescription("I'm in! Join the rally")
-        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false).setMaxLength(MAX_TEXT_OPTION_LENGTH)),
     new SlashCommandBuilder()
         .setName('out')
         .setDescription("I'm out / bail from rally")
-        .addStringOption(o => o.setName('reason').setDescription('Why?').setRequired(false)),
+        .addStringOption(o => o.setName('reason').setDescription('Why?').setRequired(false).setMaxLength(MAX_TEXT_OPTION_LENGTH)),
     new SlashCommandBuilder()
         .setName('ping')
         .setDescription('Ping someone to come play')
         .addUserOption(o => o.setName('user').setDescription('Who to ping').setRequired(true))
-        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false).setMaxLength(MAX_TEXT_OPTION_LENGTH)),
     new SlashCommandBuilder()
         .setName('brb')
         .setDescription('Be right back, joining shortly')
-        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false).setMaxLength(MAX_TEXT_OPTION_LENGTH)),
     new SlashCommandBuilder()
         .setName('where')
         .setDescription("Where are you? You didn't show up!")
@@ -142,7 +144,7 @@ const commands = [
         .setName('call2select')
         .setDescription('Nudge someone to set their availability on when2play')
         .addUserOption(o => o.setName('user').setDescription('Who to nudge').setRequired(true))
-        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false)),
+        .addStringOption(o => o.setName('message').setDescription('Optional message').setRequired(false).setMaxLength(MAX_TEXT_OPTION_LENGTH)),
     new SlashCommandBuilder()
         .setName('post')
         .setDescription('Post information to the channel')
