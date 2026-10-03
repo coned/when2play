@@ -1,4 +1,3 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import { uuid, now } from '../helpers';
 import { getSetting } from './settings';
 import { pendingCutoff, isDelivered, DELIVERY_STATE } from '../../lib/pending';

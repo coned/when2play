@@ -1,4 +1,3 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import { uuid, now } from '../helpers';
 
 /** Returns true when the error is a SQLite "no such table" or "no such column" message. */

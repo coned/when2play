@@ -93,7 +93,7 @@ auth.post('/admin-token', requireBotAuth, async (c) => {
 	}
 
 	await deleteStaleAuthRows(c.env.DB);
-	const user = await upsertUser(c.env.DB, adminDiscordId, 'Administrator', null);
+	const user = await upsertUser(c.env.DB, adminDiscordId, 'Administrator');
 	const token = generateToken();
 	await createAuthToken(c.env.DB, user.id, token, true);
 

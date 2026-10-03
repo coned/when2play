@@ -39,7 +39,8 @@ shame.post('/:targetId', async (c) => {
 		return c.json({ ok: false, error: { code: 'NOT_FOUND', message: 'User not found' } }, 404);
 	}
 
-	const body = await c.req.json<{ reason?: string; is_anonymous?: boolean }>().catch(() => ({}));
+	type ShameBody = { reason?: string; is_anonymous?: boolean };
+	const body = await c.req.json<ShameBody>().catch((): ShameBody => ({}));
 
 	if (body.reason && body.reason.length > 200) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Reason must be 200 characters or less' } }, 400);

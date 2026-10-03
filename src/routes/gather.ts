@@ -57,11 +57,12 @@ gather.post('/', requireAuth, async (c) => {
 		}
 	}
 
-	const body = await c.req.json<{
+	type GatherBody = {
 		message?: string;
 		is_anonymous?: boolean;
 		target_user_ids?: string[];
-	}>().catch(() => ({}));
+	};
+	const body = await c.req.json<GatherBody>().catch((): GatherBody => ({}));
 
 	if (body.message && body.message.length > 500) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Message must be 500 characters or less' } }, 400);

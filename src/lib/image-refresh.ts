@@ -1,4 +1,3 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import type { GameRow } from '../db/queries/games';
 import { updateGame } from '../db/queries/games';
 

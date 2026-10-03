@@ -12,6 +12,7 @@
 		"build": "cd frontend && npx vite build",
 		"start": "wrangler dev",
 		"test": "vitest",
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p frontend/tsconfig.json",
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {

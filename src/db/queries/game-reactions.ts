@@ -1,4 +1,3 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import { now } from '../helpers';
 
 export type ReactionType = 'like' | 'dislike';

@@ -1,5 +1,3 @@
-import type { D1Database } from '@cloudflare/workers-types';
-
 export async function enableForeignKeys(db: D1Database): Promise<void> {
 	await db.exec('PRAGMA foreign_keys = ON');
 }

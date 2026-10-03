@@ -15,7 +15,7 @@ export async function lookupSteamApp(appId: string): Promise<SteamAppDetails | n
 
 	if (!res.ok) return null;
 
-	const data = await res.json();
+	const data = await res.json<Record<string, { success?: boolean; data?: SteamAppDetails } | undefined>>();
 	const appData = data[appId];
 
 	if (!appData?.success || !appData.data) return null;

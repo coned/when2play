@@ -11,6 +11,10 @@ export const THEMES = [
 export type ThemeId = (typeof THEMES)[number]['id'];
 export type Mode = 'dark' | 'light';
 
+function isThemeId(id: string | null): id is ThemeId {
+	return id !== null && THEMES.some((t) => t.id === id);
+}
+
 const THEME_KEY = 'w2p-theme';
 const MODE_KEY = 'w2p-mode';
 
@@ -28,7 +32,8 @@ function applyMode(mode: Mode) {
 
 export function useTheme() {
 	const [theme, setThemeState] = useState<ThemeId>(() => {
-		const saved = localStorage.getItem(THEME_KEY) as ThemeId | null;
+		// Read as a plain string: it may hold a legacy theme name
+		const saved = localStorage.getItem(THEME_KEY);
 		// Migrate old themes
 		if (saved === 'daylight') {
 			localStorage.setItem(THEME_KEY, 'cyberpunk');
@@ -39,7 +44,7 @@ export function useTheme() {
 			localStorage.setItem(THEME_KEY, 'ocean');
 			return 'ocean';
 		}
-		return saved && THEMES.some((t) => t.id === saved) ? saved : 'cyberpunk';
+		return isThemeId(saved) ? saved : 'cyberpunk';
 	});
 
 	const [mode, setModeState] = useState<Mode>(() => {
@@ -73,7 +78,8 @@ export function useTheme() {
 
 /** Apply saved theme + mode immediately (call before render to prevent flash) */
 export function initTheme() {
-	const savedTheme = localStorage.getItem(THEME_KEY) as ThemeId | null;
+	// Read as a plain string: it may hold a legacy theme name
+	const savedTheme = localStorage.getItem(THEME_KEY);
 	const savedMode = localStorage.getItem(MODE_KEY) as Mode | null;
 
 	// Migrate old themes
@@ -88,7 +94,7 @@ export function initTheme() {
 		document.documentElement.setAttribute('data-theme', 'ocean');
 	}
 
-	if (savedTheme && savedTheme !== 'cyberpunk' && THEMES.some((t) => t.id === savedTheme)) {
+	if (savedTheme !== 'cyberpunk' && isThemeId(savedTheme)) {
 		document.documentElement.setAttribute('data-theme', savedTheme);
 	}
 

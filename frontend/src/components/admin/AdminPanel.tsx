@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'preact/hooks';
 import { api } from '../../api/client';
 
-interface SettingsState {
+// A type alias (not an interface) so it is assignable to Record<string, unknown> for api.updateSettings.
+type SettingsState = {
 	time_granularity_minutes: number;
 	game_pool_lifespan_days: number;
 	auto_archive_enabled: boolean;
@@ -14,7 +15,7 @@ interface SettingsState {
 	rally_suggested_phrases: Record<string, string[]>;
 	rally_show_discord_command: boolean;
 	rally_anonymous_enabled: Record<string, boolean>;
-}
+};
 
 const RALLY_ACTION_TYPES = ['call', 'in', 'out', 'brb', 'ping', 'where', 'judge_avail', 'judge_time', 'share_ranking'] as const;
 const DEFAULT_RALLY_LABELS: Record<string, string> = {

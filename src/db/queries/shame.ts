@@ -1,4 +1,3 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import { uuid, now } from '../helpers';
 
 export interface ShameVoteRow {

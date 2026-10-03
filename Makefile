@@ -1,4 +1,4 @@
-.PHONY: help dev dev-local build test test-watch deploy deploy-only \
+.PHONY: help dev dev-local build test test-watch typecheck check deploy deploy-only \
        migrate-local migrate-remote seed simulate logs clean
 
 help: ## Show available commands
@@ -20,10 +20,15 @@ test: ## Run all tests
 test-watch: ## Run tests in watch mode
 	npx vitest
 
-deploy: build ## Build and deploy to Cloudflare
+typecheck: ## Type check the Worker and the frontend
+	npm run typecheck
+
+check: typecheck test ## Type check, then run all tests
+
+deploy: check build ## Check, build and deploy the Worker to Cloudflare
 	npx wrangler deploy
 
-deploy-only: ## Deploy without rebuilding
+deploy-only: ## Deploy as is (skips checks and build; escape hatch)
 	npx wrangler deploy
 
 migrate-local: ## Apply migrations locally (all databases)
