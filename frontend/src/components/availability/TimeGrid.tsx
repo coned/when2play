@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'preact/hooks'
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { formatLocalTimeClean } from '../../lib/time';
 
+import { etHourToUtcSlot } from '@when2play/shared';
 import type { AvailabilityStatus } from '@when2play/shared';
 
 interface TimeGridProps {
@@ -50,24 +51,6 @@ function getNextDate(dateStr: string): string {
 	const d = new Date(dateStr + 'T12:00:00Z');
 	d.setUTCDate(d.getUTCDate() + 1);
 	return d.toISOString().split('T')[0];
-}
-
-/** Convert an ET hour to a UTC HH:MM slot for a given date, accounting for DST. */
-function etHourToUtcSlot(etHour: number, dateStr: string): string {
-	const estimateUtcHour = (etHour + 5) % 24;
-	const trial = new Date(`${dateStr}T${String(estimateUtcHour).padStart(2, '0')}:00:00Z`);
-
-	const etStr = trial.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
-	const actualEtHour = parseInt(etStr, 10) % 24;
-
-	const diff = ((etHour - actualEtHour) % 24 + 24) % 24;
-	if (diff !== 0) {
-		trial.setUTCHours(trial.getUTCHours() + diff);
-	}
-
-	const h = trial.getUTCHours();
-	const m = trial.getUTCMinutes();
-	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 interface FilteredSlot {

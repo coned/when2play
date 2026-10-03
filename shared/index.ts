@@ -7,3 +7,15 @@ export type { GatherPing, CreateGatherRequest } from './types/gather';
 export type { ShameVote, CreateShameRequest, ShameLeaderboardEntry } from './types/shame';
 export type { Setting, SettingsMap, UpdateSettingsRequest } from './types/settings';
 export type { ActionType, Rally, RallyAction, RallyTreeNode, RallyTreeData, JudgeTimeResult, CreateRallyRequest, CreateActionRequest, ShareTreeRequest } from './types/rally';
+export {
+	MINUTES_PER_DAY,
+	hhmmToMinutes,
+	minutesToHhmm,
+	etHourToUtcSlot,
+	gridOriginMinutes,
+	slotStartOffset,
+	slotEndOffset,
+	slotDateOffset,
+	offsetToInstant,
+	slotInstant,
+} from './lib/gamingDay';
