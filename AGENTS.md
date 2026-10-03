@@ -14,7 +14,8 @@ For all limits and quotas, retrieve from the product's `/platform/limits/` page.
 | Command | Purpose |
 |---------|---------|
 | `npx wrangler dev` | Local development |
-| `npx wrangler deploy` | Deploy to Cloudflare |
+| `make deploy` | Type check, test, build, then `wrangler deploy --var GIT_SHA:<commit>` (`make release` adds migrations and a smoke test) |
+| `npm run typecheck` | Type check the Worker and the frontend (must pass; deploys and CI run it) |
 | `npx wrangler types` | Generate TypeScript types |
 
 Run `wrangler types` after changing bindings in wrangler.jsonc.

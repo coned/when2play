@@ -76,6 +76,7 @@ It reads `BOT_API_KEY` from the environment or from `.dev.vars`.
 ```bash
 make test          # single run
 make test-watch    # watch mode
+make check         # type check + tests (what deploys and CI require)
 ```
 
 Tests use an in-memory SQLite database and apply all migrations automatically. No Cloudflare account needed.
@@ -93,8 +94,13 @@ Run `make help` to see all targets:
 | `make build` | Build frontend |
 | `make test` | Run all tests |
 | `make test-watch` | Run tests in watch mode |
-| `make deploy` | Build and deploy to Cloudflare |
-| `make deploy-only` | Deploy without rebuilding |
+| `make typecheck` | Type check the Worker and the frontend |
+| `make check` | Type check, then run all tests |
+| `make deploy` | Check, build and deploy the Worker (stamped with the commit) |
+| `make deploy-only` | Deploy as is (skips checks and build; escape hatch) |
+| `make release` | Check, build, migrate all DBs, deploy, then smoke test (needs `APP_URL`) |
+| `make smoke` | Check that `$APP_URL/api/health` is ok and runs the local commit |
+| `make version` | Print the version string a deploy from this tree would carry |
 | `make migrate-local` | Apply migrations locally |
 | `make migrate-remote` | Apply migrations remotely |
 | `make seed` | Seed test data |

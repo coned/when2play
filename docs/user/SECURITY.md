@@ -10,17 +10,33 @@ Bot-facing endpoints require the `X-Bot-Token` header matching the `BOT_API_KEY`
 X-Bot-Token: <your-bot-api-key>
 ```
 
-Set the secret via `npx wrangler secret put BOT_API_KEY`. When the secret is not set, the check is skipped (local dev mode only).
+Set the secret via `npx wrangler secret put BOT_API_KEY` (locally: `BOT_API_KEY` in `.dev.vars`, see `.dev.vars.example`). The token is compared in constant time (`src/lib/bot-token.ts`: `crypto.subtle.timingSafeEqual` on Workers, a constant-time byte loop on Node) everywhere it is checked: `requireBotAuth`, the act-as path in `requireAuth`, the guild middleware and the bot branch of the auth callback.
+
+**Fail closed.** If `BOT_API_KEY` is not configured on the server, `requireBotAuth` rejects every request with HTTP `503` and error code `BOT_AUTH_NOT_CONFIGURED`, whatever headers it carries, and the act-as and `X-Guild-Id` paths are never taken. There is no bypass flag. A wrong or missing token with the key configured gets `403 FORBIDDEN`.
 
 Protected endpoints:
+- `POST /api/bot/poll` - aggregated delivery poll for all guilds in one request (rally actions, tree shares, game shares); also carries the acks for items the bot already posted. Mounted outside the guild middleware: the guild IDs are in the body, not in `X-Guild-Id`
+- `POST /api/users/sync` - upsert Discord users (id, username, avatar) before acting as them
 - `POST /api/auth/token` - create login tokens for Discord users
 - `POST /api/auth/admin-token` - create admin login tokens
-- `GET /api/gather/pending` + `PATCH /api/gather/:id/delivered` - gather ping delivery
-- `GET /api/rally/pending` + `PATCH /api/rally/:id/delivered` - rally action delivery
-- `GET /api/rally/tree/share/pending` + `PATCH /api/rally/tree/share/:id/delivered` - tree image delivery
 - `GET /api/settings/bot` + `PATCH /api/settings/bot` - guild settings
+- Legacy per-kind delivery endpoints, superseded by `POST /api/bot/poll`:
+  - `GET /api/gather/pending` + `PATCH /api/gather/:id/delivered` - gather ping delivery
+  - `GET /api/rally/pending` + `PATCH /api/rally/:id/delivered` - rally action delivery
+  - `GET /api/rally/tree/share/pending` + `PATCH /api/rally/tree/share/:id/delivered` - tree image delivery
+  - `GET /api/games/share/pending` + `PATCH /api/games/share/:id/delivered` - game ranking share delivery
 
-If `BOT_API_KEY` is not configured on the server, `requireBotAuth` returns HTTP 500 immediately (fail-closed: bot endpoints are entirely unavailable rather than open).
+### Acting as a user
+
+The bot runs slash commands such as `/call` and `/in` on behalf of the Discord user who typed them. Instead of a session cookie it sends:
+
+```
+X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: <guild snowflake>
+X-Discord-User-Id: <discord user id>
+```
+
+`requireAuth` accepts this only when `BOT_API_KEY` is configured and the token matches. It then loads the user by `discord_id` from that guild's database (unknown user: `401`; the bot calls `POST /api/users/sync` first). Act-as requests are never admin and have no session. A request whose token does not match is treated like any cookie request, so a browser cannot use `X-Discord-User-Id`.
 
 ---
 
@@ -59,7 +75,7 @@ Admin access is Discord-gated. There is no default admin. A Discord server membe
 
 ## Guild ID Trust Boundary
 
-The `X-Guild-Id` header is only trusted when the request also carries a valid `X-Bot-Token`. The guild middleware verifies the bot token (a string comparison against `c.env.BOT_API_KEY`) before reading the header. This prevents browsers from spoofing guild context, since browsers can set arbitrary request headers via `fetch()`.
+The `X-Guild-Id` header is only trusted when the request also carries a valid `X-Bot-Token`. The guild middleware verifies the bot token (a constant-time comparison against `c.env.BOT_API_KEY`, never true when the key is unset) before reading the header. This prevents browsers from spoofing guild context, since browsers can set arbitrary request headers via `fetch()`.
 
 For browser requests (no valid bot token), guild context comes exclusively from:
 - The `guild_id` cookie (httpOnly, set by the server during auth callback)
@@ -90,10 +106,29 @@ Even if guild context were somehow spoofed, cross-guild data access is prevented
 
 ## Security Headers
 
-All responses include:
+Two sources, because static assets never reach the Worker code (only `/api/*` runs the Worker first, see `run_worker_first` in `wrangler.jsonc.template`):
+
+**API responses** (`/api/*`, `src/middleware/security-headers.ts`):
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Referrer-Policy: strict-origin-when-cross-origin`
+
+**Static assets** (the HTML shell, JS, CSS, images; `frontend/public/_headers`, which Vite copies to `frontend/dist/_headers` and Cloudflare's static asset handler applies; the file itself is not served):
+- `/*`: the same three headers plus
+  `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`
+- `/assets/*`: `Cache-Control: public, max-age=31536000, immutable` (Vite puts a content hash in every file name there, so a new build gets new URLs; `index.html` keeps the default `max-age=0, must-revalidate`)
+
+Why each CSP directive is set the way it is:
+
+| Directive | Reason |
+|-----------|--------|
+| `script-src 'self'` | The built `index.html` loads one module script from `/assets/`; there is no inline script, `eval` or `new Function` |
+| `style-src 'self' 'unsafe-inline'` | Components use inline `style` attributes; the stylesheet is same-origin, no web fonts are loaded |
+| `img-src 'self' https: data: blob:` | Discord avatars, Steam header images and user supplied game image URLs (any https host); `data:` and `blob:` for the gaming tree PNG export, which embeds avatars as data URLs and rasterizes the SVG through a blob URL |
+| `connect-src 'self' https:` | API calls are same-origin; the tree export fetches avatar images from their https hosts to embed them |
+| `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` | No framing, plugins, base tag or cross-origin form posts are needed |
+
+If a change adds an external script, stylesheet, font, iframe or fetch target, update `frontend/public/_headers` in the same commit. Check the headers locally with `npx wrangler dev` and `curl -sI http://localhost:8787/`.
 
 ---
 
@@ -104,8 +139,8 @@ All responses include:
 3. **Security headers** - nosniff, frame deny, referrer policy
 4. **Guild middleware** - resolves per-guild D1 binding from request context
 5. **Foreign keys** - enables `PRAGMA foreign_keys = ON` per API request
-6. **Bot auth** (`requireBotAuth`) - validates `X-Bot-Token` against `BOT_API_KEY`
-7. **Session auth** (`requireAuth`) - validates `session_id` cookie
+6. **Bot auth** (`requireBotAuth`) - validates `X-Bot-Token` against `BOT_API_KEY` in constant time; `503` when the key is not configured
+7. **Session auth** (`requireAuth`) - validates `session_id` cookie, or the act-as headers from the bot
 
 ---
 
@@ -144,7 +179,7 @@ The bot process has no inbound ports and initiates all connections itself, so th
 
 **`DISCORD_TOKEN` leaking.** An attacker can impersonate the bot on Discord: read messages, send messages, run commands. Keep it only in `.env` (which must be gitignored). If leaked, regenerate immediately in the Discord Developer Portal.
 
-**`BOT_API_KEY` leaking.** An attacker can call bot-authenticated endpoints: read pending rally actions and gather pings, mark them as delivered (silently dropping notifications). They cannot write new actions or access user data beyond what those polling endpoints return. Rotate by generating a new 64-char hex key and updating both sides.
+**`BOT_API_KEY` leaking.** Treat this as a full compromise of the app: with the key and a guild ID an attacker can mint login links for any Discord user (`POST /api/auth/token`, and admin links via `POST /api/auth/admin-token`), act as any user through the act-as headers, and read or drop pending notifications via `POST /api/bot/poll`. Rotate immediately by generating a new 64-char hex key and updating both sides (see Maintenance, API Key Rotation).
 
 **`.env` committed to git.** The most common real-world mistake. Confirm `.env` is in `.gitignore` before the first commit. If it was ever committed, treat both secrets as compromised and rotate them.
 

@@ -23,7 +23,7 @@ All bot-facing endpoints require the `X-Bot-Token` header matching the `BOT_API_
 X-Bot-Token: <your-bot-api-key>
 ```
 
-Set the secret via `npx wrangler secret put BOT_API_KEY`. When the secret is not set, the auth check is skipped (local dev only).
+Set the secret via `npx wrangler secret put BOT_API_KEY` (locally: `.dev.vars`). Bot auth fails closed: when the secret is not set, every bot endpoint answers `503` with error code `BOT_AUTH_NOT_CONFIGURED`. A wrong or missing token answers `403 FORBIDDEN`.
 
 ### Acting as a user (slash commands)
 

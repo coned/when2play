@@ -66,7 +66,7 @@ npx wrangler d1 execute when2play-<guild-name> --remote --command "SELECT name F
 
 ### 4. Set the Bot API Key
 
-This protects bot-facing endpoints from unauthorized access. **Required before going public.**
+This protects bot-facing endpoints from unauthorized access. **Required**: without it the bot cannot log users in or receive notifications.
 
 ```bash
 # Generate a key
@@ -79,13 +79,15 @@ npx wrangler secret put BOT_API_KEY
 
 Save this key somewhere safe; you will also need it for the Discord bot's `.env` file.
 
-If `BOT_API_KEY` is not set, bot auth is skipped. Fine for local dev, **not safe for production** since anyone could create login sessions for arbitrary users via `POST /api/auth/token`.
+Bot auth **fails closed**: if `BOT_API_KEY` is not set, every bot endpoint (`POST /api/auth/token`, `POST /api/bot/poll`, `POST /api/users/sync`, ...) answers `503` with error code `BOT_AUTH_NOT_CONFIGURED`, and the act-as headers are ignored. A deploy that forgot the secret is therefore unusable for the bot, but it can never be used to log in as an arbitrary user. There is no flag to turn this off.
 
 ### 5. Deploy
 
 ```bash
 make deploy
 ```
+
+`make deploy` runs `make check` (type check of the Worker and the frontend, then the full test suite), builds the frontend, and runs `npx wrangler deploy --var GIT_SHA:<short commit>`. If the type check or a test fails, nothing is deployed. The commit gets a `-dirty` suffix when the working tree has uncommitted changes (`make version` prints the value a deploy would use). `make deploy-only` skips the checks and the build; keep it for emergencies.
 
 Output shows your Worker URL:
 
@@ -98,8 +100,12 @@ Published when2play (x.xx sec)
 
 ```bash
 curl https://when2play.<your-subdomain>.workers.dev/api/health
-# {"ok":true,"data":{"status":"healthy","timestamp":"..."}}
+# {"ok":true,"data":{"status":"healthy","version":"<short commit>","timestamp":"..."}}
+
+make smoke APP_URL=https://when2play.<your-subdomain>.workers.dev
 ```
+
+`version` is the commit the Worker was deployed from (`dev` when it was deployed without `GIT_SHA`). `make smoke` fails unless `ok` is true and `version` equals the local commit. `APP_URL` has no default in the repo; pass it on the command line or `export APP_URL=...` in your shell profile. For later releases, `make release` does the migrations, the deploy and this check in one go (see [Maintenance](MAINTENANCE.md#releasing-an-update)).
 
 Open the URL in a browser to see the login page.
 
@@ -108,8 +114,11 @@ Open the URL in a browser to see the login page.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `DB_<guild_id>` | D1 Binding | Yes (1+) | Per-guild D1 database. Named `DB_` + Discord guild snowflake. |
-| `BOT_API_KEY` | Secret | Recommended | Shared secret for bot auth. Set via `wrangler secret put`. |
+| `BOT_API_KEY` | Secret | Yes | Shared secret for bot auth. Set via `wrangler secret put`. Without it all bot endpoints answer 503. |
 | `VERBOSE_ERRORS` | Secret/Var | No | Set to `1` for full error messages in 500 responses. |
+| `GIT_SHA` | Var | No | Set by `make deploy` / `make release` (`--var GIT_SHA:<commit>`); reported as `version` by `/api/health`. Do not set it by hand. |
+
+`wrangler deploy` replaces the Worker's plain-text vars with those from the config and the command line, so `GIT_SHA` always reflects the latest deploy. Secrets (`BOT_API_KEY`) are not affected.
 
 ### Cloudflare Free Tier Limits
 
@@ -166,7 +175,7 @@ GAMING_CHANNEL_ID=123456789012345678
 |----------|----------|-------------|
 | `DISCORD_TOKEN` | Yes | Bot token from Discord Developer Portal |
 | `WHEN2PLAY_API_URL` | Yes | Base URL of the deployed when2play Worker |
-| `BOT_API_KEY` | Yes (production) | Must match the `BOT_API_KEY` set via `wrangler secret put` on the Worker |
+| `BOT_API_KEY` | Yes | Must match the `BOT_API_KEY` set via `wrangler secret put` on the Worker |
 | `GAMING_CHANNEL_ID` | No | Fallback channel ID. Optional if using `/setchannel` instead |
 
 > **Channel setup:** You can either set `GAMING_CHANNEL_ID` in `.env`, or use the `/setchannel` slash command in Discord (requires ADMINISTRATOR). The slash command persists the setting in D1 and takes priority over the env var.
