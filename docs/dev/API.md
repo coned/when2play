@@ -14,6 +14,28 @@ All responses follow the format:
 
 Unhandled error messages are redacted by default. Set `VERBOSE_ERRORS=1` (env var / wrangler secret) to include the original error message in the response.
 
+## Authentication
+
+Endpoints marked "requires session cookie" (user routes) accept either of:
+
+- **Session cookie** `session_id=...` (browser, or the legacy bot flow through `/api/auth/token` + `/api/auth/callback/:token`).
+- **Bot acting as a user:** headers `X-Bot-Token: <BOT_API_KEY>`, `X-Guild-Id: <guild id>` and `X-Discord-User-Id: <discord id>`. The request is authenticated as the user with that `discord_id` in the guild's database (create or refresh them first with `POST /api/users/sync`). Unknown `discord_id` gives `401 UNAUTHORIZED`. Such requests are never admin (`is_admin: false`) and have no session (`POST /api/auth/logout` is a no-op for them). This path only exists when the `BOT_API_KEY` secret is set; with a missing or wrong `X-Bot-Token` the `X-Discord-User-Id` header is ignored and the request needs a cookie like any other.
+
+Bot-auth endpoints take `X-Bot-Token` only (when `BOT_API_KEY` is unset they are open, for local dev only).
+
+## Rate limits for posts to Discord
+
+Every request that queues a post to Discord is limited per user, using the admin settings `gather_cooldown_seconds` (default 10) and `gather_hourly_limit` (default 30). A value of `0` disables that check.
+
+- **Cooldown:** the same user repeating the same rally `action_type` (`call`, `in`, `out`, `brb`, `ping`, `where`, `judge_time`, `judge_avail`, `share_ranking`) within the cooldown. Also applies to `POST /api/games/:id/share` (any game) and `POST /api/rally/tree/share`, each as its own kind.
+- **Hourly limit:** a user with that many rally actions (all types) in the last 60 minutes.
+
+Both answer `429` with `{ "ok": false, "error": { "code": "RATE_LIMITED", "message": "Cooldown active. Try again in 7s" } }` (or `"Hourly limit reached. Try again in 1234s"`). The message always ends with the remaining seconds.
+
+## Delivery state
+
+`rally_actions`, `rally_tree_shares` and `game_shares` share a `delivered` column: `0` pending, `1` delivered (acknowledged by the bot), `2` expired (dropped unsent after 30 minutes by `POST /api/bot/poll`). Rows expired before this state existed carry `1`. JSON responses expose `delivered: boolean`, which is `true` only for `1`.
+
 ---
 
 ## Health
@@ -53,9 +75,15 @@ One request per bot polling cycle for **all** guilds: acknowledges what the bot 
 - `acks` (optional): object keyed by guild ID (same format, at most 100 keys). Each value is an object with any of `rally_actions`, `tree_shares`, `game_shares` (no other keys); each list holds at most 200 non-empty ID strings of at most 100 characters. Acked IDs are marked delivered; unknown or already-delivered IDs are ignored, so re-sending an ack is harmless. Acks are applied for every guild that has a DB binding, even if it is not listed in `guild_ids` (such a guild is acked but not polled).
 - Anything else returns `400 BAD_REQUEST`.
 
-**Per guild, in order:** apply acks; count undelivered rows with one query (idle guilds stop here and are omitted from the response); mark rows older than 30 minutes as delivered; return the remaining undelivered rows of each kind, oldest first.
+**Per guild, in order:** apply acks; count undelivered rows and read the stored heartbeat with one query; write the heartbeat if it is due; idle guilds stop here and are omitted from the response; mark rows older than 30 minutes as expired (`delivered = 2`); return the remaining undelivered rows of each kind, oldest first.
 
-**Staleness rule:** items older than 30 minutes (`PENDING_MAX_AGE_MS`) are never returned. They are marked delivered so a bot coming back from an outage never posts a stale backlog. The legacy pending endpoints apply the same 30 minute filter (read-only).
+**Staleness rule:** items older than 30 minutes (`PENDING_MAX_AGE_MS`) are never returned. They are marked expired (`delivered = 2`) so a bot coming back from an outage never posts a stale backlog. The legacy pending endpoints apply the same 30 minute filter (read-only).
+
+**Heartbeat:** every guild listed in `guild_ids` (not ack-only guilds) gets its poll time stored in its `settings` table under `bot_last_poll_at` (ISO string), rewritten at most once per 60 seconds. `GET /api/rally/active` and the share endpoints report the bot as online when this is less than 3 minutes old. The key is internal: `GET`/`PATCH /api/settings` hide and ignore it.
+
+**Acks and expiry of tree shares** also set `image_data = NULL`: the PNG is only kept until the share is finished.
+
+**Anonymous actions:** for an action with `metadata.is_anonymous: true` the actor fields are replaced: `actor_id: "__anonymous__"`, `actor_username: "Anonymous"`, `actor_avatar: null`, `actor_discord_id: null`.
 
 **Response (200):**
 ```json
@@ -103,6 +131,10 @@ Creates a one-time auth token for a Discord user. Called by the Discord bot.
 { "ok": true, "data": { "token": "abc123...", "url": "https://host/auth/abc123..." } }
 ```
 
+Each call (and each `/api/auth/admin-token` call) first deletes used or expired auth tokens and expired sessions, in one batch.
+
+The bot should prefer `POST /api/users/sync` plus the act-as headers (see Authentication) over minting tokens and sessions. This endpoint and the bot branch of the callback keep working.
+
 ### `POST /api/auth/admin-token`
 Creates a one-time admin auth token. Called by the Discord bot after verifying the requesting member has `ADMINISTRATOR` permission. The resulting session grants admin privileges.
 
@@ -135,7 +167,40 @@ Requires session cookie. Destroys the session.
 
 ## Users
 
-All endpoints require session cookie.
+All endpoints require session cookie, except `POST /api/users/sync` (bot-auth).
+
+### `POST /api/users/sync` (Bot-auth)
+Creates or updates Discord users in the guild named by `X-Guild-Id`, so the bot can then act as them. Creates no auth token and no session.
+
+**Auth:** `X-Bot-Token` + `X-Guild-Id` headers.
+
+**Body (Zod validated):**
+```json
+{
+  "users": [
+    { "discord_id": "123456789", "discord_username": "GamerDave", "avatar_url": "https://cdn.discordapp.com/..." }
+  ],
+  "guild_name": "My Server"
+}
+```
+
+- `users`: 1 to 10 entries. `discord_id` 1-30 chars, `discord_username` 1-50 chars, `avatar_url` optional, max 500 chars (`null` or absent keeps the stored avatar). Same rules as `POST /api/auth/token`.
+- `guild_name`: optional, max 100 chars, saved to settings like `/api/auth/token` does.
+- Each user goes through the same upsert as `/api/auth/token` (`display_name` follows `discord_username` while `sync_name_from_discord` is on).
+
+**Response (200):** rows in request order (a repeated `discord_id` appears twice).
+```json
+{
+  "ok": true,
+  "data": {
+    "users": [
+      { "id": "uuid", "discord_id": "123456789", "discord_username": "GamerDave", "display_name": "GamerDave", "avatar_url": "https://..." }
+    ]
+  }
+}
+```
+
+**Errors:** `400 BAD_REQUEST` for an invalid body (including 0 or more than 10 users), `403 FORBIDDEN` for a wrong `X-Bot-Token`.
 
 ### `GET /api/users`
 Returns all registered users (for user pickers in gather/shame).
@@ -151,7 +216,7 @@ Returns all registered users (for user pickers in gather/shame).
 ```
 
 ### `GET /api/users/me`
-Returns the current authenticated user. Includes `is_admin: boolean` — `true` when the session was created via an admin token.
+Returns the current authenticated user. Includes `is_admin: boolean`: `true` when the session was created via an admin token, always `false` for a bot acting as a user.
 
 ### `PATCH /api/users/me`
 Updates the current user's profile.
@@ -238,12 +303,14 @@ Returns recent game activity (propose, like, dislike, archive, restore, share ev
 **Query params:** `?limit=20&before=<iso-timestamp>` (max 50 per page, cursor-based).
 
 ### `POST /api/games/:id/share`
-Broadcasts a game to the Discord channel. Creates a share record for bot polling. Logs activity and updates `last_activity_at`.
+Broadcasts a game to the Discord channel. Creates a share record for bot polling. Logs activity and updates `last_activity_at`. Cooldown per user (see Rate limits): `429 RATE_LIMITED`.
 
 **Response (201):**
 ```json
-{ "ok": true, "data": { "id": "uuid", "game_id": "uuid", "requested_by": "uuid", "delivered": false, "created_at": "..." } }
+{ "ok": true, "data": { "id": "uuid", "game_id": "uuid", "requested_by": "uuid", "delivered": false, "created_at": "...", "bot_online": true } }
 ```
+
+`bot_online` is `false` when the bot has not polled this guild in the last 3 minutes (bot offline or no output channel): the share stays queued and is dropped after 30 minutes.
 
 ### `GET /api/games/share/pending` (Bot-auth, legacy)
 Returns undelivered game shares with joined game data (name, note, image, Steam app ID, like/dislike counts, requester name). Shares older than 30 minutes are skipped. Legacy: prefer `POST /api/bot/poll`.
@@ -512,13 +579,18 @@ Returns the shame leaderboard sorted by weekly shame count. Votes older than 7 d
 
 ## Rally
 
+All POST bodies must be JSON objects (an empty body counts as `{}` where every field is optional); anything else is `400 BAD_REQUEST`. Every POST that creates an action is rate limited (see Rate limits, `429 RATE_LIMITED`).
+
+**Anonymous actions.** `is_anonymous: true` is only accepted for action types enabled in the admin setting `rally_anonymous_enabled` (default `{"call": true, "ping": true}`); otherwise `400 BAD_REQUEST`, so nobody believes they posted anonymously when they did not. A non-boolean `is_anonymous` is also `400`. In every response (including the creator's own response and the bot payloads) an anonymous action reports `actor_id: "__anonymous__"`, `actor_username: "Anonymous"`, `actor_avatar: null`, `actor_discord_id: null`, and keeps `metadata.is_anonymous: true`. Rallies never include `creator_id`.
+
 ### `POST /api/rally/call`
 Requires session cookie. Creates or gets today's rally and records a `call` action.
 
 **Body (all fields optional):**
 ```json
 {
-  "timing": "now"  // "now" or "later", defaults to "now"
+  "message": "anyone?",   // max 500 chars
+  "is_anonymous": false    // see Anonymous actions
 }
 ```
 
@@ -527,7 +599,7 @@ Requires session cookie. Creates or gets today's rally and records a `call` acti
 {
   "ok": true,
   "data": {
-    "rally": { "id": "uuid", "creator_id": "uuid", "timing": "now", "day_key": "2026-02-26", "status": "open", "created_at": "..." },
+    "rally": { "id": "uuid", "timing": "now", "day_key": "2026-02-26", "status": "open", "created_at": "..." },
     "action": { "id": "uuid", "rally_id": "uuid", "actor_id": "uuid", "action_type": "call", ... }
   }
 }
@@ -540,10 +612,14 @@ Requires session cookie. Records an action (in/out/ping/brb/where). Auto-attache
 ```json
 {
   "action_type": "in",               // required: "in", "out", "ping", "brb", "where"
-  "target_user_ids": ["uuid"],       // required for ping/where
-  "message": "on my way"             // optional, max 500 chars
+  "target_user_ids": ["uuid"],       // required for ping/where: 1-20 ids of existing users
+  "rally_id": "uuid",                // optional, must exist; defaults to today's active rally
+  "message": "on my way",            // optional, max 500 chars
+  "is_anonymous": false              // optional, see Anonymous actions
 }
 ```
+
+`target_user_ids`, when present for any type, must be an array of 1 to 20 user id strings that all exist (`400` otherwise).
 
 ### `POST /api/rally/judge/time`
 Requires session cookie. Computes all overlapping availability windows for today where 2+ users are available simultaneously.
@@ -570,8 +646,10 @@ Requires session cookie. Nudges a user to set availability.
 
 **Body:**
 ```json
-{ "target_user_ids": ["uuid"] }
+{ "target_user_ids": ["uuid"], "message": "pick your times" }
 ```
+
+`target_user_ids`: 1-20 ids of existing users; `message` optional, max 500 chars.
 
 ### `POST /api/rally/share-ranking`
 Requires session cookie. Broadcasts the current game ranking to Discord via a `share_ranking` rally action. The top 10 games (by Borda score) are stored in `metadata.ranking`.
@@ -579,8 +657,25 @@ Requires session cookie. Broadcasts the current game ranking to Discord via a `s
 ### `GET /api/rally/active`
 Requires session cookie. Returns today's active rally and all actions. Optional `?day_key=YYYY-MM-DD`.
 
+**Response:**
+```json
+{
+  "ok": true,
+  "data": {
+    "rally": { "id": "uuid", "timing": "now", "day_key": "2026-02-26", "status": "open", "created_at": "..." },
+    "actions": [
+      { "id": "uuid", "action_type": "in", "actor_id": "uuid", "actor_username": "Dave", "actor_avatar": null, "actor_discord_id": "...", "target_user_ids": null, "message": null, "metadata": null, "delivered": false, "delivery_status": "pending", "created_at": "...", "...": "..." }
+    ],
+    "bot": { "online": true, "last_seen_at": "2026-02-26T23:01:15.000Z" }
+  }
+}
+```
+
+- `delivery_status`: `"pending"` (waiting for the bot), `"delivered"` (`delivered = 1`) or `"expired"` (`delivered = 2`, or still `0` but older than 30 minutes). `delivered` stays a boolean, `true` only for delivered.
+- `bot.online`: the bot polled this guild in the last 3 minutes. `false` means the bot is offline or no output channel is set (`/setchannel`); queued messages are dropped after 30 minutes. `last_seen_at` is the stored heartbeat (`null` if the bot never polled this guild).
+
 ### `GET /api/rally/tree`
-Requires session cookie. Returns tree DAG data (nodes, edges, rallies) for visualization. Optional `?day_key=YYYY-MM-DD`.
+Requires session cookie. Returns tree DAG data (nodes, edges, rallies, participants) for visualization. Optional `?day_key=YYYY-MM-DD`. Anonymous nodes are scrubbed as described above; edges are computed from the real actors before scrubbing, except that an anonymous response never gets a ping edge (it would name its actor). `participants` lists users who acted non-anonymously or were targeted, never a user only because of an anonymous action.
 
 **Response:**
 ```json
@@ -589,7 +684,8 @@ Requires session cookie. Returns tree DAG data (nodes, edges, rallies) for visua
   "data": {
     "nodes": [{ "id": "...", "action_type": "call", "actor_username": "Dave", ... }],
     "edges": [{ "source": "id1", "target": "id2", "type": "response" }],
-    "rallies": [{ "id": "...", "day_key": "2026-02-26", "status": "open" }]
+    "rallies": [{ "id": "...", "day_key": "2026-02-26", "status": "open" }],
+    "participants": { "uuid": { "username": "Dave", "avatar": "https://..." } }
   }
 }
 ```
@@ -605,11 +701,19 @@ Marks a rally action as delivered. Legacy: prefer acks in `POST /api/bot/poll`.
 **Auth:** `X-Bot-Token` header
 
 ### `POST /api/rally/tree/share`
-Requires session cookie. Uploads a base64 PNG for Discord sharing.
+Requires session cookie. Uploads a base64 PNG for Discord sharing. Cooldown per user (`429 RATE_LIMITED`).
 
 **Body:**
 ```json
 { "image_data": "base64-png-data..." }
+```
+
+- `image_data`: plain base64 (no `data:` prefix), at most 1,400,000 characters (`TREE_SHARE_MAX_IMAGE_CHARS`, about 1 MB of PNG). Longer gives `413` with `{ "code": "PAYLOAD_TOO_LARGE" }`; not base64 gives `400 BAD_REQUEST`. The web app retries the export at 2x and 1x scale before giving up.
+- The image is deleted (`image_data = NULL`) once the share is acknowledged or expires.
+
+**Response (201):**
+```json
+{ "ok": true, "data": { "id": "uuid", "requested_by": "uuid", "day_key": "2026-02-26", "image_data": "...", "delivered": false, "created_at": "...", "bot_online": true } }
 ```
 
 ### `GET /api/rally/tree/share/pending` (legacy)
@@ -627,7 +731,7 @@ Marks a tree share as delivered. Legacy: prefer acks in `POST /api/bot/poll`.
 ## Settings
 
 ### `GET /api/settings`
-Returns all settings as a key-value map. Requires session cookie.
+Returns all settings as a key-value map. Requires session cookie. The internal key `bot_last_poll_at` is left out (and ignored by `PATCH /api/settings`).
 
 ### `PATCH /api/settings`
 Updates settings. Requires session cookie. **Admin only** -- session must have been created via `POST /api/auth/admin-token` (Discord-gated: requires `ADMINISTRATOR` guild permission).

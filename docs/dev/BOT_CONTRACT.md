@@ -25,6 +25,57 @@ X-Bot-Token: <your-bot-api-key>
 
 Set the secret via `npx wrangler secret put BOT_API_KEY`. When the secret is not set, the auth check is skipped (local dev only).
 
+### Acting as a user (slash commands)
+
+Slash commands that act for a Discord user (`/call`, `/in`, `/ping` ...) should call the normal user routes with three headers instead of minting a session:
+
+```
+X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
+X-Discord-User-Id: <interaction.user.id>
+```
+
+The Worker authenticates the request as the user whose `discord_id` matches, in that guild's database. Rules:
+
+- Only available when `BOT_API_KEY` is set on the Worker. With a missing or wrong `X-Bot-Token`, `X-Discord-User-Id` is ignored and the request is treated as an unauthenticated browser request (`401`).
+- Unknown `discord_id` in that guild: `401 UNAUTHORIZED` ("Unknown Discord user for this server"). Call `POST /api/users/sync` for the user (and for any ping target) first; one sync call takes up to 10 users.
+- The bot is never admin this way (`PATCH /api/settings` gives `403`), and no session exists.
+- Accepted by every route that takes a session cookie: `/api/rally/*` user routes (`call`, `action`, `judge/time`, `judge/avail`, `share-ranking`, `active`, `tree`, `tree/share`), `/api/users`, `/api/users/me`, `/api/games/*`, `/api/availability/*`, `/api/shame/*`, `/api/settings` (read) and `/api/gather`. Do not use it for `/api/auth/logout` or `/api/guilds/switch` (browser session helpers).
+
+### `POST /api/users/sync`
+
+Creates or refreshes users without tokens or sessions. Bot-auth, guild scoped.
+
+```bash
+POST /api/users/sync
+Content-Type: application/json
+X-Bot-Token: <BOT_API_KEY>
+X-Guild-Id: 123456789012345678
+
+{
+  "users": [
+    { "discord_id": "111111111111111111", "discord_username": "GamerDave", "avatar_url": "https://cdn.discordapp.com/avatars/1/a.png" },
+    { "discord_id": "222222222222222222", "discord_username": "Alice" }
+  ],
+  "guild_name": "My Server"
+}
+```
+
+- `users`: 1 to 10 entries; `discord_id` 1-30 chars, `discord_username` 1-50 chars (prefer the guild nickname), `avatar_url` optional, max 500 chars, `null` allowed (keeps the stored avatar). `guild_name` optional, max 100 chars, stored like `/api/auth/token` does.
+- Response `200`: `{ "ok": true, "data": { "users": [ { "id", "discord_id", "discord_username", "display_name", "avatar_url" } ] } }`, in request order. Use `id` for `target_user_ids`.
+- Errors: `400 BAD_REQUEST` (invalid body, 0 or more than 10 users), `403 FORBIDDEN` (wrong token), `404 UNKNOWN_GUILD` / `400 INVALID_GUILD` / `400 MISSING_GUILD` from the guild header.
+
+### Errors a slash command can now receive
+
+All error bodies are `{ "ok": false, "error": { "code", "message" } }`; `message` is safe to show to the user.
+
+| Status | Code | When |
+|--------|------|------|
+| 401 | `UNAUTHORIZED` | act-as with a `discord_id` not synced to this guild |
+| 400 | `BAD_REQUEST` | `is_anonymous: true` on an action type the admin did not enable (setting `rally_anonymous_enabled`, default call and ping), non-boolean `is_anonymous`, message over 500 chars, `target_user_ids` not 1-20 ids of existing users, unknown `rally_id`, body not a JSON object |
+| 429 | `RATE_LIMITED` | cooldown (same user, same action type, `gather_cooldown_seconds`, default 10 s) or hourly limit (`gather_hourly_limit` rally actions per user per 60 min, default 30). Message ends with `Try again in Ns`. Game shares and tree shares have the cooldown too. |
+| 413 | `PAYLOAD_TOO_LARGE` | tree share `image_data` over 1,400,000 characters |
+
 ## Guild Context
 
 All API requests from the bot must include the `X-Guild-Id` header with the Discord guild (server) snowflake ID, except `POST /api/bot/poll`, which is cross-guild and takes its guild IDs in the body. The Worker uses this header to route each request to the correct per-guild D1 database.
@@ -88,7 +139,13 @@ X-Bot-Token: <BOT_API_KEY>
 
 **Ack semantics:** after posting an item to Discord, remember its ID and send it in `acks` on the next poll. Acks are applied before the pending items are read, so an acked item is never returned again. Acks are idempotent: re-sending an ID, or an ID that no longer exists, is harmless. Until an item is acked it is returned on every poll, so ack each item exactly after it has been posted (a crash between posting and acking re-posts that item once).
 
-**Staleness rule:** an item that has not been acked within 30 minutes of its creation is never returned; the server marks it delivered instead. A bot coming back after an outage therefore never posts a stale backlog. The legacy pending endpoints apply the same 30 minute filter.
+**Staleness rule:** an item that has not been acked within 30 minutes of its creation is never returned; the server marks it expired (`delivered = 2`, where `1` means acknowledged) instead. A bot coming back after an outage therefore never posts a stale backlog. The legacy pending endpoints apply the same 30 minute filter. The web app shows each action as pending, delivered or expired.
+
+**Heartbeat:** each poll records the time in the settings of every guild in `guild_ids` (`bot_last_poll_at`, written at most once per 60 seconds). The web app treats the bot as offline for a guild that has not been polled for 3 minutes and warns users that messages are not being picked up. So: keep polling every guild that has an output channel, even when idle, and keep the error backoff at 2 minutes or less. A guild without an output channel is not polled, which the web app reports the same way.
+
+**Tree share images:** an ack (and the legacy `PATCH .../delivered`) or an expiry deletes the PNG (`image_data = NULL`). Read `image_data` from the poll response; never fetch it again after acking.
+
+**Anonymous actions:** `actor_id`, `actor_username`, `actor_avatar` and `actor_discord_id` of an anonymous action are scrubbed by the server (see [Anonymous Actions](#anonymous-actions)).
 
 ## Endpoints
 
@@ -130,6 +187,10 @@ The bot should DM the user with `data.url`. The token expires in 10 minutes and 
 **Validation errors (400):** Returned if body fields fail Zod validation (missing, too long, etc.).
 
 **Auth errors (403):** Returned if `X-Bot-Token` doesn't match `BOT_API_KEY`.
+
+**Cleanup:** every call to this endpoint or to `/api/auth/admin-token` deletes used or expired auth tokens and expired sessions first.
+
+For slash commands, prefer [acting as a user](#acting-as-a-user-slash-commands) over this token plus `GET /api/auth/callback/:token` (with `X-Bot-Token`), which mints a 7 day session per call. The token flow keeps working for the `/when2play` login link and for older bot builds.
 
 ### 2. Create Admin Auth Token
 
@@ -274,7 +335,9 @@ When `metadata.is_anonymous === true` on a rally action, the bot should display 
 - `call` with anonymous: `📢 **Someone** called` instead of `📢 **<@123>** called`
 - `in` with anonymous: `✅ **Someone** is in!`
 
-The `actor_discord_id` and `actor_username` fields are still present for internal correlation/debugging only. They MUST NOT appear in any user-visible output (Discord channels, DMs, or audit/log channels visible to non-admins) when the action is anonymous.
+The server never sends the identity of an anonymous actor, neither here nor in `GET /api/rally/active` / `GET /api/rally/tree`: such actions carry `actor_id: "__anonymous__"`, `actor_username: "Anonymous"`, `actor_avatar: null` and `actor_discord_id: null`. `target_discord_ids` is unchanged (the targets are not anonymous). Rallies no longer include `creator_id`.
+
+`is_anonymous: true` is only accepted for action types enabled in the admin setting `rally_anonymous_enabled` (default `{"call": true, "ping": true}`); other types get `400 BAD_REQUEST`.
 
 **`share_ranking` metadata format:**
 ```json
@@ -312,7 +375,7 @@ X-Bot-Token: <BOT_API_KEY>
 X-Guild-Id: 123456789012345678
 ```
 
-Returns pending tree images with `image_data` (base64 PNG). The bot should decode and send as a Discord attachment.
+Returns pending tree images with `image_data` (base64 PNG, no `data:` prefix, at most 1,400,000 characters). The bot should decode and send as a Discord attachment. `image_data` is set to `null` once the share is acknowledged or expires.
 
 ### 8. Mark Tree Share Delivered (legacy)
 
@@ -396,7 +459,7 @@ The bot registers the following slash commands:
 | `/post gametree` | Post today's gaming tree diagram | — |
 | `/url` | Get the website URL | — |
 
-Each command authenticates the user via the auth token flow, then calls the appropriate rally API endpoint.
+Each command authenticates the user (today via the auth token flow; preferably via `POST /api/users/sync` plus the act-as headers, see [Acting as a user](#acting-as-a-user-slash-commands)), then calls the appropriate rally API endpoint.
 
 ## Discord ID Resolution
 
@@ -409,8 +472,8 @@ The internal `user_id` (UUID) is included for reference but is not needed for Di
 
 ## Rate Limits
 
-- **Gather bell per-ping cooldown**: 10 seconds per user (controlled by `gather_cooldown_seconds` setting, 0 = disabled)
-- **Gather bell hourly limit**: 30 pings per rolling 60-minute window (controlled by `gather_hourly_limit` setting, 0 = disabled). Exceeding the limit returns 429 with a lockout until the oldest ping in the window ages out.
+- **Cooldown** (`gather_cooldown_seconds`, default 10, 0 = disabled): per user, for the same rally action type (`call`, `in`, `out`, `brb`, `ping`, `where`, `judge_time`, `judge_avail`, `share_ranking`), for game shares, for tree shares and for gather pings. Returns `429 RATE_LIMITED`, message `Cooldown active. Try again in Ns`.
+- **Hourly limit** (`gather_hourly_limit`, default 30, 0 = disabled): rally actions (all types) per user per rolling 60 minutes, and gather pings. Returns `429 RATE_LIMITED`, message `Hourly limit reached. Try again in Ns`, until the oldest action in the window ages out.
 - **Auth tokens**: Expire after 10 minutes, one-time use
 - **Admin sessions**: Expire after 1 hour (or on browser close, whichever comes first)
 - **Shame votes**: One per voter-target pair per day
