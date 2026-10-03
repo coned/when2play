@@ -1,23 +1,24 @@
 import { createMiddleware } from 'hono/factory';
 import type { Bindings } from '../env';
+import { isValidBotToken } from '../lib/bot-token';
 
 /**
- * Requires X-Bot-Token header matching BOT_API_KEY env var; rejects with 403
- * otherwise. If BOT_API_KEY is not configured, the check is skipped and every
- * request is let through (fail-open, meant for local dev and tests only), so
- * production must always set BOT_API_KEY.
+ * Requires an X-Bot-Token header equal to BOT_API_KEY (compared in constant
+ * time); rejects with 403 otherwise. Fails closed: when BOT_API_KEY is not
+ * configured every request is rejected with 503 BOT_AUTH_NOT_CONFIGURED, so a
+ * deploy that forgot the secret cannot be used to mint logins. Set the key with
+ * `wrangler secret put BOT_API_KEY` (production) or in .dev.vars (local).
  */
 export const requireBotAuth = createMiddleware<{ Bindings: Bindings }>(async (c, next) => {
 	const key = c.env.BOT_API_KEY;
 	if (!key) {
-		// No key configured -- skip auth (local dev / testing only).
-		// In production, always set BOT_API_KEY via wrangler secret.
-		await next();
-		return;
+		return c.json(
+			{ ok: false, error: { code: 'BOT_AUTH_NOT_CONFIGURED', message: 'Bot authentication is not configured on this server (BOT_API_KEY is not set)' } },
+			503,
+		);
 	}
 
-	const token = c.req.header('X-Bot-Token');
-	if (token !== key) {
+	if (!isValidBotToken(key, c.req.header('X-Bot-Token'))) {
 		return c.json({ ok: false, error: { code: 'FORBIDDEN', message: 'Invalid bot token' } }, 403);
 	}
 

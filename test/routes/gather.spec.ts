@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie, testEnv } from '../setup';
+import { createTestDb, guildUrl, guildCookie, testEnv, BOT_HEADERS } from '../setup';
 import { createAuthenticatedUser } from '../helpers';
 
 describe('Gather routes', () => {
@@ -41,7 +41,7 @@ describe('Gather routes', () => {
 			testEnv(db),
 		);
 
-		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
+		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: BOT_HEADERS }, testEnv(db));
 		const pending = await pendingRes.json();
 		expect(pending.data).toHaveLength(1);
 	});
@@ -58,9 +58,9 @@ describe('Gather routes', () => {
 		);
 		const { data: ping } = await createRes.json();
 
-		await app.request(guildUrl(`/api/gather/${ping.id}/delivered`), { method: 'PATCH', headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
+		await app.request(guildUrl(`/api/gather/${ping.id}/delivered`), { method: 'PATCH', headers: BOT_HEADERS }, testEnv(db));
 
-		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: { Cookie: guildCookie(cookie) } }, testEnv(db));
+		const pendingRes = await app.request(guildUrl('/api/gather/pending'), { headers: BOT_HEADERS }, testEnv(db));
 		const pending = await pendingRes.json();
 		expect(pending.data).toHaveLength(0);
 	});

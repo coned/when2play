@@ -79,6 +79,12 @@ describe('POST /api/bot/poll', () => {
 		expect(res.body.error.code).toBe('FORBIDDEN');
 	});
 
+	it('fails closed with 503 when BOT_API_KEY is not configured', async () => {
+		const res = await poll({ ...env, BOT_API_KEY: undefined }, { guild_ids: [TEST_GUILD_ID] });
+		expect(res.status).toBe(503);
+		expect(res.body.error.code).toBe('BOT_AUTH_NOT_CONFIGURED');
+	});
+
 	it('rejects a wrong X-Bot-Token', async () => {
 		const res = await poll(env, { guild_ids: [TEST_GUILD_ID] }, { 'X-Bot-Token': 'wrong' });
 		expect(res.status).toBe(403);

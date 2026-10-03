@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie, TEST_GUILD_ID, testEnv } from '../setup';
+import { createTestDb, guildUrl, guildCookie, TEST_GUILD_ID, TEST_BOT_KEY, BOT_HEADERS, testEnv } from '../setup';
 
 describe('Auth routes', () => {
 	let db: D1Database;
@@ -15,7 +15,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser' }),
 				},
 				testEnv(db),
@@ -33,7 +33,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_username: 'TestUser' }),
 				},
 				testEnv(db),
@@ -47,7 +47,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: 'a'.repeat(31), discord_username: 'TestUser' }),
 				},
 				testEnv(db),
@@ -61,7 +61,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123', discord_username: 'a'.repeat(51) }),
 				},
 				testEnv(db),
@@ -79,6 +79,41 @@ describe('Auth routes', () => {
 					body: JSON.stringify({ discord_id: '123', discord_username: 'TestUser' }),
 				},
 				testEnv(db, { BOT_API_KEY: 'correct-key' }),
+			);
+
+			expect(res.status).toBe(403);
+		});
+
+		it('answers 503 BOT_AUTH_NOT_CONFIGURED when BOT_API_KEY is not configured, even with a token', async () => {
+			for (const headers of [{ 'Content-Type': 'application/json' }, { 'Content-Type': 'application/json', ...BOT_HEADERS }]) {
+				const res = await app.request(
+					guildUrl('/api/auth/token'),
+					{
+						method: 'POST',
+						headers,
+						body: JSON.stringify({ discord_id: '123', discord_username: 'TestUser' }),
+					},
+					testEnv(db, { BOT_API_KEY: undefined }),
+				);
+
+				expect(res.status).toBe(503);
+				const body = await res.json();
+				expect(body.ok).toBe(false);
+				expect(body.error.code).toBe('BOT_AUTH_NOT_CONFIGURED');
+			}
+			const users = await db.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
+			expect(users!.n).toBe(0);
+		});
+
+		it('returns 403 when the X-Bot-Token header is missing', async () => {
+			const res = await app.request(
+				guildUrl('/api/auth/token'),
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ discord_id: '123', discord_username: 'TestUser' }),
+				},
+				testEnv(db),
 			);
 
 			expect(res.status).toBe(403);
@@ -106,7 +141,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser' }),
 				},
 				testEnv(db),
@@ -132,7 +167,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser' }),
 				},
 				testEnv(db),
@@ -154,7 +189,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/admin-token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
 				testEnv(db),
@@ -172,7 +207,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/admin-token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
 				testEnv(db),
@@ -197,15 +232,16 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/admin-token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', 'X-Bot-Token': TEST_BOT_KEY },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
 				testEnv(db),
 			);
 
+			// A bot request takes its guild only from X-Guild-Id, so guildDb rejects it before the route runs.
 			expect(res.status).toBe(400);
 			const body = await res.json();
-			expect(body.error.message).toBe('Missing guild context');
+			expect(body.error.code).toBe('MISSING_GUILD');
 		});
 
 		it('admin user gets guild-scoped discord_id', async () => {
@@ -213,7 +249,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/admin-token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
 				testEnv(db),
@@ -236,7 +272,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/admin-token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
 				testEnv(db),
@@ -264,7 +300,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/admin-token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'AdminUser' }),
 				},
 				testEnv(db),
@@ -286,7 +322,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '789', discord_username: 'RegularUser' }),
 				},
 				testEnv(db),
@@ -350,7 +386,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '456', discord_username: 'GuildUser' }),
 				},
 				testEnv(db),
@@ -374,7 +410,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '789', discord_username: 'NoGuildUser' }),
 				},
 				testEnv(db),
@@ -400,7 +436,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '321', discord_username: 'LogoutUser' }),
 				},
 				testEnv(db),
@@ -436,7 +472,7 @@ describe('Auth routes', () => {
 				guildUrl('/api/auth/token'),
 				{
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 					body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser' }),
 				},
 				testEnv(db),

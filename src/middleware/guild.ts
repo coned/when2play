@@ -1,6 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 import { getCookie } from 'hono/cookie';
 import type { Bindings } from '../env';
+import { isValidBotToken } from '../lib/bot-token';
 
 export const guildDb = createMiddleware<{ Bindings: Bindings }>(async (c, next) => {
 	// Defensive copy: Workers share the env object across requests in the
@@ -8,9 +9,7 @@ export const guildDb = createMiddleware<{ Bindings: Bindings }>(async (c, next) 
 	// subsequent requests for other guilds.
 	c.env = { ...c.env } as Bindings;
 
-	const isBotAuth =
-		!!c.env.BOT_API_KEY &&
-		c.req.header('X-Bot-Token') === c.env.BOT_API_KEY;
+	const isBotAuth = isValidBotToken(c.env.BOT_API_KEY, c.req.header('X-Bot-Token'));
 
 	const guildId = isBotAuth
 		? c.req.header('X-Guild-Id')

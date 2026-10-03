@@ -7,6 +7,7 @@ import { upsertUser } from '../db/queries/users';
 import { createAuthToken, consumeAuthToken, createSession, deleteSession, deleteStaleAuthRows } from '../db/queries/auth';
 import { requireAuth } from '../middleware/auth';
 import { requireBotAuth } from '../middleware/bot-auth';
+import { isValidBotToken } from '../lib/bot-token';
 import { updateSettings } from '../db/queries/settings';
 import type { UserRow } from '../db/queries/users';
 
@@ -126,8 +127,7 @@ auth.get('/callback/:token', async (c) => {
 	await createSession(c.env.DB, authToken.user_id, sessionId, isAdmin);
 
 	// Bot calls: return JSON with user + session instead of cookie + redirect
-	const botToken = c.req.header('X-Bot-Token');
-	if (botToken && botToken === c.env.BOT_API_KEY) {
+	if (isValidBotToken(c.env.BOT_API_KEY, c.req.header('X-Bot-Token'))) {
 		const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(authToken.user_id).first();
 		return c.json({ ok: true, data: { user, session: { session_id: sessionId } } });
 	}

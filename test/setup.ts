@@ -4,9 +4,19 @@ import path from 'path';
 
 export const TEST_GUILD_ID = '12345678901234567';
 
-/** Build a test env object with the DB bound to the test guild. */
+/** BOT_API_KEY that testEnv() configures; send it as X-Bot-Token on bot-auth endpoints. */
+export const TEST_BOT_KEY = 'test-bot-key';
+
+/** Headers the Discord bot sends: its token plus the guild (bot requests take the guild from X-Guild-Id, not ?guild=). */
+export const BOT_HEADERS = { 'X-Bot-Token': TEST_BOT_KEY, 'X-Guild-Id': TEST_GUILD_ID } as const;
+
+/**
+ * Build a test env object with the DB bound to the test guild and BOT_API_KEY
+ * set to TEST_BOT_KEY (bot auth fails closed without a key). Pass
+ * { BOT_API_KEY: undefined } in extras to test an unconfigured key.
+ */
 export function testEnv(db: D1Database, extras?: Record<string, unknown>): Record<string, unknown> {
-	return { [`DB_${TEST_GUILD_ID}`]: db, ...extras };
+	return { BOT_API_KEY: TEST_BOT_KEY, [`DB_${TEST_GUILD_ID}`]: db, ...extras };
 }
 
 /** Append ?guild=TEST_GUILD_ID to a path (handles existing query strings). */

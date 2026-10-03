@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie, testEnv } from '../setup';
+import { createTestDb, guildUrl, guildCookie, testEnv, BOT_HEADERS } from '../setup';
 
 describe('User routes', () => {
 	let db: D1Database;
@@ -14,7 +14,7 @@ describe('User routes', () => {
 			guildUrl('/api/auth/token'),
 			{
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 				body: JSON.stringify({ discord_id: '123456', discord_username: 'TestUser', avatar_url: 'https://example.com/avatar.png' }),
 			},
 			testEnv(db),

@@ -14,9 +14,15 @@ A Cloudflare account is **not** needed for local development.
 
 ```bash
 npm install
+cp .dev.vars.example .dev.vars   # sets BOT_API_KEY=dev-bot-key for wrangler dev
 make migrate-local
 make dev
 ```
+
+Bot authentication fails closed: if `BOT_API_KEY` is not configured, every bot
+endpoint (`/api/auth/token`, `/api/bot/poll`, ...) answers `503
+BOT_AUTH_NOT_CONFIGURED`. Locally the key comes from `.dev.vars`; a local bot
+must use the same value in its own `.env`.
 
 This starts:
 - Backend at `http://localhost:8787` (Wrangler + local D1)
@@ -30,10 +36,15 @@ You can log in without a Discord bot by generating a test auth token:
 
 ```bash
 make simulate
-# Prints: Open http://localhost:5173/auth/<token>
+# Prints: Open http://localhost:5173/auth/<token>?guild=<guild_id>
 ```
 
 Open the printed URL in your browser to land on the dashboard.
+
+The script sends the key from `.dev.vars` as `X-Bot-Token` and the guild as
+`X-Guild-Id`. The guild defaults to the first `DB_<guild_id>` binding in
+`wrangler.jsonc`; override either with `BOT_API_KEY=... GUILD_ID=... make simulate`.
+`node scripts/test-gather.mjs` (end-to-end gather bell test) reads them the same way.
 
 ---
 
@@ -56,6 +67,7 @@ make dev-local
 ```
 
 Useful when you want a faster restart cycle or don't need Wrangler-specific features.
+It reads `BOT_API_KEY` from the environment or from `.dev.vars`.
 
 ---
 

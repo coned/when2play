@@ -3,6 +3,7 @@ import { getCookie } from 'hono/cookie';
 import type { Bindings } from '../env';
 import { getSessionBySessionId } from '../db/queries/auth';
 import { getUserById, getUserByDiscordId, type UserRow } from '../db/queries/users';
+import { isValidBotToken } from '../lib/bot-token';
 
 type AuthEnv = {
 	Bindings: Bindings;
@@ -17,14 +18,15 @@ type AuthEnv = {
  * Authenticates a user request, either by session cookie or, for the Discord
  * bot, by acting as a user: X-Bot-Token equal to BOT_API_KEY plus
  * X-Discord-User-Id names the user (by discord_id) in the guild database. The
- * act-as path never exists when BOT_API_KEY is unset, and a request whose
- * token does not match is handled like any cookie request. Act-as requests
- * are never admin and have no session (sessionId is '').
+ * token is compared in constant time. The act-as path never exists when
+ * BOT_API_KEY is unset, and a request whose token does not match is handled
+ * like any cookie request. Act-as requests are never admin and have no session
+ * (sessionId is '').
  */
 export const requireAuth = createMiddleware<AuthEnv>(async (c, next) => {
 	const botKey = c.env.BOT_API_KEY;
 	const actAsDiscordId = c.req.header('X-Discord-User-Id');
-	if (botKey && actAsDiscordId !== undefined && c.req.header('X-Bot-Token') === botKey) {
+	if (botKey && actAsDiscordId !== undefined && isValidBotToken(botKey, c.req.header('X-Bot-Token'))) {
 		const user = actAsDiscordId && actAsDiscordId.length <= 30 ? await getUserByDiscordId(c.env.DB, actAsDiscordId) : null;
 		if (!user) {
 			return c.json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Unknown Discord user for this server' } }, 401);

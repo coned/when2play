@@ -105,9 +105,23 @@ if (fs.existsSync(frontendDist)) {
 	app.use('/assets/*', serveStatic({ root: './frontend/dist/' }));
 }
 
+// Bot auth fails closed, so pass BOT_API_KEY through: from the environment, else from .dev.vars.
+function readDevVarsKey(): string | undefined {
+	try {
+		const vars = fs.readFileSync(path.join(rootDir, '.dev.vars'), 'utf-8');
+		return vars.match(/^BOT_API_KEY=(.*)$/m)?.[1]?.trim() || undefined;
+	} catch {
+		return undefined;
+	}
+}
+const botApiKey = process.env.BOT_API_KEY || readDevVarsKey();
+if (!botApiKey) {
+	console.warn('BOT_API_KEY is not set (no env var, no .dev.vars): bot endpoints will answer 503. Run: cp .dev.vars.example .dev.vars');
+}
+
 // Forward /api/* to the Hono app with DB binding
 app.all('/api/*', async (c) => {
-	const env = { DB: d1 };
+	const env = { DB: d1, BOT_API_KEY: botApiKey };
 	return apiApp.fetch(c.req.raw, env, {});
 });
 

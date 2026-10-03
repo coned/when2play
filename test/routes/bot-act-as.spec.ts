@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import app from '../../src/index';
-import { createTestDb, guildUrl, guildCookie, testEnv, TEST_GUILD_ID } from '../setup';
+import { createTestDb, guildUrl, guildCookie, testEnv, TEST_GUILD_ID, BOT_HEADERS } from '../setup';
 import { createAuthenticatedUser } from '../helpers';
 
 const KEY = 'testkey';
@@ -142,7 +142,7 @@ describe('Acting as a user with X-Discord-User-Id', () => {
 	});
 
 	it('is ignored when BOT_API_KEY is unset', async () => {
-		const noKey = testEnv(db);
+		const noKey = testEnv(db, { BOT_API_KEY: undefined });
 		const headers = { 'Content-Type': 'application/json', 'X-Bot-Token': KEY, 'X-Discord-User-Id': ALICE_DISCORD };
 		const res = await call(noKey, 'POST', guildUrl('/api/rally/action'), headers, { action_type: 'in' });
 		expect(res.status).toBe(401);
@@ -179,7 +179,7 @@ describe('Auth token cleanup', () => {
 		for (const path of ['/api/auth/token', '/api/auth/admin-token']) {
 			const res = await app.request(guildUrl(path), {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', 'X-Guild-Id': TEST_GUILD_ID },
+				headers: { 'Content-Type': 'application/json', ...BOT_HEADERS },
 				body: JSON.stringify({ discord_id: '62000000000000002', discord_username: 'dave' }),
 			}, testEnv(db));
 			expect(res.status).toBe(201);

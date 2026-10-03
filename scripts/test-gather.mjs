@@ -13,12 +13,33 @@
  *   5. Prints the formatted Discord message exactly as the bot would send it
  *   6. Marks the ping as delivered
  *
- * Requires the server to be running locally (make dev-local or make dev).
- * No BOT_API_KEY required in local dev (auth check is skipped when secret is unset).
+ * Requires the server to be running locally (make dev).
+ * Bot auth fails closed: the server needs BOT_API_KEY (copy .dev.vars.example to
+ * .dev.vars) and this script sends the same key. BOT_API_KEY and GUILD_ID default
+ * to the value in .dev.vars and the first D1 binding in wrangler.jsonc.
  */
 
+import fs from 'node:fs';
+
+function readFileOrEmpty(file) {
+	try {
+		return fs.readFileSync(file, 'utf-8');
+	} catch {
+		return '';
+	}
+}
+
 const API_URL = process.env.API_URL ?? 'http://localhost:8787';
-const BOT_API_KEY = process.env.BOT_API_KEY ?? '';
+const BOT_API_KEY = process.env.BOT_API_KEY || (readFileOrEmpty('.dev.vars').match(/^BOT_API_KEY=(.*)$/m)?.[1] ?? '').trim();
+const GUILD_ID = process.env.GUILD_ID || (readFileOrEmpty('wrangler.jsonc').match(/"binding"\s*:\s*"DB_(\d+)"/)?.[1] ?? '');
+if (!BOT_API_KEY) {
+	console.error('BOT_API_KEY is not set. Run: cp .dev.vars.example .dev.vars (then restart make dev), or export BOT_API_KEY.');
+	process.exit(1);
+}
+if (!GUILD_ID) {
+	console.error('GUILD_ID is not set and no DB_<guild_id> binding was found in wrangler.jsonc. Export GUILD_ID.');
+	process.exit(1);
+}
 
 // Parse CLI args
 const args = process.argv.slice(2);
@@ -34,7 +55,8 @@ for (let i = 0; i < args.length; i++) {
 
 const botHeaders = {
 	'Content-Type': 'application/json',
-	...(BOT_API_KEY ? { 'X-Bot-Token': BOT_API_KEY } : {}),
+	'X-Bot-Token': BOT_API_KEY,
+	'X-Guild-Id': GUILD_ID,
 };
 
 // Unique fake Discord user for this test run
@@ -42,7 +64,7 @@ const discordId = String(Date.now()).slice(-10);
 const username = `TestUser_${discordId.slice(-4)}`;
 
 console.log(`\n=== when2play gather test ===`);
-console.log(`API: ${API_URL}`);
+console.log(`API: ${API_URL} (guild ${GUILD_ID})`);
 console.log(`Test user: ${username} (discord_id: ${discordId})\n`);
 
 // ── Step 1: Create auth token ──────────────────────────────────────────────
@@ -66,7 +88,7 @@ console.log(`OK (token: ${token.slice(0, 8)}...)`);
 
 // ── Step 2: Redeem token (get session cookie) ──────────────────────────────
 process.stdout.write('2. Redeeming token (login)... ');
-const loginRes = await fetch(`${API_URL}/api/auth/callback/${token}`, {
+const loginRes = await fetch(`${API_URL}/api/auth/callback/${token}?guild=${GUILD_ID}`, {
 	redirect: 'manual',
 });
 const setCookie = loginRes.headers.get('set-cookie');
@@ -75,7 +97,8 @@ if (!setCookie) {
 	process.exit(1);
 }
 // Extract the session cookie value
-const sessionCookie = setCookie.split(';')[0];
+// Cookie requests pick their guild from the guild_id cookie
+const sessionCookie = `${setCookie.split(';')[0]}; guild_id=${GUILD_ID}`;
 console.log(`OK (cookie: ${sessionCookie.slice(0, 30)}...)`);
 
 // ── Step 3: Resolve target user ID (if --target given) ─────────────────────
