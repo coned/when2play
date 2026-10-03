@@ -28,8 +28,9 @@ The bot connects to the when2play Cloudflare Worker backend via HTTP.
 
 ## Prerequisites
 
-- Node.js 22+ (`node --version` to verify)
-- A running when2play Worker deployment (see `docs/SETUP.md` in the main repo)
+- Node.js 20.6+ (22 LTS recommended; `node --env-file` needs 20.6)
+- A running when2play Worker deployment (see `docs/SETUP.md` in the main repo) that has
+  `POST /api/users/sync`; older Workers make every rally command fail
 - A Discord bot application (see below)
 
 ---
@@ -118,86 +119,46 @@ W2P_DRY_RUN=1 DISCORD_TOKEN=dummy WHEN2PLAY_API_URL=http://127.0.0.1:9 BOT_API_K
 # prints "dry run ok" and exits 0
 ```
 
-Unit tests for the poller and the message formatters: `npm test`.
+Unit tests (poller, ack flush, API error handling, formatters, settings retry): `npm test`
+or `make test`. `make run` starts the bot in the foreground for local development only.
 
 ---
 
-## 6. Keeping It Running (Production)
+## 6. Production: systemd user service and Makefile
 
-The bot must stay running 24/7. Options:
+Production runs as the user-level systemd unit `deploy/when2play-bot.service` on the bot
+host (no root needed). It expects the code in `~/deploy/when2play_discordbot` (edit
+`WorkingDirectory` otherwise), starts `node --env-file=.env bot.mjs`, and restarts it on any
+exit with a growing delay (10 s up to 120 s), because Discord resets a bot token after about
+1000 logins in 24 hours. `RestartSteps`/`RestartMaxDelaySec` need systemd 254 or newer.
 
-### systemd user service (recommended)
+The repo `Makefile` drives it from the developer machine (run from the repo root; override
+`REMOTE_HOST`, `REMOTE_USER`, `REMOTE_DIR`, `SERVICE` on the command line if needed):
 
-`deploy/when2play-bot.service` is a user-level unit that needs no root. It expects the bot in
-`~/deploy/when2play_discordbot` (edit `WorkingDirectory` otherwise) and restarts the bot on
-any exit with a growing delay (10 s up to 120 s), because Discord resets a bot token after
-about 1000 logins in 24 hours. `RestartSteps`/`RestartMaxDelaySec` need systemd 254 or newer.
+| Target | What it does |
+|--------|--------------|
+| `make test` | `npm test` locally |
+| `make sync` | rsync this directory to `$(REMOTE_DIR)` with `--delete`; skips `.git/`, `.claude/`, `.local/` and `errors.log` (so the remote error log survives). `.env` and `node_modules` are synced on purpose |
+| `make restart` | `systemctl --user restart` on the remote, then print the status |
+| `make deploy` | `test`, then `sync`, then `restart` |
+| `make install-service` | one time: copy the unit to `~/.config/systemd/user`, `daemon-reload`, `enable`, `loginctl enable-linger` |
+| `make logs` | last 50 journal lines of the service |
 
-```bash
-mkdir -p ~/.config/systemd/user
-cp deploy/when2play-bot.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now when2play-bot
-loginctl enable-linger "$USER"   # keep user services running without an open login session
-```
+First install: `make sync && make install-service && make restart`.
 
-Check it and read the logs:
+**Deploy order.** When the Worker changes too, deploy in this order: Worker D1 migrations,
+then the Worker, then the bot (`make deploy`). This bot version needs a Worker with
+`POST /api/users/sync` and the act-as headers; with an older Worker the rally commands fail
+with a generic error, and `/api/bot/poll` answers 404 if the Worker is older still.
 
-```bash
-systemctl --user status when2play-bot
-journalctl --user -u when2play-bot -n 50 --no-pager
-```
+**Restarts are graceful.** `systemctl --user restart` sends SIGTERM: the bot stops polling,
+sends the acks for items it already posted (one `POST /api/bot/poll` with `guild_ids: []`),
+closes the Discord connection and exits 0. A second signal, or 10 seconds without
+finishing, forces the exit. Without the flush, items posted in the last poll cycle would be
+posted a second time after the restart.
 
-Errors are also appended to `errors.log` in the bot directory. From the main repo, the root
-`Makefile` wraps this for the production host: `make deploy_discordbot` (sync + restart),
-`make install_service_discordbot`, `make restart_discordbot`, `make logs_discordbot`.
-
-### systemd system service
-
-Create `/etc/systemd/system/when2play-bot.service`:
-
-```ini
-[Unit]
-Description=when2play Discord Bot
-After=network.target
-
-[Service]
-Type=simple
-User=your-user
-WorkingDirectory=/path/to/when2play_discordbot
-ExecStart=/usr/bin/node --env-file=.env bot.mjs
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Then:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable when2play-bot
-sudo systemctl start when2play-bot
-sudo systemctl status when2play-bot
-```
-
-### pm2
-
-```bash
-npm install -g pm2
-pm2 start bot.mjs --name when2play-bot --env-file .env
-pm2 save
-pm2 startup   # follow the printed instructions to auto-start on reboot
-```
-
-### Cloud hosting
-
-| Platform | Notes |
-|----------|-------|
-| Railway | `railway up` — free tier available |
-| Fly.io | Dockerfile-based — free tier available |
-| Render | Background worker type — free tier sleeps after inactivity |
+Logs: `make logs` (stdout/stderr in the journal); errors are also appended to `errors.log`
+in the bot directory on the host.
 
 ---
 
@@ -224,11 +185,16 @@ Either `DISCORD_TOKEN` or `WHEN2PLAY_API_URL` is missing from `.env`. Check that
 
 Commands are registered on bot startup via `registerCommands()`. This requires the bot to connect successfully at least once. If commands still don't appear after a minute, check the console for errors during startup.
 
-### `Failed: ...` reply to `/when2play`
+### Error replies to slash commands
 
-The Worker returned an error from `POST /api/auth/token`. Common causes:
+When the Worker answers a command with a 4xx JSON error, its message is shown as is, for
+example "Cooldown active. Try again in 7s" or "Hourly limit reached. Try again in 120s"
+(rate limits are Worker settings). "Something went wrong. Is the when2play server running?"
+means a network error, a timeout, a 5xx or a non-JSON answer; details are in `errors.log`.
+Common causes:
 - `BOT_API_KEY` in `.env` doesn't match the secret set in the Worker (`npx wrangler secret put BOT_API_KEY`)
-- The Worker is not deployed or is unhealthy (`curl $WHEN2PLAY_API_URL/api/health`)
+- The Worker is not deployed, is unhealthy (`curl $WHEN2PLAY_API_URL/api/health`), or is
+  older than the bot (no `POST /api/users/sync`: every rally command fails)
 
 ---
 
@@ -248,7 +214,11 @@ Discord Gateway (WebSocket)
 
 **Delivery polling** (`lib/poller.mjs`): every 15s one `POST /api/bot/poll` carries all guild ids plus the ids delivered since the last poll (acks), and returns pending rally actions, tree shares and game shares per guild. Each item is formatted and posted to the guild's channel; its id is acked on the next poll. Failed deliveries are retried up to 3 times, failed requests back off exponentially up to 2 minutes. See `docs/DATAFLOW.md` for details.
 
-**Rally commands** authenticate users via the auth token flow (`POST /api/auth/token` -> `GET /api/auth/callback/:token`) to get a session, then call rally API endpoints on behalf of the user.
+**Rally commands** create or refresh the caller (and the target of `/ping`, `/where`,
+`/call2select`) with one `POST /api/users/sync`, then call the rally endpoint with
+`X-Discord-User-Id: <caller>` next to `X-Bot-Token` and `X-Guild-Id` (act-as). No login
+token or session is created; only `/when2play` and `/when2play-admin` use the token
+endpoints. See `docs/DATAFLOW.md`.
 
 For an alternative architecture with no separate bot process, see `docs/CLOUDFLARE_NATIVE_BOT.md` in the main when2play repo.
 
@@ -258,4 +228,4 @@ For an alternative architecture with no separate bot process, see `docs/CLOUDFLA
 
 The bot supports multiple Discord guilds with a single instance. Each guild gets its own isolated D1 database on the Worker side. See `docs/MULTI_GUILD.md` for the full architecture design.
 
-Channel configuration is stored in D1 via the `/api/settings/bot` endpoint. On startup, the bot fetches settings for each guild it has joined. Use `/setchannel` to configure the output channel for each guild.
+Channel configuration is stored in D1 via the `/api/settings/bot` endpoint. On startup, the bot fetches settings for each guild it has joined; guilds still without a channel (for example because that fetch failed) are retried every 5 minutes. Use `/setchannel` to configure the output channel for each guild.

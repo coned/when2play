@@ -4,7 +4,7 @@ A Discord bot for coordinating gaming sessions with your friends. Rally people t
 
 ## Quick Start
 
-### 1. Install Node.js (v22+)
+### 1. Install Node.js (v22 LTS; at least 20.6)
 
 If you don't have Node.js installed, grab it from [nodejs.org](https://nodejs.org/) (use the LTS installer).
 
@@ -56,30 +56,47 @@ GAMING_CHANNEL_ID=123456789012345678   # optional if using /setchannel
 POLL_INTERVAL_MS=15000                 # optional, delivery poll interval (min 5000)
 ```
 
-> **Channel setup:** You can either set `GAMING_CHANNEL_ID` in `.env`, or use the `/setchannel` slash command in Discord (requires ADMINISTRATOR). The slash command is preferred -- it persists in `guild-config.json` and takes priority over the env var.
+> **Channel setup:** You can either set `GAMING_CHANNEL_ID` in `.env`, or use the `/setchannel` slash command in Discord (requires ADMINISTRATOR). The slash command is preferred -- it is stored in the Worker's D1 database and takes priority over the env var.
 
-### 5. Run
+### 5. Run locally
 
 ```bash
-node --env-file=.env bot.mjs
+make run    # node --env-file=.env bot.mjs, in the foreground (development only)
 ```
 
-(Note that this command has been wrapped by `make run` as well.) You should see something similar to:
+You should see something similar to:
 
 ```
 Logged in as when2play#1234
-Slash commands registered.
+Slash commands registered (1 guild(s): ...).
 ```
 
-That's it — slash commands like `/call`, `/in`, `/when2play`, and `/help` are now live in your server.
+The bot needs a Worker that has `POST /api/users/sync` (rally commands act as the Discord
+user with `X-Discord-User-Id` instead of creating sessions).
+
+### 6. Production
+
+Production runs as the user-level systemd service `deploy/when2play-bot.service` on the bot
+host, managed from this repo with `make`:
+
+```bash
+make install-service   # one time: install, enable and linger the unit on the host
+make deploy            # npm test, rsync to the host, restart the service
+make logs              # last 50 journal lines
+```
+
+Deploy order when the Worker changes too: Worker migrations, then the Worker, then the bot.
+A restart is graceful: on SIGTERM the bot sends the acks of items it already posted before
+exiting, so nothing is posted twice. Details in [docs/SETUP.md](docs/SETUP.md).
 
 ### Tests
 
 ```bash
-npm test
+npm test    # or: make test
 ```
 
-Runs the unit tests for the delivery poller and message formatters (`node:test`, no network).
+Unit tests (`node:test`, no network) for the delivery poller, the shutdown ack flush, API
+error handling, the message formatters and the settings retry.
 
 ## Commands at a Glance
 
@@ -97,5 +114,5 @@ Runs the unit tests for the delivery poller and message formatters (`node:test`,
 
 ## Further Reading
 
-- **[docs/SETUP.md](docs/SETUP.md)** — full setup guide, production deployment (systemd, pm2, cloud hosting), and troubleshooting
-- **[docs/DATAFLOW.md](docs/DATAFLOW.md)** — technical architecture, API endpoints, authentication flow, and polling internals
+- **[docs/SETUP.md](docs/SETUP.md)** -- full setup guide, production deployment (systemd user service, Makefile targets, deploy order), and troubleshooting
+- **[docs/DATAFLOW.md](docs/DATAFLOW.md)** -- technical architecture, API endpoints, act-as authentication, polling internals and graceful shutdown
