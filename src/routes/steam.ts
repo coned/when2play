@@ -14,7 +14,7 @@ type SteamEnv = {
 
 const steam = new Hono<SteamEnv>();
 
-// GET /api/steam/search?q=QUERY — search by partial name (auth required)
+// GET /api/steam/search?q=QUERY -- search by partial name (auth required)
 steam.get('/search', requireAuth, async (c) => {
 	const query = c.req.query('q')?.trim();
 	if (!query || query.length < 2 || query.length > 100) {
@@ -25,11 +25,11 @@ steam.get('/search', requireAuth, async (c) => {
 	return c.json({ ok: true, data: results });
 });
 
-// GET /api/steam/lookup/:appId
-steam.get('/lookup/:appId', async (c) => {
+// GET /api/steam/lookup/:appId (auth required)
+steam.get('/lookup/:appId', requireAuth, async (c) => {
 	const appId = c.req.param('appId');
 
-	if (!/^\d+$/.test(appId)) {
+	if (!/^\d{1,10}$/.test(appId)) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'appId must be a number' } }, 400);
 	}
 

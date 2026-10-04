@@ -26,6 +26,41 @@ export async function lookupSteamApp(appId: string): Promise<SteamAppDetails | n
 	};
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+	amp: '&',
+	lt: '<',
+	gt: '>',
+	quot: '"',
+	apos: "'",
+	nbsp: '\u00a0',
+	trade: '\u2122',
+	reg: '\u00ae',
+	copy: '\u00a9',
+	ndash: '\u2013',
+	mdash: '\u2014',
+	hellip: '\u2026',
+	lsquo: '\u2018',
+	rsquo: '\u2019',
+	ldquo: '\u201c',
+	rdquo: '\u201d',
+};
+
+/**
+ * Decode HTML character references in text taken from Steam's HTML: named ones
+ * from a common subset and every numeric one (&#38; and &#x26;). Unknown or
+ * invalid references are kept as written.
+ */
+export function decodeHtmlEntities(text: string): string {
+	return text.replace(/&(#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z][a-zA-Z0-9]{1,31});/g, (whole, ref: string) => {
+		if (ref[0] === '#') {
+			const code = ref[1] === 'x' || ref[1] === 'X' ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+			if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return whole;
+			return String.fromCodePoint(code);
+		}
+		return NAMED_ENTITIES[ref] ?? NAMED_ENTITIES[ref.toLowerCase()] ?? whole;
+	});
+}
+
 /**
  * Search Steam store by partial game name.
  * Parses the HTML suggestion response from Steam's search endpoint.
@@ -52,7 +87,7 @@ export async function searchSteamApps(query: string): Promise<SteamSearchResult[
 	for (let i = 0; i < Math.min(appIds.length, names.length, 10); i++) {
 		results.push({
 			app_id: appIds[i],
-			name: names[i],
+			name: decodeHtmlEntities(names[i]).trim(),
 			image_url: imgs[i] || '',
 		});
 	}
