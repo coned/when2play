@@ -61,9 +61,14 @@ export async function upsertUser(
 	};
 }
 
+/** discord_id prefix of the per-guild admin pseudo user ("Administrator"), see POST /api/auth/admin-token. */
+export const ADMIN_DISCORD_ID_PREFIX = 'system-admin';
+
+/** Every real user of the guild; the admin pseudo user is left out so it never shows up in pickers or counts. */
 export async function getAllUsers(db: D1Database): Promise<Array<{ id: string; discord_username: string; display_name: string | null; avatar_url: string | null }>> {
 	const result = await db
-		.prepare('SELECT id, discord_username, display_name, avatar_url FROM users ORDER BY discord_username ASC')
+		.prepare("SELECT id, discord_username, display_name, avatar_url FROM users WHERE substr(discord_id, 1, ?) != ? ORDER BY discord_username ASC")
+		.bind(ADMIN_DISCORD_ID_PREFIX.length, ADMIN_DISCORD_ID_PREFIX)
 		.all<{ id: string; discord_username: string; display_name: string | null; avatar_url: string | null }>();
 	return result.results;
 }

@@ -9,3 +9,22 @@ export const discordUserSchema = z.object({
 });
 
 export const guildNameSchema = z.string().max(100).optional();
+
+/** Message of the first validation issue, for a 400 response. */
+export function firstIssueMessage(error: z.ZodError, fallback: string): string {
+	return error.issues[0]?.message ?? fallback;
+}
+
+/**
+ * True for an IANA zone name such as "America/New_York" or "UTC". Offset strings
+ * ("+05:00") are refused even where Intl accepts them.
+ */
+export function isIanaTimeZone(value: string): boolean {
+	if (value.length === 0 || value.length > 64 || !/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)*$/.test(value)) return false;
+	try {
+		new Intl.DateTimeFormat('en-US', { timeZone: value });
+		return true;
+	} catch {
+		return false;
+	}
+}

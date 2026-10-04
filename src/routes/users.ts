@@ -5,7 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { requireBotAuth } from '../middleware/bot-auth';
 import { updateUser, getAllUsers, upsertUser, type UserRow } from '../db/queries/users';
 import { updateSettings } from '../db/queries/settings';
-import { discordUserSchema, guildNameSchema } from '../lib/schemas';
+import { discordUserSchema, guildNameSchema, firstIssueMessage, isIanaTimeZone } from '../lib/schemas';
 
 type UsersEnv = {
 	Bindings: Bindings;
@@ -24,6 +24,26 @@ const syncUsersSchema = z.object({
 	users: z.array(discordUserSchema).min(1).max(MAX_SYNC_USERS),
 	guild_name: guildNameSchema,
 });
+
+const updateMeSchema = z.object({
+	display_name: z
+		.string({ invalid_type_error: 'display_name must be a string' })
+		.trim()
+		.min(1, 'display_name must be 1 to 50 characters')
+		.max(50, 'display_name must be 1 to 50 characters')
+		.optional(),
+	sync_name_from_discord: z.boolean({ invalid_type_error: 'sync_name_from_discord must be a boolean' }).optional(),
+	timezone: z
+		.string({ invalid_type_error: 'timezone must be a string' })
+		.refine(isIanaTimeZone, 'timezone must be a valid IANA time zone such as America/New_York')
+		.optional(),
+	time_granularity_minutes: z
+		.number({ invalid_type_error: 'time_granularity_minutes must be a number' })
+		.int('time_granularity_minutes must be an integer from 5 to 60')
+		.min(5, 'time_granularity_minutes must be an integer from 5 to 60')
+		.max(60, 'time_granularity_minutes must be an integer from 5 to 60')
+		.optional(),
+}, { invalid_type_error: 'Request body must be a JSON object' });
 
 // --- Bot-auth endpoints (registered before the blanket requireAuth) ---
 
@@ -51,7 +71,7 @@ users.post('/sync', requireBotAuth, async (c) => {
 // --- User-auth endpoints ---
 users.use('/*', requireAuth);
 
-// GET /api/users — list all users (id, username, display_name, avatar)
+// GET /api/users -- list all real users (id, username, display_name, avatar); the admin pseudo user is left out
 users.get('/', async (c) => {
 	const allUsers = await getAllUsers(c.env.DB);
 	return c.json({ ok: true, data: allUsers });
@@ -64,26 +84,18 @@ users.get('/me', (c) => {
 });
 
 // PATCH /api/users/me
+// discord_username is owned by Discord (the bot keeps it in sync), so it is not
+// accepted here; unknown keys are ignored.
 users.patch('/me', async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{
-		discord_username?: string;
-		display_name?: string;
-		sync_name_from_discord?: boolean;
-		timezone?: string;
-		time_granularity_minutes?: number;
-	}>();
-
-	if (body.time_granularity_minutes !== undefined && (body.time_granularity_minutes < 5 || body.time_granularity_minutes > 60)) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'time_granularity_minutes must be between 5 and 60' } }, 400);
+	const raw = await c.req.json().catch(() => null);
+	const parsed = updateMeSchema.safeParse(raw);
+	if (!parsed.success) {
+		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: firstIssueMessage(parsed.error, 'Invalid request body') } }, 400);
 	}
+	const body = parsed.data;
 
-	if (body.display_name !== undefined && body.display_name.length > 50) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'display_name must be 50 characters or less' } }, 400);
-	}
-
-	const updates: Record<string, unknown> = {};
-	if (body.discord_username !== undefined) updates.discord_username = body.discord_username;
+	const updates: { display_name?: string; sync_name_from_discord?: number; timezone?: string; time_granularity_minutes?: number } = {};
 	if (body.display_name !== undefined) updates.display_name = body.display_name;
 	if (body.sync_name_from_discord !== undefined) updates.sync_name_from_discord = body.sync_name_from_discord ? 1 : 0;
 	if (body.timezone !== undefined) updates.timezone = body.timezone;
