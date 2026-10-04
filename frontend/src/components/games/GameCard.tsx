@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { api } from '../../api/client';
 import { avatarInitial } from '../../lib/initials';
 
@@ -75,11 +76,18 @@ function AvatarStack({ users, maxShow = 4 }: { users: ReactionUser[]; maxShow?: 
 }
 
 export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount, reactionUsers, currentUser, isArchived }: GameCardProps) {
+	const isMobile = useMediaQuery(768);
 	const [reaction, setReaction] = useState(userReaction);
 	const [likes, setLikes] = useState(likeCount);
 	const [dislikes, setDislikes] = useState(dislikeCount);
 	const [users, setUsers] = useState<ReactionUser[]>(reactionUsers);
 	const [busy, setBusy] = useState(false);
+	/** Last failed action on this card; cleared when the next one starts */
+	const [actionError, setActionError] = useState('');
+	/** Permanent deletion waits for a second, confirming click */
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+	const isProposer = !!game.proposed_by && game.proposed_by === currentUser.id;
 
 	const currentUserAsReaction = (type: 'like' | 'dislike'): ReactionUser => ({
 		user_id: currentUser.id,
@@ -88,45 +96,67 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 		avatar_url: currentUser.avatar_url,
 	});
 
-	const handleReact = async (type: 'like' | 'dislike') => {
-		if (busy) return;
+	/** Run one card action; on failure show its message on the card. Returns whether it worked. */
+	const run = async (failure: string, request: () => Promise<{ ok: boolean; error?: { message?: string } }>): Promise<boolean> => {
+		if (busy) return false;
 		setBusy(true);
-		if (reaction === type) {
-			// Remove reaction
-			if (type === 'like') setLikes((c: number) => Math.max(0, c - 1));
-			else setDislikes((c: number) => Math.max(0, c - 1));
-			setUsers((prev) => prev.filter((u) => u.user_id !== currentUser.id));
-			setReaction(null);
-			await api.removeReaction(game.id);
-		} else {
-			// Set or change reaction
-			if (reaction === 'like') setLikes((c: number) => Math.max(0, c - 1));
-			if (reaction === 'dislike') setDislikes((c: number) => Math.max(0, c - 1));
-			if (type === 'like') setLikes((c: number) => c + 1);
-			else setDislikes((c: number) => c + 1);
-			setUsers((prev) => [
-				...prev.filter((u) => u.user_id !== currentUser.id),
-				currentUserAsReaction(type),
-			]);
-			setReaction(type);
-			await api.reactToGame(game.id, type);
-		}
+		setActionError('');
+		const result = await request();
 		setBusy(false);
+		if (!result.ok) {
+			setActionError(result.error?.message ? `${failure}: ${result.error.message}` : `${failure}.`);
+			return false;
+		}
+		return true;
 	};
 
-	const handleArchive = async (reason: string) => {
-		await api.archiveGame(game.id, reason);
-		onUpdate();
+	const handleReact = async (type: 'like' | 'dislike') => {
+		if (busy) return;
+		// Optimistic update, rolled back if the request fails
+		const before = { reaction, likes, dislikes, users };
+		const removing = reaction === type;
+		if (removing) {
+			if (type === 'like') setLikes(Math.max(0, likes - 1));
+			else setDislikes(Math.max(0, dislikes - 1));
+			setUsers(users.filter((u) => u.user_id !== currentUser.id));
+			setReaction(null);
+		} else {
+			let l = likes;
+			let d = dislikes;
+			if (reaction === 'like') l = Math.max(0, l - 1);
+			if (reaction === 'dislike') d = Math.max(0, d - 1);
+			if (type === 'like') l += 1;
+			else d += 1;
+			setLikes(l);
+			setDislikes(d);
+			setUsers([...users.filter((u) => u.user_id !== currentUser.id), currentUserAsReaction(type)]);
+			setReaction(type);
+		}
+		const ok = await run(
+			removing ? 'Could not remove your reaction' : `Could not save your ${type}`,
+			() => (removing ? api.removeReaction(game.id) : api.reactToGame(game.id, type)),
+		);
+		if (!ok) {
+			setReaction(before.reaction);
+			setLikes(before.likes);
+			setDislikes(before.dislikes);
+			setUsers(before.users);
+		}
+	};
+
+	const handleArchive = async (reason: 'save_for_later' | 'not_interested') => {
+		const failure = reason === 'save_for_later' ? 'Could not save it for later' : 'Could not delete it';
+		if (await run(failure, () => api.archiveGame(game.id, reason))) onUpdate();
 	};
 
 	const handleRestore = async () => {
-		await api.restoreGame(game.id);
-		onUpdate();
+		if (await run('Could not restore it', () => api.restoreGame(game.id))) onUpdate();
 	};
 
 	const handleDeletePermanently = async () => {
-		await api.deleteGamePermanently(game.id);
-		onUpdate();
+		const ok = await run('Could not delete it forever', () => api.deleteGamePermanently(game.id));
+		setConfirmingDelete(false);
+		if (ok) onUpdate();
 	};
 
 	const [sharing, setSharing] = useState(false);
@@ -134,9 +164,12 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 	const handleShare = async () => {
 		setSharing(true);
 		setShareMsg('');
+		setActionError('');
 		const result = await api.shareGame(game.id);
-		if (!result.ok) setShareMsg(result.error?.code === 'RATE_LIMITED' ? 'Wait a moment' : 'Failed');
-		else if (result.data?.bot_online === false) setShareMsg('Queued, bot looks offline');
+		if (!result.ok) {
+			setShareMsg(result.error?.code === 'RATE_LIMITED' ? 'Wait a moment' : 'Failed');
+			setActionError(`Could not share it: ${result.error.message}`);
+		} else if (result.data?.bot_online === false) setShareMsg('Queued, bot looks offline');
 		else setShareMsg('Shared!');
 		setSharing(false);
 		setTimeout(() => setShareMsg(''), result.ok && result.data?.bot_online === false ? 6000 : 3000);
@@ -148,7 +181,7 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 	const dislikeUsers = users.filter((u) => u.type === 'dislike');
 
 	return (
-		<div class="card" style={{ overflow: 'hidden', padding: 0 }}>
+		<article class="card" aria-label={game.name} style={{ overflow: 'hidden', padding: 0 }}>
 			{game.image_url && (
 				<div style={{ aspectRatio: '460/215', overflow: 'hidden' }}>
 					<img
@@ -203,7 +236,9 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 							padding: '4px 8px',
 							borderRadius: 'var(--radius)',
 							fontSize: '13px',
-							minHeight: '32px',
+							minHeight: isMobile ? '44px' : '32px',
+							minWidth: isMobile ? '44px' : undefined,
+							justifyContent: 'center',
 						}}
 						title="Like"
 					>
@@ -228,7 +263,9 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 							padding: '4px 8px',
 							borderRadius: 'var(--radius)',
 							fontSize: '13px',
-							minHeight: '32px',
+							minHeight: isMobile ? '44px' : '32px',
+							minWidth: isMobile ? '44px' : undefined,
+							justifyContent: 'center',
 						}}
 						title="Dislike"
 					>
@@ -268,32 +305,82 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 
 				{/* Archive / Restore / Share buttons */}
 				{isArchived ? (
-					<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-						{game.archived_at && (
-							<span class="text-muted" style={{ fontSize: '11px' }}>
-								{new Date(game.archived_at).toLocaleDateString()}
-							</span>
-						)}
-						<div style={{ display: 'flex', gap: '6px' }}>
-							<button
-								class="btn btn-secondary"
-								style={{ padding: '4px 10px', fontSize: '12px' }}
-								onClick={handleRestore}
-							>
-								Restore
-							</button>
-							<button
-								class="btn btn-danger"
-								style={{ padding: '4px 10px', fontSize: '12px' }}
-								onClick={handleDeletePermanently}
-							>
-								Delete
-							</button>
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+						<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+							{game.archived_at && (
+								<span class="text-muted" style={{ fontSize: '11px' }}>
+									{new Date(game.archived_at).toLocaleDateString()}
+								</span>
+							)}
+							<div style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
+								<button
+									type="button"
+									class="btn btn-secondary"
+									style={{ padding: '4px 10px', fontSize: '12px' }}
+									onClick={handleRestore}
+									disabled={busy}
+								>
+									Restore
+								</button>
+								{/* Only the proposer may delete for good (the server refuses anyone else) */}
+								{isProposer && !confirmingDelete && (
+									<button
+										type="button"
+										class="btn btn-danger"
+										style={{ padding: '4px 10px', fontSize: '12px' }}
+										onClick={() => {
+											setActionError('');
+											setConfirmingDelete(true);
+										}}
+										disabled={busy}
+									>
+										Delete forever
+									</button>
+								)}
+							</div>
 						</div>
+						{isProposer && confirmingDelete && (
+							<div
+								role="group"
+								aria-label="Confirm permanent deletion"
+								style={{
+									display: 'flex',
+									flexWrap: 'wrap',
+									alignItems: 'center',
+									gap: '6px',
+									padding: '8px',
+									border: '1px solid var(--danger)',
+									borderRadius: 'var(--radius)',
+								}}
+							>
+								<span style={{ fontSize: '12px', color: 'var(--text-primary)', flex: '1 1 140px' }}>
+									Delete {game.name} for good? This cannot be undone.
+								</span>
+								<button
+									type="button"
+									class="btn btn-danger"
+									style={{ padding: '4px 10px', fontSize: '12px' }}
+									onClick={handleDeletePermanently}
+									disabled={busy}
+								>
+									Yes, delete forever
+								</button>
+								<button
+									type="button"
+									class="btn btn-secondary"
+									style={{ padding: '4px 10px', fontSize: '12px' }}
+									onClick={() => setConfirmingDelete(false)}
+									disabled={busy}
+								>
+									Cancel
+								</button>
+							</div>
+						)}
 					</div>
 				) : (
 					<div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
 						<button
+							type="button"
 							style={{
 								padding: '4px 10px',
 								fontSize: '11px',
@@ -306,17 +393,22 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 								fontWeight: 600,
 							}}
 							onClick={() => handleArchive('save_for_later')}
+							disabled={busy}
 						>
 							Save for later
 						</button>
 						<button
+							type="button"
 							class="btn btn-danger"
 							style={{ padding: '4px 10px', fontSize: '11px' }}
 							onClick={() => handleArchive('not_interested')}
+							disabled={busy}
+							title="Move to the archive (can be restored)"
 						>
 							Delete
 						</button>
 						<button
+							type="button"
 							class="btn btn-secondary"
 							style={{ padding: '4px 10px', fontSize: '11px' }}
 							onClick={handleShare}
@@ -328,7 +420,13 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 						</button>
 					</div>
 				)}
+
+				{actionError && (
+					<p role="alert" style={{ color: 'var(--danger)', fontSize: '12px', marginTop: '6px' }}>
+						{actionError}
+					</p>
+				)}
 			</div>
-		</div>
+		</article>
 	);
 }
