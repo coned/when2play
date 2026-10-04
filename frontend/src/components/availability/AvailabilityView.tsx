@@ -96,7 +96,16 @@ export function AvailabilityView({ userId }: AvailabilityViewProps) {
 		const seq = ++fetchSeq.current;
 		const date = selectedDate;
 		setLoading(true);
-		await writeChainRef.current;
+		// Wait until no write is queued any more. A grid that unmounted with a save in flight
+		// enqueues its last selection only once that save finishes, i.e. after this read began
+		// waiting, so one await of the chain is not enough. The macrotask yield lets a save
+		// loop that just finished enqueue its next write before the chain is compared.
+		for (;;) {
+			const chain = writeChainRef.current;
+			await chain;
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			if (chain === writeChainRef.current) break;
+		}
 		const [myResult, allResult] = await Promise.all([
 			api.getAvailability({ user_id: userId, date }),
 			api.getAvailability({ date }),

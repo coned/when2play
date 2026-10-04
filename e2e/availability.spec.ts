@@ -112,3 +112,37 @@ test('overlapping saves run one at a time and the last one carries the final sel
 	}
 	expect(putTimes(puts[puts.length - 1].body)).toEqual(['21:15', '21:30']);
 });
+
+test('switching away from a date during a save and straight back shows the saved selection', async ({ page, api }) => {
+	// Server state per date, updated by each PUT when it completes
+	const server = new Map<string, string[]>();
+	api.get('/availability', (req) => {
+		const date = req.url.searchParams.get('date')!;
+		return ok((server.get(date) ?? []).map((t) => row(USER.id, t)));
+	});
+	api.put('/availability', (req) => {
+		const body = req.body as { date: string; slots: Array<{ start_time: string }> };
+		return {
+			...ok(body.slots),
+			until: new Promise((r) => setTimeout(r, 1500)).then(() => server.set(body.date, body.slots.map((s) => s.start_time))),
+		};
+	});
+
+	await openAvailability(page);
+	await slot(page, '21:00').click();
+	await expect.poll(() => api.calls('PUT', '/availability').length, { timeout: 5000 }).toBe(1);
+
+	// While the first save runs: change the selection, then leave the date and come straight back
+	await slot(page, '21:15').click();
+	await page.getByRole('button', { name: /Thu\s*16/ }).click();
+	await page.getByRole('button', { name: /Today/ }).click();
+
+	await expect(slot(page, '21:00')).toHaveAttribute('aria-pressed', 'true', { timeout: 10_000 });
+	await expect(slot(page, '21:15')).toHaveAttribute('aria-pressed', 'true');
+	const puts = api.calls('PUT', '/availability');
+	expect(puts).toHaveLength(2);
+	expect(putTimes(puts[1].body)).toEqual(['21:00', '21:15']);
+	// The slots for today were read only after the second save had finished
+	const todayReads = api.calls('GET', '/availability').filter((r) => r.url.searchParams.get('date') === TODAY && r.url.searchParams.has('user_id'));
+	expect(todayReads[todayReads.length - 1].startedAt).toBeGreaterThanOrEqual(puts[1].finishedAt!);
+});

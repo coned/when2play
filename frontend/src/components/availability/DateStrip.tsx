@@ -100,6 +100,7 @@ export function DateStrip({ dates, selectedDate, statusMap, onSelect }: DateStri
 					<button
 						key={date}
 						onClick={() => onSelect(date)}
+						aria-pressed={isSelected}
 						style={{
 							display: 'flex',
 							flexDirection: 'column',
