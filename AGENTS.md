@@ -15,7 +15,8 @@ For all limits and quotas, retrieve from the product's `/platform/limits/` page.
 |---------|---------|
 | `npx wrangler dev` | Local development |
 | `make deploy` | Type check, test, build, then `wrangler deploy --var GIT_SHA:<commit>` (`make release` adds migrations and a smoke test) |
-| `npm run typecheck` | Type check the Worker and the frontend (must pass; deploys and CI run it) |
+| `npm run typecheck` | Type check the Worker, the frontend and the e2e suite (must pass; deploys and CI run it) |
+| `npm run e2e` | Build the frontend and run the Playwright smoke suite in `e2e/` (headless Chromium, every `/api` call mocked; not part of check, deploy or CI). Needs Chromium for `@playwright/test` installed locally |
 | `npx wrangler types` | Generate TypeScript types |
 
 Run `wrangler types` after changing bindings in wrangler.jsonc.
