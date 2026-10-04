@@ -214,7 +214,7 @@ export function VoteRanking({ games, onVoteChange }: VoteRankingProps) {
 							}}
 						>
 							<span style={{ color: 'var(--text-muted)', fontSize: '18px', lineHeight: 1 }}>&#x2261;</span>
-							<span style={{ color: 'var(--accent)', fontWeight: 700, minWidth: '24px' }}>#{i + 1}</span>
+							<span style={{ color: 'var(--accent-text)', fontWeight: 700, minWidth: '24px' }}>#{i + 1}</span>
 							{vote.image_url && (
 								<img
 									src={vote.image_url}
@@ -235,7 +235,7 @@ export function VoteRanking({ games, onVoteChange }: VoteRankingProps) {
 				})}
 			</div>
 
-			{/* Unranked zone — desktop drop target + touch drop zone */}
+			{/* Unranked zone: desktop drop target + touch drop zone */}
 			<div
 				ref={unrankedRef}
 				onDragOver={(e) => (e as DragEvent).preventDefault()}
@@ -251,12 +251,12 @@ export function VoteRanking({ games, onVoteChange }: VoteRankingProps) {
 				}}
 			>
 				{unrankedGames.length > 0 && (
-					<h4 style={{ fontSize: '13px', color: isDraggingAny ? 'var(--accent)' : 'var(--text-secondary)', marginBottom: '8px' }}>
+					<h4 style={{ fontSize: '13px', color: isDraggingAny ? 'var(--accent-text)' : 'var(--text-secondary)', marginBottom: '8px' }}>
 						{isDraggingAny ? '↓ Drop here to unrank' : 'Unranked Games'}
 					</h4>
 				)}
 				{isDraggingAny && unrankedGames.length === 0 && (
-					<p style={{ fontSize: '13px', color: 'var(--accent)', textAlign: 'center' }}>↓ Drop here to unrank</p>
+					<p style={{ fontSize: '13px', color: 'var(--accent-text)', textAlign: 'center' }}>↓ Drop here to unrank</p>
 				)}
 				<div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
 					{unrankedGames.map((game: any) => (

@@ -83,7 +83,7 @@ export function GameRanking({ games = [] }: GameRankingProps) {
 								padding: '10px 16px',
 							}}
 						>
-							<span style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent)', minWidth: '30px' }}>#{i + 1}</span>
+							<span style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent-text)', minWidth: '30px' }}>#{i + 1}</span>
 							{item.image_url && (
 								<img
 									src={item.image_url}
