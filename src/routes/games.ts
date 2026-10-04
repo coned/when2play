@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono';
+import { z } from 'zod';
 import type { Bindings } from '../env';
 import { requireAuth } from '../middleware/auth';
 import { requireBotAuth } from '../middleware/bot-auth';
@@ -15,6 +16,7 @@ import { getSetting } from '../db/queries/settings';
 import { checkShareCooldown, rateLimited } from '../db/queries/rate-limit';
 import { getBotStatus } from '../lib/bot-status';
 import { isDelivered } from '../lib/pending';
+import { firstIssueMessage } from '../lib/schemas';
 
 type GamesEnv = {
 	Bindings: Bindings;
@@ -25,6 +27,66 @@ type GamesEnv = {
 };
 
 const games = new Hono<GamesEnv>();
+
+const BODY_NOT_OBJECT = 'Request body must be a JSON object';
+
+const gameNameSchema = z
+	.string({ required_error: 'name is required', invalid_type_error: 'name must be a string' })
+	.trim()
+	.min(1, 'name must be 1 to 100 characters')
+	.max(100, 'name must be 1 to 100 characters');
+
+// steam_app_id is interpolated into a Steam CDN URL, so only digits are accepted
+const steamAppIdSchema = z
+	.string({ invalid_type_error: 'steam_app_id must be a string of digits' })
+	.regex(/^\d{1,10}$/, 'steam_app_id must be 1 to 10 digits');
+
+const imageUrlSchema = z
+	.string({ invalid_type_error: 'image_url must be a string' })
+	.max(500, 'image_url must be 500 characters or less')
+	.refine(isHttpUrl, 'image_url must be an http or https URL');
+
+const noteSchema = z.string({ invalid_type_error: 'note must be a string' }).max(500, 'note must be 500 characters or less');
+
+const createGameSchema = z.object(
+	{
+		name: gameNameSchema,
+		steam_app_id: steamAppIdSchema.optional(),
+		image_url: imageUrlSchema.optional(),
+		note: noteSchema.optional(),
+	},
+	{ invalid_type_error: BODY_NOT_OBJECT, required_error: BODY_NOT_OBJECT },
+);
+
+const updateGameSchema = z.object(
+	{
+		name: gameNameSchema.optional(),
+		image_url: imageUrlSchema.optional(),
+		note: noteSchema.optional(),
+	},
+	{ invalid_type_error: BODY_NOT_OBJECT, required_error: BODY_NOT_OBJECT },
+);
+
+/** Archive reasons the web app sends; the auto-archive job sets its own reason directly in the database. */
+export const ARCHIVE_REASONS = ['not_interested', 'save_for_later'] as const;
+
+const archiveSchema = z.object(
+	{ reason: z.enum(ARCHIVE_REASONS, { errorMap: () => ({ message: `reason must be one of: ${ARCHIVE_REASONS.join(', ')}` }) }).optional() },
+	{ invalid_type_error: BODY_NOT_OBJECT },
+);
+
+function isHttpUrl(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return url.protocol === 'http:' || url.protocol === 'https:';
+	} catch {
+		return false;
+	}
+}
+
+function badRequest(message: string) {
+	return { ok: false as const, error: { code: 'BAD_REQUEST', message } };
+}
 
 /**
  * Schedule background work via waitUntil. Hono's executionCtx getter throws
@@ -112,17 +174,12 @@ games.get('/activity', async (c) => {
 // POST /api/games
 games.post('/', async (c) => {
 	const user = c.get('user');
-	const body = await c.req.json<{ name: string; steam_app_id?: string; image_url?: string; note?: string }>();
-
-	if (!body.name || body.name.length > 100) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'name is required and must be 100 characters or less' } }, 400);
+	const raw = await c.req.json().catch(() => null);
+	const parsed = createGameSchema.safeParse(raw);
+	if (!parsed.success) {
+		return c.json(badRequest(firstIssueMessage(parsed.error, BODY_NOT_OBJECT)), 400);
 	}
-	if (body.image_url && body.image_url.length > 500) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'image_url must be 500 characters or less' } }, 400);
-	}
-	if (body.note && body.note.length > 500) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'note must be 500 characters or less' } }, 400);
-	}
+	const body = parsed.data;
 
 	// Duplicate detection by steam_app_id
 	if (body.steam_app_id) {
@@ -169,11 +226,12 @@ games.patch('/:id', async (c) => {
 		return c.json({ ok: false, error: { code: 'FORBIDDEN', message: 'Only the proposer can update this game' } }, 403);
 	}
 
-	const body = await c.req.json<{ name?: string; image_url?: string; note?: string }>();
-	if (body.note !== undefined && body.note.length > 500) {
-		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'note must be 500 characters or less' } }, 400);
+	const raw = await c.req.json().catch(() => null);
+	const parsed = updateGameSchema.safeParse(raw);
+	if (!parsed.success) {
+		return c.json(badRequest(firstIssueMessage(parsed.error, BODY_NOT_OBJECT)), 400);
 	}
-	const updated = await updateGame(c.env.DB, id, body);
+	const updated = await updateGame(c.env.DB, id, parsed.data);
 	return c.json({ ok: true, data: { ...updated, is_archived: Boolean(updated!.is_archived) } });
 });
 
@@ -187,8 +245,21 @@ games.delete('/:id', async (c) => {
 		return c.json({ ok: false, error: { code: 'NOT_FOUND', message: 'Game not found' } }, 404);
 	}
 
-	const body = await c.req.json<{ reason?: string }>().catch(() => ({} as { reason?: string }));
-	const reason = body.reason ?? 'not_interested';
+	// No body (or an empty one) archives as not_interested
+	const text = await c.req.text();
+	let raw: unknown = {};
+	if (text.trim() !== '') {
+		try {
+			raw = JSON.parse(text);
+		} catch {
+			return c.json(badRequest(BODY_NOT_OBJECT), 400);
+		}
+	}
+	const parsed = archiveSchema.safeParse(raw);
+	if (!parsed.success) {
+		return c.json(badRequest(firstIssueMessage(parsed.error, BODY_NOT_OBJECT)), 400);
+	}
+	const reason = parsed.data.reason ?? 'not_interested';
 	await archiveGame(c.env.DB, id, reason);
 
 	const detail = JSON.stringify({ reason });
@@ -246,13 +317,14 @@ games.put('/:id/react', async (c) => {
 		return c.json({ ok: false, error: { code: 'NOT_FOUND', message: 'Game not found' } }, 404);
 	}
 
-	const body = await c.req.json<{ type: 'like' | 'dislike' }>();
-	if (body.type !== 'like' && body.type !== 'dislike') {
+	const body = (await c.req.json().catch(() => null)) as { type?: unknown } | null;
+	if (!body || (body.type !== 'like' && body.type !== 'dislike')) {
 		return c.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'type must be "like" or "dislike"' } }, 400);
 	}
 
-	await setReaction(c.env.DB, id, user.id, body.type);
-	await logActivity(c.env.DB, id, user.id, body.type);
+	const type = body.type;
+	await setReaction(c.env.DB, id, user.id, type);
+	await logActivity(c.env.DB, id, user.id, type);
 	await touchGameActivity(c.env.DB, id);
 
 	return c.json({ ok: true, data: null });
