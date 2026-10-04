@@ -146,3 +146,57 @@ test('switching away from a date during a save and straight back shows the saved
 	const todayReads = api.calls('GET', '/availability').filter((r) => r.url.searchParams.get('date') === TODAY && r.url.searchParams.has('user_id'));
 	expect(todayReads[todayReads.length - 1].startedAt).toBeGreaterThanOrEqual(puts[1].finishedAt!);
 });
+
+test('mouse drag across three slots selects all three with one save', async ({ page, api }) => {
+	mockAvailabilityRows(api, { mine: [], all: [] });
+	api.put('/availability', (req) => ok((req.body as { slots: unknown[] }).slots));
+	await openAvailability(page);
+
+	const box = async (t: string) => (await slot(page, t).boundingBox())!;
+	const a = await box('21:00');
+	const c = await box('21:30');
+	await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2, { steps: 8 });
+	await page.mouse.up();
+
+	for (const t of ['21:00', '21:15', '21:30']) {
+		await expect(slot(page, t)).toHaveAttribute('aria-pressed', 'true');
+	}
+	await expect(slot(page, '21:45')).toHaveAttribute('aria-pressed', 'false');
+	await expect(page.getByRole('status')).toHaveText(/Saved/, { timeout: 5000 });
+	await page.waitForTimeout(1200);
+	const puts = api.calls('PUT', '/availability');
+	expect(puts).toHaveLength(1);
+	expect(putTimes(puts[0].body)).toEqual(['21:00', '21:15', '21:30']);
+});
+
+test('hovering a slot with voters shows a popover that is not clipped', async ({ page, api }) => {
+	// 21:00 is the first row: before the fix the popover sat above it inside a clipped column
+	mockAvailabilityRows(api, { mine: [], all: [row(BOB.id, '21:00')] });
+	await openAvailability(page);
+
+	await slot(page, '21:00').hover();
+	const popover = page.getByRole('tooltip');
+	await expect(popover).toBeVisible();
+	await expect(popover).toContainText('Bob');
+	const box = (await popover.boundingBox())!;
+	const vp = page.viewportSize()!;
+	expect(box.x).toBeGreaterThanOrEqual(0);
+	expect(box.y).toBeGreaterThanOrEqual(0);
+	expect(box.x + box.width).toBeLessThanOrEqual(vp.width);
+	expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
+	// What is actually painted at each corner of the box is the popover itself
+	const hits = await popover.evaluate((el, b) => {
+		const pts = [[b.x + 2, b.y + 2], [b.x + b.width - 2, b.y + 2], [b.x + 2, b.y + b.height - 2], [b.x + b.width - 2, b.y + b.height - 2]];
+		// The popover ignores the pointer; look underneath that by hit-testing with it enabled
+		el.style.pointerEvents = 'auto';
+		const r = pts.map(([x, y]) => el.contains(document.elementFromPoint(x, y)));
+		el.style.pointerEvents = 'none';
+		return r;
+	}, box);
+	expect(hits).toEqual([true, true, true, true]);
+
+	await page.mouse.move(5, 5);
+	await expect(popover).toHaveCount(0);
+});

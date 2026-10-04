@@ -28,7 +28,14 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'chromium',
+			testIgnore: /\.mobile\.spec\.ts$/,
 			use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 } },
+		},
+		{
+			// Phone layout with touch input (below the 768 px breakpoint)
+			name: 'mobile',
+			testMatch: /\.mobile\.spec\.ts$/,
+			use: { ...devices['Pixel 7'] },
 		},
 	],
 	webServer: {

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from 'preact/hooks';
+import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from 'preact/hooks';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { formatLocalTimeClean } from '../../lib/time';
 
@@ -119,27 +119,64 @@ function voterRingStyle(voter: Voter): Record<string, string> {
 	return { border: '2px solid var(--success)' };
 }
 
-function SlotPopover({ voters, userMap }: { voters: Voter[]; userMap: Map<string, { display_name: string | null; avatar_url: string | null }> }) {
+const POPOVER_ID = 'slot-popover';
+/** A touch that moves further than this (CSS px) is a swipe, not a tap */
+const TAP_SLOP = 10;
+
+/**
+ * Who is available in a slot. Rendered once at the grid root with fixed
+ * positioning, so no scroll container or `overflow: hidden` column can clip it.
+ * Placed above the slot when there is room, otherwise below, and kept inside
+ * the viewport.
+ */
+function SlotPopover({ anchor, voters, userMap, interactive, popoverRef }: {
+	anchor: HTMLElement;
+	voters: Voter[];
+	userMap: Map<string, { display_name: string | null; avatar_url: string | null }>;
+	interactive: boolean;
+	popoverRef: { current: HTMLDivElement | null };
+}) {
 	const shown = voters.slice(0, 5);
 	const overflow = voters.length - shown.length;
+	const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+	useLayoutEffect(() => {
+		const el = popoverRef.current;
+		if (!el) return;
+		const a = anchor.getBoundingClientRect();
+		const w = el.offsetWidth;
+		const h = el.offsetHeight;
+		const vw = document.documentElement.clientWidth;
+		const vh = window.innerHeight;
+		const margin = 8;
+		const gap = 4;
+		let left = a.left + a.width / 2 - w / 2;
+		left = Math.max(margin, Math.min(left, vw - w - margin));
+		let top = a.top - h - gap;
+		if (top < margin) top = a.bottom + gap;
+		top = Math.max(margin, Math.min(top, vh - h - margin));
+		setPos({ left, top });
+	}, [anchor, voters]);
 
 	return (
 		<div
+			ref={popoverRef}
+			id={POPOVER_ID}
+			role="tooltip"
 			style={{
-				position: 'absolute',
-				bottom: '100%',
-				left: '50%',
-				transform: 'translateX(-50%)',
-				marginBottom: '4px',
+				position: 'fixed',
+				left: pos ? `${pos.left}px` : '0px',
+				top: pos ? `${pos.top}px` : '0px',
+				visibility: pos ? 'visible' : 'hidden',
 				background: 'var(--bg-card)',
 				border: '1px solid var(--border)',
 				borderRadius: '6px',
 				padding: '6px 10px',
-				zIndex: 100,
+				zIndex: 1000,
 				minWidth: '120px',
 				maxWidth: '200px',
 				boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-				pointerEvents: 'none',
+				pointerEvents: interactive ? 'auto' : 'none',
 			}}
 		>
 			<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -194,12 +231,24 @@ function SlotPopover({ voters, userMap }: { voters: Voter[]; userMap: Map<string
 	);
 }
 
-function InlineAvatars({ voters, userMap }: { voters: Voter[]; userMap: Map<string, { display_name: string | null; avatar_url: string | null }> }) {
+function InlineAvatars({ voters, userMap, wide }: { voters: Voter[]; userMap: Map<string, { display_name: string | null; avatar_url: string | null }>; wide: boolean }) {
 	const shown = voters.slice(0, MAX_INLINE_AVATARS);
 	const overflow = voters.length - shown.length;
 
+	// data-avatars: on touch, a tap here shows who is available instead of toggling the slot.
+	// On the phone layout the cluster fills the slot height with extra padding so it is easy to hit.
 	return (
-		<div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 1 }}>
+		<div
+			data-avatars=""
+			style={{
+				display: 'flex',
+				alignItems: 'center',
+				flexShrink: 0,
+				position: 'relative',
+				zIndex: 1,
+				...(wide ? { alignSelf: 'stretch', padding: '0 4px 0 12px', marginRight: '-4px' } : {}),
+			}}
+		>
 			{shown.map((voter, i) => {
 				const user = userMap.get(voter.userId);
 				const name = user?.display_name ?? voter.userId.slice(0, 8);
@@ -225,6 +274,7 @@ function InlineAvatars({ voters, userMap }: { voters: Voter[]; userMap: Map<stri
 							<img
 								src={user.avatar_url}
 								alt={name}
+								draggable={false}
 								style={{ width: '100%', height: '100%', display: 'block', borderRadius: '50%' }}
 							/>
 						) : (
@@ -267,14 +317,22 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 	);
 	const [brushMode, setBrushMode] = useState<'available' | 'tentative'>('available');
 	const [isDragging, setIsDragging] = useState(false);
-	const [dragAction, setDragAction] = useState<'paint' | 'remove'>('paint');
-	const [touchMode, setTouchMode] = useState<'scroll' | 'select' | 'lock'>('scroll');
+	// Touch only: while on, pressing and dragging paints a range and the grid does not scroll
+	const [dragSelect, setDragSelect] = useState(false);
 	const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 	// Message of the last failed save; stays visible until a later save succeeds
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const [confirmError, setConfirmError] = useState<string | null>(null);
-	const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);
+	// Slot whose voters are shown: on mouse hover, on a tap of its avatars, or on keyboard focus
+	const [popover, setPopover] = useState<{ time: string; source: 'hover' | 'touch' | 'focus' } | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const popoverRef = useRef<HTMLDivElement | null>(null);
+	// Active drag (mouse, or touch with Drag to select on)
+	const dragRef = useRef<{ pointerId: number; action: 'paint' | 'remove'; last: string } | null>(null);
+	// Touch that may still become a tap (cleared when it moves or the browser starts scrolling)
+	const tapRef = useRef<{ pointerId: number; x: number; y: number; time: string; avatars: boolean } | null>(null);
+	// Touch that only dismissed the open popover; it must not toggle anything
+	const dismissPointerRef = useRef<number | null>(null);
 	const [containerHeight, setContainerHeight] = useState(400);
 	const isMobile = useMediaQuery(768);
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -430,28 +488,164 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 		return map;
 	}, [allSlots]);
 
-	const toggleSlot = useCallback((time: string, forceAction?: 'paint' | 'remove') => {
+	/** Paint or erase these slots. Leaves the state untouched when nothing changes. */
+	const applyAction = useCallback((times: string[], action: 'paint' | 'remove') => {
 		setSelected((prev) => {
+			let changed = false;
 			const next = new Map(prev);
-			const currentStatus = next.get(time);
-			const action = forceAction ?? (currentStatus === brushMode ? 'remove' : 'paint');
-			if (action === 'remove') {
-				next.delete(time);
-			} else {
-				next.set(time, brushMode);
+			for (const time of times) {
+				if (action === 'remove') {
+					if (next.delete(time)) changed = true;
+				} else if (next.get(time) !== brushMode) {
+					next.set(time, brushMode);
+					changed = true;
+				}
 			}
-			return next;
+			return changed ? next : prev;
 		});
 	}, [brushMode]);
 
-	const handleTouchMove = (e: TouchEvent) => {
-		if (!isDragging || touchMode !== 'select') return;
-		e.preventDefault();
-		const touch = e.touches[0];
-		const el = document.elementFromPoint(touch.clientX, touch.clientY);
-		const time = el?.getAttribute('data-time');
-		if (time) toggleSlot(time, dragAction);
+	const toggleSlot = (time: string) => {
+		applyAction([time], selectedRef.current.get(time) === brushMode ? 'remove' : 'paint');
 	};
+
+	// Column and row of each visible slot, to fill the gap when a drag skips slots
+	const slotPos = useMemo(() => {
+		const map = new Map<string, { col: number; row: number }>();
+		columns.forEach((col, ci) => col.forEach((slot, ri) => map.set(slot.start_time, { col: ci, row: ri })));
+		return map;
+	}, [columns]);
+
+	// While dragging, follow the pointer anywhere on the page until it is released.
+	// A skipped slot (fast move) is filled in when the last and the new slot share a column.
+	// Read through a ref so the listeners added at drag start always see current values.
+	const dragMoveRef = useRef<(e: PointerEvent) => void>(() => {});
+	dragMoveRef.current = (e: PointerEvent) => {
+		const drag = dragRef.current;
+		if (!drag || e.pointerId !== drag.pointerId) return;
+		if (e.pointerType !== 'mouse') e.preventDefault();
+		const el = document.elementFromPoint(e.clientX, e.clientY);
+		if (!el || !containerRef.current?.contains(el)) return;
+		const time = (el.closest('[data-time]') as HTMLElement | null)?.dataset.time;
+		if (!time || time === drag.last) return;
+		const a = slotPos.get(drag.last);
+		const b = slotPos.get(time);
+		let times = [time];
+		if (a && b && a.col === b.col) {
+			const [lo, hi] = a.row < b.row ? [a.row, b.row] : [b.row, a.row];
+			times = columns[a.col].slice(lo, hi + 1).map((s) => s.start_time);
+		}
+		drag.last = time;
+		applyAction(times, drag.action);
+	};
+	const endDragRef = useRef<(() => void) | null>(null);
+
+	const beginDrag = (pointerId: number, time: string) => {
+		endDragRef.current?.();
+		const action = selectedRef.current.get(time) === brushMode ? 'remove' : 'paint';
+		dragRef.current = { pointerId, action, last: time };
+		setIsDragging(true);
+		setPopover(null);
+		applyAction([time], action);
+
+		// Added right here, not in an effect: a quick click can release before effects run
+		const onMove = (e: PointerEvent) => dragMoveRef.current(e);
+		const onEnd = (e: PointerEvent) => { if (e.pointerId === pointerId) end(); };
+		const end = () => {
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onEnd);
+			window.removeEventListener('pointercancel', onEnd);
+			if (endDragRef.current === end) endDragRef.current = null;
+			dragRef.current = null;
+			if (mountedRef.current) setIsDragging(false);
+		};
+		window.addEventListener('pointermove', onMove, { passive: false });
+		window.addEventListener('pointerup', onEnd);
+		window.addEventListener('pointercancel', onEnd);
+		endDragRef.current = end;
+	};
+
+	useEffect(() => () => endDragRef.current?.(), []);
+
+	/**
+	 * One input path for mouse, touch and pen (no separate mouse and touch handlers, so the
+	 * browser's compatibility mouse events after a tap cannot toggle a slot a second time).
+	 * Mouse: press toggles and dragging paints or erases. Touch: a tap toggles once, a swipe
+	 * scrolls the page (the browser cancels the pointer), a tap on the avatars shows who is
+	 * available, and with Drag to select on a drag paints or erases.
+	 */
+	const handlePointerDown = (e: PointerEvent) => {
+		const target = e.target as Element;
+		tapRef.current = null;
+		if (dismissPointerRef.current === e.pointerId) {
+			dismissPointerRef.current = null;
+			return;
+		}
+		const slotEl = target.closest('[data-time]') as HTMLElement | null;
+		if (!slotEl) return;
+		const time = slotEl.dataset.time!;
+		if (e.pointerType === 'mouse') {
+			if (e.button !== 0) return;
+			e.preventDefault();
+			beginDrag(e.pointerId, time);
+			return;
+		}
+		const onAvatars = target.closest('[data-avatars]') !== null;
+		if (dragSelect && !onAvatars) {
+			e.preventDefault();
+			beginDrag(e.pointerId, time);
+			return;
+		}
+		tapRef.current = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, time, avatars: onAvatars };
+	};
+
+	const handlePointerMove = (e: PointerEvent) => {
+		const tap = tapRef.current;
+		if (tap && tap.pointerId === e.pointerId && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > TAP_SLOP) {
+			tapRef.current = null;
+		}
+	};
+
+	const handlePointerUp = (e: PointerEvent) => {
+		const tap = tapRef.current;
+		tapRef.current = null;
+		if (!tap || tap.pointerId !== e.pointerId) return;
+		if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > TAP_SLOP) return;
+		if (tap.avatars && slotVoters.has(tap.time)) {
+			setPopover((prev) => (prev?.time === tap.time && prev.source === 'touch' ? null : { time: tap.time, source: 'touch' }));
+			return;
+		}
+		toggleSlot(tap.time);
+	};
+
+	// A popover opened by touch closes on a tap anywhere else; a tap on the grid that only
+	// closed it toggles nothing (a tap on another slot's avatars opens that one instead).
+	// Any popover closes on Escape, scroll or resize.
+	useEffect(() => {
+		if (!popover) return;
+		const close = () => setPopover(null);
+		const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+		const onDown = (e: PointerEvent) => {
+			if (popover.source !== 'touch') return;
+			const target = e.target as Element;
+			if (popoverRef.current?.contains(target)) return;
+			const avatars = target.closest('[data-avatars]');
+			const slotEl = target.closest('[data-time]') as HTMLElement | null;
+			if (avatars && slotEl?.dataset.time === popover.time) return;
+			close();
+			if (!avatars && containerRef.current?.contains(target)) dismissPointerRef.current = e.pointerId;
+		};
+		window.addEventListener('keydown', onKey);
+		window.addEventListener('pointerdown', onDown, true);
+		window.addEventListener('scroll', close, true);
+		window.addEventListener('resize', close);
+		return () => {
+			window.removeEventListener('keydown', onKey);
+			window.removeEventListener('pointerdown', onDown, true);
+			window.removeEventListener('scroll', close, true);
+			window.removeEventListener('resize', close);
+		};
+	}, [popover]);
 
 	const formatDateLabel = (dateStr: string): string => {
 		const d = new Date(dateStr + 'T12:00:00Z');
@@ -493,11 +687,14 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 	const isSaving = saveStatus === 'saving';
 	const statusColor = saveStatus === 'saved' ? 'var(--success)' : saveStatus === 'error' ? 'var(--danger)' : 'var(--text-muted)';
 
-	const mobileHint = touchMode === 'select'
-		? 'Tap to toggle slots'
-		: touchMode === 'lock'
-			? 'Tap a slot to see who'
-			: 'Enable Select or Lock';
+	const popoverVoters = popover && !isDragging ? slotVoters.get(popover.time) : undefined;
+	const popoverAnchor = popoverVoters
+		? (containerRef.current?.querySelector(`[data-time="${popover!.time}"]`) as HTMLElement | null) ?? null
+		: null;
+
+	const mobileHint = dragSelect
+		? 'Drag to select is on: drag across slots to paint them. The grid does not scroll.'
+		: 'Tap a slot to toggle it. Tap the faces to see who is free.';
 
 	const brushButtons = (
 		<div style={{ display: 'flex', gap: '2px' }}>
@@ -528,36 +725,36 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 				justifyContent: 'space-between',
 				alignItems: 'center',
 				marginBottom: '6px',
-				...(isMobile ? { position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-primary)', paddingTop: '4px', paddingBottom: '4px' } : {}),
+				gap: '6px',
+				...(isMobile ? { position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-primary)', paddingTop: '4px', paddingBottom: '4px', flexWrap: 'wrap' } : {}),
 			}}>
-				<div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+				<div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
 					{isMobile && (
-						<div style={{ display: 'flex', gap: '4px' }}>
-							<button
-								class={`btn ${touchMode === 'select' ? 'btn-primary' : 'btn-secondary'}`}
-								style={{ fontSize: '12px', padding: '4px 10px' }}
-								onClick={() => setTouchMode(prev => prev === 'select' ? 'scroll' : 'select')}
-							>
-								Select
-							</button>
-							<button
-								class={`btn ${touchMode === 'lock' ? 'btn-primary' : 'btn-secondary'}`}
-								style={{ fontSize: '12px', padding: '4px 10px' }}
-								onClick={() => setTouchMode(prev => prev === 'lock' ? 'scroll' : 'lock')}
-							>
-								Lock
-							</button>
-						</div>
+						<button
+							class={`btn ${dragSelect ? 'btn-primary' : 'btn-secondary'}`}
+							style={{ fontSize: '12px', padding: '4px 10px' }}
+							aria-pressed={dragSelect}
+							onClick={() => setDragSelect((prev) => !prev)}
+						>
+							Drag to select
+						</button>
 					)}
 					{isMobile && <div style={{ width: '1px', height: '20px', background: 'var(--border)' }} />}
 					{brushButtons}
-					<span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-						{isMobile ? mobileHint : 'Click or drag to select \u00b7 hover for details'}
-					</span>
+					{!isMobile && (
+						<span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+							Click or drag to select {'\u00b7'} hover for details
+						</span>
+					)}
 				</div>
 				<span role="status" style={{ fontSize: '12px', color: statusColor, minWidth: '70px', textAlign: 'right' }}>
 					{statusText}
 				</span>
+				{isMobile && (
+					<p data-testid="grid-hint" style={{ flexBasis: '100%', fontSize: '12px', color: dragSelect ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+						{mobileHint}
+					</p>
+				)}
 			</div>
 
 			{/* Save failure: stays until a later save succeeds */}
@@ -633,15 +830,21 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 			{/* Time columns */}
 			<div
 				ref={containerRef}
-				onMouseUp={() => setIsDragging(false)}
-				onMouseLeave={() => { setIsDragging(false); setHoveredSlot(null); }}
-				onTouchMove={handleTouchMove}
-				onTouchEnd={() => setIsDragging(false)}
+				onPointerDown={handlePointerDown}
+				onPointerMove={handlePointerMove}
+				onPointerUp={handlePointerUp}
+				onPointerCancel={() => { tapRef.current = null; }}
+				onPointerLeave={(e) => {
+					if (e.pointerType === 'mouse') setPopover((prev) => (prev?.source === 'hover' ? null : prev));
+				}}
 				style={{
 					display: 'grid',
 					gridTemplateColumns: `repeat(${numColumns}, 1fr)`,
 					gap: isMobile ? '8px' : '0 12px',
-					touchAction: touchMode === 'select' ? 'none' : 'auto',
+					// Default: a vertical swipe scrolls the page and the browser cancels the tap.
+					// Drag to select: the grid keeps every touch, so a drag paints instead of scrolling.
+					touchAction: dragSelect ? 'none' : 'pan-y pinch-zoom',
+					WebkitTouchCallout: 'none',
 					...(isMobile ? {} : { height: `${containerHeight}px`, overflowX: 'hidden', overflowY: 'auto' }),
 				}}
 			>
@@ -680,39 +883,33 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 							const isPast = isSlotPast(slot.start_time, slot.slotDate);
 							const slotLocalDate = new Date(`${slot.slotDate}T${slot.start_time}:00Z`).toLocaleDateString('en-CA');
 							const isNextLocalDay = slotLocalDate !== baseLocalDate;
-							const showPopover = hoveredSlot === slot.start_time && voterCount > 0 && !isDragging;
+							const popoverOpen = popover?.time === slot.start_time && voterCount > 0 && !isDragging;
 
 							return (
 								<div
 									key={slot.start_time}
 									data-time={slot.start_time}
 									role="button"
+									tabIndex={0}
 									aria-pressed={isSelected}
-									onMouseDown={() => {
-										const currentStatus = selected.get(slot.start_time);
-										const action = currentStatus === brushMode ? 'remove' : 'paint';
-										setIsDragging(true);
-										setDragAction(action);
-										toggleSlot(slot.start_time, action);
+									aria-describedby={popoverOpen ? POPOVER_ID : undefined}
+									onPointerEnter={(e) => {
+										if (e.pointerType !== 'mouse' || dragRef.current) return;
+										setPopover((prev) => (voterCount > 0
+											? { time: slot.start_time, source: 'hover' }
+											: prev?.source === 'hover' ? null : prev));
 									}}
-									onMouseEnter={() => {
-										if (isDragging) toggleSlot(slot.start_time, dragAction);
-										else if (voterCount > 0) setHoveredSlot(slot.start_time);
-									}}
-									onMouseLeave={() => {
-										if (hoveredSlot === slot.start_time) setHoveredSlot(null);
-									}}
-									onTouchStart={() => {
-										if (touchMode === 'select') {
-											const currentStatus = selected.get(slot.start_time);
-											const action = currentStatus === brushMode ? 'remove' : 'paint';
-											setIsDragging(true);
-											setDragAction(action);
-											toggleSlot(slot.start_time, action);
-										} else if (touchMode === 'lock') {
-											setHoveredSlot(prev => prev === slot.start_time ? null : slot.start_time);
+									onKeyDown={(e) => {
+										if (e.key === 'Enter' || e.key === ' ') {
+											e.preventDefault();
+											toggleSlot(slot.start_time);
 										}
 									}}
+									onFocus={(e) => {
+										const el = e.currentTarget as HTMLElement;
+										if (voterCount > 0 && el.matches(':focus-visible')) setPopover({ time: slot.start_time, source: 'focus' });
+									}}
+									onBlur={() => setPopover((prev) => (prev?.source === 'focus' ? null : prev))}
 									style={{
 										display: 'flex',
 										alignItems: 'center',
@@ -784,10 +981,7 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 										)}
 									</span>
 									{voterCount > 0 && (
-										<InlineAvatars voters={voters!} userMap={userMap} />
-									)}
-									{showPopover && (
-										<SlotPopover voters={voters!} userMap={userMap} />
+										<InlineAvatars voters={voters!} userMap={userMap} wide={isMobile} />
 									)}
 								</div>
 							);
@@ -795,6 +989,15 @@ export function TimeGrid({ date, mySlots, allSlots, userId, onSave, availStartHo
 					</div>
 				))}
 			</div>
+			{popoverAnchor && popoverVoters && (
+				<SlotPopover
+					anchor={popoverAnchor}
+					voters={popoverVoters}
+					userMap={userMap}
+					interactive={popover?.source === 'touch'}
+					popoverRef={popoverRef}
+				/>
+			)}
 			<div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)', alignItems: 'center' }}>
 				<span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
 					<span style={{ display: 'inline-block', width: '3px', height: '12px', borderRadius: '2px', background: 'var(--accent)' }} />
