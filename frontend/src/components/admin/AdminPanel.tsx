@@ -214,8 +214,9 @@ function PhrasesEditor({
 									flexShrink: 0,
 								}}
 								title="Remove phrase"
+								aria-label={`Remove phrase ${i + 1}`}
 							>
-								&times;
+								<span aria-hidden="true">&times;</span>
 							</button>
 						</div>
 					))}

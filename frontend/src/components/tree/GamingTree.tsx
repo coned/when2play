@@ -356,6 +356,7 @@ function ModeButton({ label, active, onClick }: { label: string; active: boolean
 	return (
 		<button
 			onClick={onClick}
+			aria-pressed={active}
 			style={{
 				padding: '4px 14px',
 				fontSize: '12px',

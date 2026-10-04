@@ -272,9 +272,13 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 					{otherGuilds.length > 0 && (
 						<>
 							<button
+								class="touch-target"
 								onClick={() => setGuildDropdownOpen(v => !v)}
 								disabled={switching}
 								title="Switch guild"
+								aria-label={switching ? 'Switching guild' : 'Switch guild'}
+								aria-haspopup="true"
+								aria-expanded={guildDropdownOpen}
 								style={{
 									background: 'none',
 									border: '1px solid var(--border)',
@@ -286,9 +290,10 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 									lineHeight: 1,
 									display: 'flex',
 									alignItems: 'center',
+									justifyContent: 'center',
 								}}
 							>
-								{switching ? '...' : '\u21C5'}
+								<span aria-hidden="true">{switching ? '...' : '\u21C5'}</span>
 							</button>
 							{guildDropdownOpen && (
 								<div

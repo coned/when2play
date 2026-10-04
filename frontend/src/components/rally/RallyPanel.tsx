@@ -312,6 +312,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 						<button
 							key={at}
 							style={btnStyle(at!)}
+							aria-pressed={expandedButton === at}
 							onClick={() => toggleButton(at)}
 							disabled={loading}
 						>
@@ -355,6 +356,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 											key={u.id}
 											class={`btn ${selectedUserIds.has(u.id) ? 'btn-primary' : 'btn-secondary'}`}
 											style={{ padding: '4px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+											aria-pressed={selectedUserIds.has(u.id)}
 											onClick={() => toggleUser(u.id)}
 										>
 											{u.avatar_url && <img src={u.avatar_url} alt="" style={{ width: '18px', height: '18px', borderRadius: '50%' }} />}

@@ -33,6 +33,7 @@ export function UserFilterBar({ participantIds, participants, filterUserIds, onT
 				return (
 					<button
 						key={id}
+						aria-pressed={active}
 						onClick={() => onToggle(id)}
 						style={{
 							display: 'flex',

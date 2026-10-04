@@ -26,6 +26,12 @@ test('no horizontal page overflow at 360 px on the dashboard and availability pa
 	await page.getByRole('navigation').getByRole('button', { name: /Avail/ }).tap();
 	await expect(page.locator('[data-time="21:00"]')).toBeVisible();
 	await expectNoHorizontalOverflow(page);
+
+	// Date strip buttons are full-size touch targets
+	const today = page.getByRole('button', { name: /Today/ });
+	const box = (await today.boundingBox())!;
+	expect(box.width).toBeGreaterThanOrEqual(44);
+	expect(box.height).toBeGreaterThanOrEqual(44);
 });
 
 test('every bottom nav item is at least 44 px tall and its label is not cut off', async ({ page, api }) => {

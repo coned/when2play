@@ -186,8 +186,11 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 				{/* Reaction buttons + score */}
 				<div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
 					<button
+						class="touch-target"
 						onClick={() => handleReact('like')}
 						disabled={busy}
+						aria-pressed={reaction === 'like'}
+						aria-label={likes > 0 ? `Like, ${likes}` : 'Like'}
 						style={{
 							display: 'flex',
 							alignItems: 'center',
@@ -203,13 +206,16 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 						}}
 						title="Like"
 					>
-						<span style={{ fontSize: '14px' }}>{reaction === 'like' ? '\u2764\uFE0F' : '\u2661'}</span>
+						<span aria-hidden="true" style={{ fontSize: '14px' }}>{reaction === 'like' ? '\u2764\uFE0F' : '\u2661'}</span>
 						{likes > 0 && <span>{likes}</span>}
 					</button>
 
 					<button
+						class="touch-target"
 						onClick={() => handleReact('dislike')}
 						disabled={busy}
+						aria-pressed={reaction === 'dislike'}
+						aria-label={dislikes > 0 ? `Dislike, ${dislikes}` : 'Dislike'}
 						style={{
 							display: 'flex',
 							alignItems: 'center',
@@ -225,7 +231,7 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 						}}
 						title="Dislike"
 					>
-						<span style={{ fontSize: '14px' }}>&#x1F44E;</span>
+						<span aria-hidden="true" style={{ fontSize: '14px' }}>&#x1F44E;</span>
 						{dislikes > 0 && <span>{dislikes}</span>}
 					</button>
 
@@ -315,6 +321,7 @@ export function GameCard({ game, onUpdate, userReaction, likeCount, dislikeCount
 							onClick={handleShare}
 							disabled={sharing}
 							title="Broadcast to Discord"
+							aria-label={sharing ? 'Sharing to Discord' : shareMsg ? `Share to Discord: ${shareMsg}` : 'Share to Discord'}
 						>
 							{sharing ? '...' : shareMsg || 'Share'}
 						</button>

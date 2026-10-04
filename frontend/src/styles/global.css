@@ -22,6 +22,8 @@
 	--shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
 	--sidebar-width: 220px;
 	--header-height: 60px;
+	/* Keyboard focus ring: the body text colour contrasts with every theme's backgrounds */
+	--focus-ring: var(--text-primary);
 }
 
 *,
@@ -59,7 +61,30 @@ button {
 	cursor: pointer;
 	font-family: inherit;
 	border: none;
+}
+
+/*
+ * Keyboard focus. Mouse and touch focus show nothing extra (:focus-visible does not
+ * match them on buttons); keyboard focus on buttons, links, inputs and anything with
+ * a tabindex gets a ring outside the element, in a colour readable in every theme.
+ */
+:focus:not(:focus-visible) {
 	outline: none;
+}
+
+:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+
+/* Elements focused only from script (menus, dialogs) need no ring */
+[tabindex="-1"]:focus-visible {
+	outline: none;
+}
+
+/* Grid slots sit in clipped columns: draw their ring inside */
+[data-time]:focus-visible {
+	outline-offset: -2px;
 }
 
 input,
@@ -72,7 +97,6 @@ textarea {
 	border-radius: var(--radius);
 	padding: 8px 12px;
 	font-size: 14px;
-	outline: none;
 	transition: border-color 0.15s;
 }
 
@@ -277,6 +301,12 @@ textarea:focus {
 /* Mobile responsive */
 @media (max-width: 768px) {
 	.btn {
+		min-height: 44px;
+	}
+
+	/* Small controls get a full-size touch target on phones */
+	.touch-target {
+		min-width: 44px;
 		min-height: 44px;
 	}
 

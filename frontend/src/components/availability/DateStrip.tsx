@@ -107,6 +107,7 @@ export function DateStrip({ dates, selectedDate, statusMap, onSelect }: DateStri
 							alignItems: 'center',
 							gap: '2px',
 							minWidth: '44px',
+							minHeight: '44px',
 							padding: '6px 4px',
 							border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
 							borderRadius: '8px',
