@@ -37,16 +37,15 @@ export async function createAuthToken(db: D1Database, userId: string, token: str
 	return { id, token, user_id: userId, expires_at: expiresAt, used: 0, is_admin: isAdminInt, created_at: timestamp };
 }
 
+/**
+ * Mark an unused, unexpired token used and return it, in one statement: of two
+ * concurrent requests with the same token only one gets the row back.
+ */
 export async function consumeAuthToken(db: D1Database, token: string): Promise<AuthTokenRow | null> {
-	const row = await db.prepare('SELECT * FROM auth_tokens WHERE token = ? AND used = 0').bind(token).first<AuthTokenRow>();
-	if (!row) return null;
-	if (new Date(row.expires_at) < new Date()) {
-		await db.prepare('DELETE FROM auth_tokens WHERE id = ?').bind(row.id).run();
-		return null;
-	}
-
-	await db.prepare('UPDATE auth_tokens SET used = 1 WHERE id = ?').bind(row.id).run();
-	return row;
+	return db
+		.prepare('UPDATE auth_tokens SET used = 1 WHERE token = ? AND used = 0 AND expires_at > ? RETURNING *')
+		.bind(token, now())
+		.first<AuthTokenRow>();
 }
 
 export async function createSession(db: D1Database, userId: string, sessionId: string, isAdmin = false): Promise<SessionRow> {

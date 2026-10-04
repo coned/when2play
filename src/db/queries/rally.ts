@@ -134,20 +134,15 @@ export async function createOrGetRally(
 	dayKey?: string,
 ): Promise<RallyRow> {
 	const dk = dayKey ?? (await getDayKey(db));
-	const existing = await db
-		.prepare('SELECT * FROM rallies WHERE day_key = ?')
-		.bind(dk)
-		.first<RallyRow>();
-	if (existing) return existing;
-
-	const id = uuid();
-	const timestamp = now();
+	// day_key is UNIQUE: when two first calls of a day race, the second insert is
+	// ignored and both read the one row that won.
 	await db
-		.prepare('INSERT INTO rallies (id, creator_id, timing, day_key, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-		.bind(id, creatorId, timing, dk, 'open', timestamp)
+		.prepare('INSERT OR IGNORE INTO rallies (id, creator_id, timing, day_key, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+		.bind(uuid(), creatorId, timing, dk, 'open', now())
 		.run();
-
-	return { id, creator_id: creatorId, timing, day_key: dk, status: 'open', created_at: timestamp };
+	const row = await db.prepare('SELECT * FROM rallies WHERE day_key = ?').bind(dk).first<RallyRow>();
+	if (!row) throw new Error(`rally for ${dk} missing after insert`);
+	return row;
 }
 
 export async function getActiveRally(db: D1Database, dayKey?: string): Promise<RallyRow | null> {
