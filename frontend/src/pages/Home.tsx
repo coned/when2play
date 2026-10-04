@@ -9,6 +9,7 @@ import { AdminPanel } from '../components/admin/AdminPanel';
 import { RallyPanel } from '../components/rally/RallyPanel';
 import { GamingTree } from '../components/tree/GamingTree';
 import { BlogPage } from '../components/blog/BlogPage';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { DEFAULT_TAB, parseTabHash, tabHash, type TabId } from '../lib/routes';
 
 interface HomeProps {
@@ -49,14 +50,17 @@ export function Home({ user, onLogout, onUserUpdate }: HomeProps) {
 
 	return (
 		<Shell user={user} activeTab={activeTab} onTabChange={changeTab} onLogout={onLogout} onUserUpdate={onUserUpdate}>
-			{activeTab === 'dashboard' && <ScheduleSummary userId={user.id} />}
-			{activeTab === 'games' && <GamePool user={user} />}
-			{activeTab === 'availability' && <AvailabilityView userId={user.id} />}
-			{activeTab === 'rally' && <RallyPanel userId={user.id} />}
-			{activeTab === 'tree' && <GamingTree />}
-			{activeTab === 'shame' && <ShameWall userId={user.id} />}
-			{activeTab === 'blog' && <BlogPage />}
-			{activeTab === 'admin' && user.is_admin && <AdminPanel />}
+			{/* Keyed by tab: switching tabs mounts a fresh boundary, which clears a render error */}
+			<ErrorBoundary key={activeTab} scope="tab">
+				{activeTab === 'dashboard' && <ScheduleSummary userId={user.id} />}
+				{activeTab === 'games' && <GamePool user={user} />}
+				{activeTab === 'availability' && <AvailabilityView userId={user.id} />}
+				{activeTab === 'rally' && <RallyPanel userId={user.id} />}
+				{activeTab === 'tree' && <GamingTree />}
+				{activeTab === 'shame' && <ShameWall userId={user.id} />}
+				{activeTab === 'blog' && <BlogPage />}
+				{activeTab === 'admin' && user.is_admin && <AdminPanel />}
+			</ErrorBoundary>
 		</Shell>
 	);
 }
