@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import { getTimezoneAbbreviation, formatLocalRangeStructured, availabilityToday, type TimeRangeParts } from '../../lib/time';
 import { gridOriginMinutes, slotStartOffset, minutesToHhmm, offsetToInstant } from '@when2play/shared';
 import { avatarInitial } from '../../lib/initials';
+import { buildRoster, rosterSummary } from '../../lib/rallyRoster';
 
 interface ScheduleSummaryProps {
 	userId: string;
@@ -157,18 +158,21 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 	const [otherGuilds, setOtherGuilds] = useState<Array<{ guild_id: string; guild_name: string | null }>>([]);
 	const [guildDropdownOpen, setGuildDropdownOpen] = useState(false);
 	const [switching, setSwitching] = useState(false);
+	/** Today's rally answers ("3 in, 1 brb"); null when there is no rally today */
+	const [rallyLine, setRallyLine] = useState<string | null>(null);
 
 	const todayDate = new Date(today + 'T12:00:00Z');
 	const todayLabel = todayDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
 	useEffect(() => {
 		(async () => {
-			const [gamesResult, rankResult, usersResult, settingsResult, guildsResult] = await Promise.all([
+			const [gamesResult, rankResult, usersResult, settingsResult, guildsResult, rallyResult] = await Promise.all([
 				api.getGames(),
 				api.getGameRanking(),
 				api.getUsers(),
 				api.getSettings(),
 				api.getMyGuilds(),
+				api.getActiveRally(),
 			]);
 
 			let effectiveToday = availabilityToday(5);
@@ -215,6 +219,12 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 				const map = new Map<string, { discord_username: string; display_name: string | null; avatar_url: string | null }>();
 				for (const u of usersResult.data) map.set(u.id, u);
 				setUserMap(map);
+			}
+			if (rallyResult.ok && rallyResult.data) {
+				// Same rule as the Rally page roster: each person's latest in / out / brb
+				const actions = Array.isArray(rallyResult.data.actions) ? rallyResult.data.actions : [];
+				const summary = rosterSummary(buildRoster(actions));
+				if (rallyResult.data.rally || summary) setRallyLine(summary || 'no answers yet');
 			}
 			setLoading(false);
 		})();
@@ -348,9 +358,16 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 					)}
 				</div>
 			)}
-			<p style={{ marginBottom: '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
+			<p style={{ marginBottom: rallyLine ? '8px' : '20px', fontSize: '13px', color: 'var(--text-muted)' }}>
 				Times shown in {getTimezoneAbbreviation()} (local time)
 			</p>
+			{rallyLine && (
+				<p style={{ marginBottom: '20px', fontSize: '14px' }}>
+					<a href="#/rally">
+						<span aria-hidden="true">{'\u{1F4E2}'} </span>Rally today: {rallyLine}
+					</a>
+				</p>
+			)}
 
 			{/* Top Games from the Pool */}
 			<div style={{ marginBottom: '24px' }}>
