@@ -531,6 +531,21 @@ test('rally: judge_avail with default and custom message', () => {
     assert.equal(b.text, '🤖 **bob** → someone: pick times');
 });
 
+test('rally: judge_avail links to the availability tab when the app URL is known', () => {
+    const action = { action_type: 'judge_avail', actor_username: 'bob', message: null, target_discord_ids: [U1] };
+    const a = formatRallyAction(action, 'https://w2p.example.workers.dev');
+    assert.equal(a.text, `🤖 **bob** → <@${U1}>: Please set your availability!\n<https://w2p.example.workers.dev/#/availability>`);
+    assert.deepEqual(a.mentionUsers, [U1]);
+    // A trailing slash on the base URL does not double up
+    assert.equal(formatRallyAction(action, 'https://w2p.example.workers.dev/').text, a.text);
+    // No URL (or not an http(s) URL): no link
+    assert.equal(formatRallyAction(action).text, `🤖 **bob** → <@${U1}>: Please set your availability!`);
+    assert.equal(formatRallyAction(action, '').text, `🤖 **bob** → <@${U1}>: Please set your availability!`);
+    assert.equal(formatRallyAction(action, 'not a url').text, `🤖 **bob** → <@${U1}>: Please set your availability!`);
+    // Other actions never get the link
+    assert.equal(formatRallyAction({ action_type: 'ping', actor_username: 'bob', target_discord_ids: [U1] }, 'https://w2p.example.workers.dev').text, `👋 **bob** → <@${U1}>`);
+});
+
 test('rally: judge_time with windows', () => {
     const { text } = formatRallyAction({
         action_type: 'judge_time',

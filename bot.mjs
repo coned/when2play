@@ -559,7 +559,7 @@ async function deliverItem(guildId, kind, item) {
     if (!channel?.isTextBased()) throw new Error(`channel ${channelId} is missing or not text-based`);
 
     if (kind === 'rally_actions') {
-        const { text, mentionUsers } = formatRallyAction(item);
+        const { text, mentionUsers } = formatRallyAction(item, API_URL);
         if (text) await channel.send({ content: text, allowedMentions: { parse: [], users: mentionUsers } });
     } else if (kind === 'tree_shares') {
         const share = formatTreeShare(item);
