@@ -54,7 +54,7 @@ function formatAction(action: ActionItem, users: Map<string, { discord_username:
 	}
 
 	if (action.message) {
-		text += ` — "${action.message}"`;
+		text += `: "${action.message}"`;
 	}
 
 	if (action.action_type === 'judge_time' && action.metadata) {
@@ -75,7 +75,7 @@ function formatAction(action: ActionItem, users: Map<string, { discord_username:
 		const meta = action.metadata as { ranking?: Array<{ name: string; total_score: number; vote_count: number }> };
 		if (meta.ranking && meta.ranking.length > 0) {
 			const lines = meta.ranking.slice(0, 5).map((r, i) => `#${i + 1} ${r.name} (${r.total_score} pts)`);
-			text = `— ${lines.join(', ')}`;
+			text = `shared ranking: ${lines.join(', ')}`;
 		}
 	}
 
