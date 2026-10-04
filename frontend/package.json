@@ -10,8 +10,7 @@
 	},
 	"dependencies": {
 		"marked": "^17.0.3",
-		"preact": "^10.25.0",
-		"preact-router": "^4.1.2"
+		"preact": "^10.25.0"
 	},
 	"devDependencies": {
 		"@preact/preset-vite": "^2.9.0",

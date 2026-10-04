@@ -1,3 +1,6 @@
+import { useEffect } from 'preact/hooks';
+import { rememberReturnTab } from '../lib/routes';
+
 interface LoginPromptProps {
 	/** The app had a user and an API call said the session is gone */
 	expired?: boolean;
@@ -15,6 +18,11 @@ const screenStyle = {
 
 /** Shown when there is no session: how to get a login link from the Discord bot. */
 export function LoginPrompt({ expired = false }: LoginPromptProps) {
+	// A deep link (or the tab the session expired on) opens again after the next login
+	useEffect(() => {
+		rememberReturnTab();
+	}, []);
+
 	return (
 		<div style={screenStyle}>
 			<h1 style={{ fontSize: '36px', fontWeight: 700, color: 'var(--accent)' }}>when2play</h1>

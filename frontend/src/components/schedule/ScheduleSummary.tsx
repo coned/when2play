@@ -541,7 +541,13 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 					const myInfo = userStatusMap.get(userId);
 					const myGroups = groupMySlots(mySlots, gridOrigin);
 
-					if (myGroups.length === 0) return <p class="text-muted">You haven't set availability for today.</p>;
+					if (myGroups.length === 0) {
+						return (
+							<p class="text-muted">
+								You haven't set availability for today. <a href="#/availability">Set your availability</a>
+							</p>
+						);
+					}
 
 					return (
 						<div>

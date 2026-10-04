@@ -21,6 +21,7 @@ export function Sidebar({ activeTab, onTabChange, isAdmin }: SidebarProps) {
 
 	return (
 		<nav
+			aria-label="Main"
 			style={{
 				width: 'var(--sidebar-width)',
 				background: 'var(--bg-secondary)',
@@ -35,6 +36,7 @@ export function Sidebar({ activeTab, onTabChange, isAdmin }: SidebarProps) {
 				<button
 					key={tab.id}
 					onClick={() => onTabChange(tab.id)}
+					aria-current={activeTab === tab.id ? 'page' : undefined}
 					style={{
 						display: 'block',
 						width: '100%',

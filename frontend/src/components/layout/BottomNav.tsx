@@ -21,6 +21,7 @@ export function BottomNav({ activeTab, onTabChange, isAdmin }: BottomNavProps) {
 
 	return (
 		<nav
+			aria-label="Main"
 			style={{
 				position: 'fixed',
 				bottom: 0,
@@ -40,6 +41,7 @@ export function BottomNav({ activeTab, onTabChange, isAdmin }: BottomNavProps) {
 				<button
 					key={tab.id}
 					onClick={() => onTabChange(tab.id)}
+					aria-current={activeTab === tab.id ? 'page' : undefined}
 					style={{
 						flex: 1,
 						display: 'flex',
