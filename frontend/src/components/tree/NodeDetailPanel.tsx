@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'preact/hooks';
 import type { TreeNode, Participant } from './treeConstants';
+import { readableTextOn } from '../../lib/contrast';
 import {
 	getNodeColor,
 	getNodeIcon,
@@ -136,7 +137,7 @@ export function NodeDetailPanel({ node, participants, onClose }: NodeDetailPanel
 					borderRadius: '12px',
 					fontSize: '11px',
 					fontWeight: 700,
-					color: 'white',
+					color: readableTextOn(color),
 					background: color,
 					marginBottom: '10px',
 				}}>

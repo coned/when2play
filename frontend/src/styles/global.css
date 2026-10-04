@@ -174,8 +174,9 @@ textarea:focus {
 }
 
 .badge-accent {
-	background: var(--accent-dim);
-	color: #dbeafe;
+	/* --on-accent is at least 4.5:1 on --accent in every theme and mode */
+	background: var(--accent);
+	color: var(--on-accent);
 }
 
 .badge-warning {
@@ -212,11 +213,6 @@ textarea:focus {
 }
 
 /* Daylight theme overrides for badges and buttons */
-:root[data-mode="light"] .badge-accent {
-	background: #dbeafe;
-	color: #1e40af;
-}
-
 :root[data-mode="light"] .badge-warning {
 	background: #fef3c7;
 	color: #854d0e;

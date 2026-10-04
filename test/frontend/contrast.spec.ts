@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { THEMES } from '../../frontend/src/hooks/useTheme';
+import { ACTION_COLORS } from '../../frontend/src/components/tree/treeConstants';
+import { readableTextOn, contrastRatio } from '../../frontend/src/lib/contrast';
 
 /**
  * Colour contrast of the theme tokens (WCAG 2 ratios). Parses the two stylesheets,
@@ -80,6 +82,33 @@ function ratio(a: string, b: string): number {
 	return (x + 0.05) / (y + 0.05);
 }
 
+/**
+ * background and color of a class rule in global.css for a mode, with the light
+ * mode override (`:root[data-mode="light"] .name`) applied and var() resolved.
+ */
+function classColours(name: string, mode: Mode, tk: Record<string, string>): { background: string; color: string } {
+	const text = globalCss.replace(/\/\*[\s\S]*?\*\//g, '');
+	const out: Record<string, string> = {};
+	const re = /([^{}]+)\{([^{}]*)\}/g;
+	let m: RegExpExecArray | null;
+	const base: Record<string, string> = {};
+	const light: Record<string, string> = {};
+	while ((m = re.exec(text))) {
+		const selector = m[1].trim();
+		const target = selector === `.${name}` ? base : selector === `:root[data-mode="light"] .${name}` ? light : null;
+		if (!target) continue;
+		for (const d of m[2].split(';')) {
+			const i = d.indexOf(':');
+			if (i > 0) target[d.slice(0, i).trim()] = d.slice(i + 1).trim();
+		}
+	}
+	Object.assign(out, base, mode === 'light' ? light : {});
+	const resolve = (v: string | undefined) => (v ?? '').replace(/var\((--[\w-]+)\)/g, (_, n: string) => tk[n] ?? '');
+	expect(out.background, `.${name} has a background`).toBeTruthy();
+	expect(out.color, `.${name} has a color`).toBeTruthy();
+	return { background: resolve(out.background), color: resolve(out.color) };
+}
+
 const BACKGROUNDS = ['--bg-primary', '--bg-secondary', '--bg-card', '--bg-tertiary'];
 const MODES: Mode[] = ['dark', 'light'];
 const CASES = THEMES.flatMap((t) => MODES.map((mode) => [t.id, mode] as const));
@@ -115,11 +144,22 @@ describe('theme colour contrast', () => {
 			expect(ratio(tk['--on-accent'], tk['--accent-hover'])).toBeGreaterThanOrEqual(4.5);
 		});
 
+		it('.badge-accent text is at least 4.5:1 on its background', () => {
+			const { background, color } = classColours('badge-accent', mode, tk);
+			expect(ratio(color, background), `${color} on ${background}`).toBeGreaterThanOrEqual(4.5);
+		});
+
 		it('--accent-text is at least 4.5:1 on every background', () => {
 			for (const bg of BACKGROUNDS) {
 				expect(ratio(tk['--accent-text'], tk[bg]), `${bg} ${tk[bg]}`).toBeGreaterThanOrEqual(4.5);
 			}
 		});
+	});
+
+	it('text on the rally action colours (tree node badge) is at least 4.5:1', () => {
+		for (const [action, bg] of Object.entries(ACTION_COLORS)) {
+			expect(contrastRatio(readableTextOn(bg), bg), `${action} ${bg}`).toBeGreaterThanOrEqual(4.5);
+		}
 	});
 
 	it('the theme picker colours match the stylesheets', () => {

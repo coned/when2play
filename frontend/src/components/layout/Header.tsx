@@ -253,16 +253,7 @@ export function Header({ user, onLogout, onUserUpdate }: HeaderProps) {
 							{!isMobile && <span>{displayLabel}</span>}
 						</button>
 						{user.is_admin && (
-							<span
-								style={{
-									padding: '2px 8px',
-									borderRadius: '9999px',
-									fontSize: '11px',
-									fontWeight: 600,
-									background: 'var(--accent-dim)',
-									color: '#dbeafe',
-								}}
-							>
+							<span class="badge badge-accent" style={{ fontSize: '11px', fontWeight: 600 }}>
 								Admin
 							</span>
 						)}
