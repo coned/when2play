@@ -1,4 +1,4 @@
-# when2play — API Reference
+# when2play: API Reference
 
 Base URL: `/api`
 
@@ -11,6 +11,8 @@ All responses follow the format:
 // Error
 { "ok": false, "error": { "code": "ERROR_CODE", "message": "Description" } }
 ```
+
+Request bodies are validated: a body that is not a JSON object, or a field outside the documented rules, gives `400 BAD_REQUEST` with a message naming the first problem. Unknown fields are ignored.
 
 Unhandled error messages are redacted by default. Set `VERBOSE_ERRORS=1` (env var / wrangler secret) to include the original error message in the response.
 
@@ -151,7 +153,7 @@ Creates a one-time admin auth token. Called by the Discord bot after verifying t
 Exchanges a one-time token for a session cookie. Redirects to `/`.
 
 - **Regular token:** `Set-Cookie: session_id=...; Max-Age=604800; HttpOnly; SameSite=Strict; Path=/` (7-day persistent)
-- **Admin token:** `Set-Cookie: session_id=...; HttpOnly; SameSite=Strict; Path=/` (no `Max-Age` — browser-session only; DB row expires after 1 hour)
+- **Admin token:** `Set-Cookie: session_id=...; HttpOnly; SameSite=Strict; Path=/` (no `Max-Age`: browser-session only; DB row expires after 1 hour)
 
 **Response:** `302 Found`
 
@@ -203,7 +205,7 @@ Creates or updates Discord users in the guild named by `X-Guild-Id`, so the bot 
 **Errors:** `400 BAD_REQUEST` for an invalid body (including 0 or more than 10 users), `403 FORBIDDEN` for a wrong `X-Bot-Token`.
 
 ### `GET /api/users`
-Returns all registered users (for user pickers in gather/shame).
+Returns all registered users (for user pickers in rally, gather and shame, and the availability denominator). The per-guild admin pseudo user (`discord_id` starting with `system-admin`, shown as "Administrator") is left out, also when the caller is that admin session.
 
 **Response:**
 ```json
@@ -224,7 +226,6 @@ Updates the current user's profile.
 **Body (all fields optional):**
 ```json
 {
-  "discord_username": "NewName",
   "display_name": "Dave",
   "sync_name_from_discord": true,
   "timezone": "America/New_York",
@@ -232,7 +233,12 @@ Updates the current user's profile.
 }
 ```
 
-`display_name` overrides the Discord username for display purposes (max 50 chars). `sync_name_from_discord` controls whether the name auto-updates on next login (default `true`).
+Rules:
+- `display_name`: string, trimmed, 1 to 50 characters. Overrides the Discord username for display purposes.
+- `sync_name_from_discord`: boolean. Controls whether the name auto-updates on next login (default `true`).
+- `timezone`: a valid IANA zone name (`America/New_York`, `UTC`); offset strings such as `+05:00` are refused.
+- `time_granularity_minutes`: integer from 5 to 60.
+- `discord_username` is owned by Discord and is ignored here (the bot keeps it in sync through `POST /api/users/sync` and the token endpoints).
 
 ---
 
@@ -267,18 +273,18 @@ Proposes a new game. Duplicate detection by `steam_app_id` (returns 409 with `DU
 **Body:**
 ```json
 {
-  "name": "Counter-Strike 2",     // required, max 100 chars
-  "steam_app_id": "730",          // optional
-  "image_url": "https://...",     // optional, max 500 chars
+  "name": "Counter-Strike 2",     // required, trimmed, 1 to 100 chars
+  "steam_app_id": "730",          // optional, 1 to 10 digits
+  "image_url": "https://...",     // optional, http(s) URL, max 500 chars
   "note": "Great FPS"             // optional, max 500 chars
 }
 ```
 
 ### `PATCH /api/games/:id`
-Updates a game. Only the proposer can update. Accepts `name`, `image_url`, `note` (max 500 chars).
+Updates a game. Only the proposer can update. Accepts `name` (trimmed, 1 to 100 chars), `image_url` (http(s) URL, max 500 chars) and `note` (max 500 chars), with the same rules as `POST`.
 
 ### `DELETE /api/games/:id`
-Archives a game (soft delete). Any user can archive. Accepts optional body `{ "reason": "not_interested" }`.
+Archives a game (soft delete). Any user can archive. Accepts an optional body `{ "reason": "not_interested" }`; `reason` is `not_interested` (the default) or `save_for_later`, anything else gives 400. (`auto_archived` is set only by the server's auto-archive.)
 
 ### `DELETE /api/games/:id/permanent`
 Permanently deletes an archived game and all related data (reactions, activity, shares). Only the proposer can permanently delete. Game must be archived first (returns 400 otherwise).
@@ -293,6 +299,8 @@ Sets a reaction (like or dislike) on a game. Updates `last_activity_at`.
 ```json
 { "type": "like" }
 ```
+
+`type` is `like` or `dislike`; anything else, or a body that is not JSON, gives 400.
 
 ### `DELETE /api/games/:id/react`
 Removes the current user's reaction from a game.
@@ -339,6 +347,8 @@ Sets or updates a vote for a game.
 }
 ```
 
+`rank` is an integer from 1 to 1000; `is_approved` is a boolean.
+
 ### `DELETE /api/games/:id/vote`
 Removes a vote.
 
@@ -364,6 +374,8 @@ Bulk updates vote ranks after drag-to-reorder.
 }
 ```
 
+`rankings` has 1 to 200 entries, each `{ "game_id": string, "rank": integer from 1 to 1000 }`.
+
 ---
 
 ## Steam
@@ -371,7 +383,7 @@ Bulk updates vote ranks after drag-to-reorder.
 ### `GET /api/steam/search?q=QUERY`
 Requires session cookie. Searches Steam by partial game name.
 
-**Query:** `q` — 2-100 characters
+**Query:** `q`: 2 to 100 characters
 
 **Response:**
 ```json
@@ -383,10 +395,10 @@ Requires session cookie. Searches Steam by partial game name.
 }
 ```
 
-Returns up to 10 results.
+Returns up to 10 results. HTML character references in names (`Command &amp; Conquer`) are decoded.
 
 ### `GET /api/steam/lookup/:appId`
-Looks up a Steam game by App ID. No auth required.
+Requires session cookie. Looks up a Steam game by App ID (1 to 10 digits).
 
 **Response:**
 ```json
@@ -513,7 +525,7 @@ Returns undelivered gather pings.
 }
 ```
 
-`sender_discord_id` and `target_discord_ids` are pre-resolved numeric Discord IDs — use `<@id>` syntax directly. No bot-side ID mapping needed.
+`sender_discord_id` and `target_discord_ids` are pre-resolved numeric Discord IDs: use `<@id>` syntax directly. No bot-side ID mapping needed.
 
 ### `PATCH /api/gather/:id/delivered`
 Marks a gather ping as delivered.
