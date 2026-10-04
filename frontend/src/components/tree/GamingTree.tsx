@@ -232,9 +232,10 @@ export function GamingTree() {
 		setSharing(false);
 	};
 
-	// Day options: today + last 6 days
+	// Day options: "Today" (the server's current gaming day, value '') plus the 6 days
+	// before it. Today's date is not listed again under its own value.
 	const dayOptions: string[] = [];
-	for (let i = 0; i < 7; i++) {
+	for (let i = 1; i < 7; i++) {
 		const d = new Date();
 		d.setDate(d.getDate() - i);
 		dayOptions.push(d.toLocaleDateString('en-CA'));
