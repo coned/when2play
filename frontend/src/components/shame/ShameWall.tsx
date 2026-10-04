@@ -233,7 +233,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 															alignItems: 'center',
 															justifyContent: 'center',
 															fontSize: '10px',
-															color: '#fff',
+															color: 'var(--on-accent)',
 															flexShrink: 0,
 														}}
 													>

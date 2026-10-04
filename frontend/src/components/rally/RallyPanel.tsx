@@ -256,7 +256,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 		fontSize: '13px',
 		minWidth: '80px',
 		background: expandedButton === actionType ? 'var(--accent)' : 'var(--bg-tertiary)',
-		color: expandedButton === actionType ? '#fff' : 'var(--text-primary)',
+		color: expandedButton === actionType ? 'var(--on-accent)' : 'var(--text-primary)',
 		border: '1px solid var(--border)',
 		borderRadius: '6px',
 		cursor: 'pointer',
@@ -318,7 +318,7 @@ export function RallyPanel({ userId }: RallyPanelProps) {
 						>
 							<div>{BUTTON_EMOJIS[at!]} {getLabel(at!)}</div>
 							{rallySettings.rally_show_discord_command && (
-								<div style={{ fontSize: '10px', color: expandedButton === at ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', marginTop: '2px' }}>
+								<div style={{ fontSize: '10px', color: expandedButton === at ? 'var(--on-accent)' : 'var(--text-muted)', marginTop: '2px' }}>
 									{DISCORD_COMMANDS[at!]}
 								</div>
 							)}

@@ -56,7 +56,7 @@ function AvatarStack({ users, maxShow = 4 }: { users: ReactionUser[]; maxShow?: 
 							alignItems: 'center',
 							justifyContent: 'center',
 							fontSize: '9px',
-							color: '#fff',
+							color: 'var(--on-accent)',
 							flexShrink: 0,
 						}}
 					>

@@ -25,7 +25,7 @@ export function LoginPrompt({ expired = false }: LoginPromptProps) {
 
 	return (
 		<div style={screenStyle}>
-			<h1 style={{ fontSize: '36px', fontWeight: 700, color: 'var(--accent)' }}>when2play</h1>
+			<h1 style={{ fontSize: '36px', fontWeight: 700, color: 'var(--accent-text)' }}>when2play</h1>
 			{expired && (
 				<p role="alert" style={{ color: 'var(--warning)', fontSize: '16px', fontWeight: 600, textAlign: 'center', maxWidth: '400px' }}>
 					Your session has expired. Get a new login link to continue.

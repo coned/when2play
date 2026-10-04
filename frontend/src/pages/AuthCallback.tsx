@@ -169,7 +169,7 @@ function Screen({ children }: { children: ComponentChildren }) {
 				padding: '16px',
 			}}
 		>
-			<h1 style={{ fontSize: '36px', fontWeight: 700, color: 'var(--accent)' }}>when2play</h1>
+			<h1 style={{ fontSize: '36px', fontWeight: 700, color: 'var(--accent-text)' }}>when2play</h1>
 			{children}
 		</div>
 	);

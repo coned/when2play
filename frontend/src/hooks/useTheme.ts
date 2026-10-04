@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'preact/hooks';
 
+// accent and onAccent repeat each theme's --accent and --on-accent (checked by test/frontend/contrast.spec.ts)
 export const THEMES = [
-	{ id: 'midnight', label: 'Midnight', accent: '#3b82f6' },
-	{ id: 'cyberpunk', label: 'Cyberpunk', accent: '#ff2a6d' },
-	{ id: 'ocean', label: 'Ocean', accent: '#06b6d4' },
-	{ id: 'sakura', label: 'Sakura', accent: '#e891b9' },
-	{ id: 'amber', label: 'Amber', accent: '#f59e0b' },
+	{ id: 'midnight', label: 'Midnight', accent: '#3b82f6', onAccent: '#0f0f0f' },
+	{ id: 'cyberpunk', label: 'Cyberpunk', accent: '#ff2a6d', onAccent: '#0d0221' },
+	{ id: 'ocean', label: 'Ocean', accent: '#06b6d4', onAccent: '#0a1628' },
+	{ id: 'sakura', label: 'Sakura', accent: '#e891b9', onAccent: '#0f0f1a' },
+	{ id: 'amber', label: 'Amber', accent: '#f59e0b', onAccent: '#121212' },
 ] as const;
 
 export type ThemeId = (typeof THEMES)[number]['id'];

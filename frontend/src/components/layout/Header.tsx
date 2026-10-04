@@ -25,7 +25,7 @@ function Avatar({ url, name, size }: { url: string | null | undefined; name: str
 				height: `${size}px`,
 				borderRadius: '50%',
 				background: 'var(--accent)',
-				color: '#fff',
+				color: 'var(--on-accent)',
 				display: 'flex',
 				alignItems: 'center',
 				justifyContent: 'center',
@@ -107,7 +107,7 @@ function AppearanceControls({ large }: { large: boolean }) {
 							justifyContent: 'center',
 							fontSize: large ? '14px' : '10px',
 							fontWeight: 700,
-							color: '#fff',
+							color: t.onAccent,
 							lineHeight: 1,
 						}}
 					>
@@ -216,7 +216,7 @@ export function Header({ user, onLogout, onUserUpdate }: HeaderProps) {
 			}}
 		>
 			<div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-				<span style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent)' }}>when2play</span>
+				<span style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent-text)' }}>when2play</span>
 			</div>
 
 			<div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '12px', flexShrink: 0 }}>

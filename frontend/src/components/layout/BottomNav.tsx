@@ -56,7 +56,7 @@ export function BottomNav({ activeTab, onTabChange, isAdmin }: BottomNavProps) {
 						gap: '2px',
 						padding: '4px 0',
 						background: 'transparent',
-						color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-muted)',
+						color: activeTab === tab.id ? 'var(--accent-text)' : 'var(--text-muted)',
 						fontSize: '11px',
 						lineHeight: 1.2,
 						whiteSpace: 'nowrap',

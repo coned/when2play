@@ -125,7 +125,7 @@ function AvatarRow({ users }: { users: Array<{ avatar_url: string | null; displa
 							alignItems: 'center',
 							justifyContent: 'center',
 							fontSize: '9px',
-							color: '#fff',
+							color: 'var(--on-accent)',
 							flexShrink: 0,
 						}}
 					>
@@ -363,7 +363,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 							const dislikeUsers = (item.reaction_users ?? []).filter((u: any) => u.type === 'dislike');
 							return (
 								<div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-									<span style={{ color: 'var(--accent)', fontWeight: 700, minWidth: '24px' }}>#{i + 1}</span>
+									<span style={{ color: 'var(--accent-text)', fontWeight: 700, minWidth: '24px' }}>#{i + 1}</span>
 									<span style={{ flex: 1 }}>{item.name}</span>
 									{item.net_score !== 0 && (
 										<span style={{
@@ -414,7 +414,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxWidth: '480px' }}>
 						{ranking.slice(0, 5).map((item, i) => (
 							<div key={item.game_id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-								<span style={{ color: 'var(--accent)', fontWeight: 700, minWidth: '24px' }}>#{i + 1}</span>
+								<span style={{ color: 'var(--accent-text)', fontWeight: 700, minWidth: '24px' }}>#{i + 1}</span>
 								<span style={{ flex: 1 }}>{item.name}</span>
 								{item.vote_count >= 2 && (
 									<span class="text-muted" style={{ fontSize: '12px' }}>
@@ -567,7 +567,8 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 										key={`${g.startTime}-${g.endTime}`}
 										style={{
 											background: g.slotStatus === 'tentative' ? 'var(--warning)' : 'var(--accent)',
-											color: '#fff',
+											// Dark text on the yellow warning colour, the theme's text colour on the accent
+											color: g.slotStatus === 'tentative' ? '#1a1a1a' : 'var(--on-accent)',
 											padding: '4px 8px',
 											borderRadius: '4px',
 											fontSize: '12px',

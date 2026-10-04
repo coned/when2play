@@ -6,11 +6,17 @@
 	--bg-tertiary: #240e52;
 	--bg-card: #1f0c45;
 	--accent: #ff2a6d;
-	--accent-hover: #e0245c;
+	/* Lighter on hover: the text on accent buttons is dark */
+	--accent-hover: #ff4f86;
 	--accent-dim: #b91c4e;
+	/* Text on an accent background (at least 4.5:1 against --accent and --accent-hover) */
+	--on-accent: #0d0221;
+	/* The accent as a text colour (at least 4.5:1 on every background of the mode) */
+	--accent-text: #ff2a6d;
 	--text-primary: #e0e0e0;
-	--text-secondary: #a0a0a0;
-	--text-muted: #666;
+	--text-secondary: #b0b0b0;
+	/* At least 4.5:1 on every dark background of every theme */
+	--text-muted: #949494;
 	--border: #3a1a5e;
 	--border-hover: #4a2a6e;
 	--success: #22c55e;
@@ -49,7 +55,7 @@ body {
 }
 
 a {
-	color: var(--accent);
+	color: var(--accent-text);
 	text-decoration: none;
 }
 
@@ -119,7 +125,7 @@ textarea:focus {
 
 .btn-primary {
 	background: var(--accent);
-	color: #fff;
+	color: var(--on-accent);
 }
 
 .btn-primary:hover {
@@ -234,7 +240,7 @@ textarea:focus {
 .blog-content h1 {
 	font-size: 20px;
 	margin-bottom: 4px;
-	color: var(--accent);
+	color: var(--accent-text);
 }
 
 .blog-content h2 {

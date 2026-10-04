@@ -43,7 +43,7 @@ export function Sidebar({ activeTab, onTabChange, isAdmin }: SidebarProps) {
 						padding: '10px 20px',
 						textAlign: 'left',
 						background: activeTab === tab.id ? 'var(--bg-tertiary)' : 'transparent',
-						color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-secondary)',
+						color: activeTab === tab.id ? 'var(--accent-text)' : 'var(--text-secondary)',
 						fontSize: '14px',
 						fontWeight: activeTab === tab.id ? 600 : 400,
 						borderLeft: activeTab === tab.id ? '3px solid var(--accent)' : '3px solid transparent',

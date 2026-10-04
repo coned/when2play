@@ -120,7 +120,7 @@ export function DateStrip({ dates, selectedDate, statusMap, onSelect }: DateStri
 						<span style={{
 							fontSize: '10px',
 							fontWeight: isToday ? 700 : 500,
-							color: isToday ? 'var(--accent)' : 'inherit',
+							color: isToday ? 'var(--accent-text)' : 'inherit',
 							lineHeight: 1,
 						}}>
 							{isToday ? 'Today' : dayName}

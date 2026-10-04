@@ -362,7 +362,7 @@ function ModeButton({ label, active, onClick }: { label: string; active: boolean
 				fontSize: '12px',
 				fontWeight: active ? 700 : 500,
 				background: active ? 'var(--accent, #4a9eff)' : 'var(--bg-secondary)',
-				color: active ? 'white' : 'var(--text-secondary)',
+				color: active ? 'var(--on-accent)' : 'var(--text-secondary)',
 				border: 'none',
 				cursor: 'pointer',
 				transition: 'background 0.15s',

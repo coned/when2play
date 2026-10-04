@@ -1,17 +1,26 @@
-/* Midnight — cool blue on dark slate */
+/*
+ * Token rules (asserted by test/frontend/contrast.spec.ts):
+ * --on-accent: text on --accent and --accent-hover, at least 4.5:1.
+ * --accent-text: the accent used as text, at least 4.5:1 on every background of the mode.
+ * --text-muted: at least 4.5:1 on every background, dimmer than --text-secondary.
+ */
+
+/* Midnight: cool blue on dark slate */
 :root[data-theme="midnight"] {
 	--bg-primary: #0f0f0f;
 	--bg-secondary: #1a1a2e;
 	--bg-tertiary: #16213e;
 	--bg-card: #1e1e32;
 	--accent: #3b82f6;
-	--accent-hover: #2563eb;
+	--accent-hover: #60a5fa;
 	--accent-dim: #1d4ed8;
+	--on-accent: #0f0f0f;
+	--accent-text: #60a5fa;
 	--border: #2a2a3e;
 	--border-hover: #3a3a4e;
 }
 
-/* Ocean — teal on deep sea */
+/* Ocean: teal on deep sea */
 :root[data-theme="ocean"] {
 	--bg-primary: #0a1628;
 	--bg-secondary: #0f2035;
@@ -20,11 +29,13 @@
 	--accent: #06b6d4;
 	--accent-hover: #0891b2;
 	--accent-dim: #0e7490;
+	--on-accent: #0a1628;
+	--accent-text: #06b6d4;
 	--border: #1a3550;
 	--border-hover: #254560;
 }
 
-/* Sakura — lavender and soft pink */
+/* Sakura: lavender and soft pink */
 :root[data-theme="sakura"] {
 	--bg-primary: #0f0f1a;
 	--bg-secondary: #1a1a2e;
@@ -33,11 +44,13 @@
 	--accent: #e891b9;
 	--accent-hover: #d47ca5;
 	--accent-dim: #b0658a;
+	--on-accent: #0f0f1a;
+	--accent-text: #e891b9;
 	--border: #2e2e4a;
 	--border-hover: #3e3e5a;
 }
 
-/* Amber — warm gold on charcoal */
+/* Amber: warm gold on charcoal */
 :root[data-theme="amber"] {
 	--bg-primary: #121212;
 	--bg-secondary: #1e1e1e;
@@ -46,19 +59,23 @@
 	--accent: #f59e0b;
 	--accent-hover: #d97706;
 	--accent-dim: #b45309;
+	--on-accent: #121212;
+	--accent-text: #f59e0b;
 	--border: #333333;
 	--border-hover: #444444;
 }
 
-/* Light mode — overrides background/text/border vars for any color scheme */
+/* Light mode: overrides background/text/border vars for any color scheme */
 :root[data-mode="light"] {
 	--bg-primary: #f8f9fa;
 	--bg-secondary: #ffffff;
 	--bg-tertiary: #e9ecef;
 	--bg-card: #ffffff;
 	--text-primary: #1a1a1a;
-	--text-secondary: #555555;
-	--text-muted: #888888;
+	--text-secondary: #484848;
+	--text-muted: #666666;
+	/* The accent as text needs a darker shade on light backgrounds (Cyberpunk here, others below) */
+	--accent-text: #c0134f;
 	--border: #dee2e6;
 	--border-hover: #ced4da;
 	--success: #16a34a;
@@ -66,4 +83,20 @@
 	--danger: #dc2626;
 	--shame: #ea580c;
 	--shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+:root[data-mode="light"][data-theme="midnight"] {
+	--accent-text: #1d4ed8;
+}
+
+:root[data-mode="light"][data-theme="ocean"] {
+	--accent-text: #0b6b85;
+}
+
+:root[data-mode="light"][data-theme="sakura"] {
+	--accent-text: #a8326a;
+}
+
+:root[data-mode="light"][data-theme="amber"] {
+	--accent-text: #a14a07;
 }

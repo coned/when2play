@@ -207,7 +207,7 @@ function SlotPopover({ anchor, voters, userMap, interactive, popoverRef }: {
 										alignItems: 'center',
 										justifyContent: 'center',
 										fontSize: '9px',
-										color: '#fff',
+										color: 'var(--on-accent)',
 										flexShrink: 0,
 									}}
 								>
