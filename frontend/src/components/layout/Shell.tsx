@@ -27,7 +27,8 @@ export function Shell({ user, activeTab, onTabChange, onLogout, onUserUpdate, ch
 						flex: 1,
 						overflow: 'auto',
 						padding: isMobile ? '16px' : '24px',
-						paddingBottom: isMobile ? '72px' : '24px',
+						// Clear the fixed bottom nav (56 px plus the home indicator area)
+						paddingBottom: isMobile ? 'calc(72px + env(safe-area-inset-bottom, 0px))' : '24px',
 					}}
 				>
 					{children}

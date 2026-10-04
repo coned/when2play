@@ -4,10 +4,11 @@ interface BottomNavProps {
 	isAdmin: boolean;
 }
 
+// Labels are kept short so all eight tabs stay readable on a 360 px wide phone
 const BASE_TABS = [
-	{ id: 'dashboard', label: 'Dashboard', icon: '\u{1F4C5}' },
+	{ id: 'dashboard', label: 'Home', icon: '\u{1F4C5}' },
 	{ id: 'games', label: 'Games', icon: '\u{1F3AE}' },
-	{ id: 'availability', label: 'Available', icon: '\u{1F552}' },
+	{ id: 'availability', label: 'Avail', icon: '\u{1F552}' },
 	{ id: 'rally', label: 'Rally', icon: '\u{1F4E2}' },
 	{ id: 'tree', label: 'Tree', icon: '\u{1F333}' },
 	{ id: 'shame', label: 'Shame', icon: '\u{1F525}' },
@@ -27,13 +28,16 @@ export function BottomNav({ activeTab, onTabChange, isAdmin }: BottomNavProps) {
 				bottom: 0,
 				left: 0,
 				right: 0,
-				height: '56px',
+				// 56 px of content plus the home indicator area; padding sits inside the height
+				height: 'calc(56px + env(safe-area-inset-bottom, 0px))',
 				background: 'var(--bg-secondary)',
 				borderTop: '1px solid var(--border)',
 				display: 'flex',
 				alignItems: 'center',
 				justifyContent: 'space-around',
-				paddingBottom: 'env(safe-area-inset-bottom)',
+				paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+				paddingLeft: 'env(safe-area-inset-left, 0px)',
+				paddingRight: 'env(safe-area-inset-right, 0px)',
 				zIndex: 100,
 			}}
 		>
@@ -43,21 +47,25 @@ export function BottomNav({ activeTab, onTabChange, isAdmin }: BottomNavProps) {
 					onClick={() => onTabChange(tab.id)}
 					aria-current={activeTab === tab.id ? 'page' : undefined}
 					style={{
-						flex: 1,
+						flex: '1 1 0',
+						minWidth: 0,
+						alignSelf: 'stretch',
 						display: 'flex',
 						flexDirection: 'column',
 						alignItems: 'center',
 						gap: '2px',
-						padding: '6px 0',
+						padding: '4px 0',
 						background: 'transparent',
 						color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-muted)',
-						fontSize: '10px',
+						fontSize: '11px',
+						lineHeight: 1.2,
+						whiteSpace: 'nowrap',
 						fontWeight: activeTab === tab.id ? 600 : 400,
 						minHeight: '44px',
 						justifyContent: 'center',
 					}}
 				>
-					<span style={{ fontSize: '18px' }}>{tab.icon}</span>
+					<span aria-hidden="true" style={{ fontSize: '18px', lineHeight: 1.2 }}>{tab.icon}</span>
 					{tab.label}
 				</button>
 			))}
