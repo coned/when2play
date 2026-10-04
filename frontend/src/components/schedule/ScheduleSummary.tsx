@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'preact/hooks';
 import { api } from '../../api/client';
 import { getTimezoneAbbreviation, formatLocalRangeStructured, availabilityToday, type TimeRangeParts } from '../../lib/time';
 import { gridOriginMinutes, slotStartOffset, minutesToHhmm, offsetToInstant } from '@when2play/shared';
+import { avatarInitial } from '../../lib/initials';
 
 interface ScheduleSummaryProps {
 	userId: string;
@@ -129,7 +130,7 @@ function AvatarRow({ users }: { users: Array<{ avatar_url: string | null; displa
 							flexShrink: 0,
 						}}
 					>
-						{(u.display_name ?? u.discord_username ?? '?')[0].toUpperCase()}
+						{avatarInitial(u.display_name || u.discord_username)}
 					</span>
 				),
 			)}
@@ -512,7 +513,7 @@ export function ScheduleSummary({ userId }: ScheduleSummaryProps) {
 																background: 'var(--bg-tertiary)',
 															}}
 														>
-															{name[0].toUpperCase()}
+															{avatarInitial(name)}
 														</span>
 													)}
 												</div>

@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { api } from '../../api/client';
+import { avatarInitial } from '../../lib/initials';
 
 interface ReactionUser {
 	user_id: string;
@@ -60,7 +61,7 @@ function AvatarStack({ users, maxShow = 4 }: { users: ReactionUser[]; maxShow?: 
 							flexShrink: 0,
 						}}
 					>
-						{(u.display_name ?? '?')[0].toUpperCase()}
+						{avatarInitial(u.display_name)}
 					</span>
 				),
 			)}

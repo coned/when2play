@@ -4,6 +4,7 @@ import { formatLocalTimeClean } from '../../lib/time';
 
 import { etHourToUtcSlot } from '@when2play/shared';
 import type { AvailabilityStatus } from '@when2play/shared';
+import { avatarInitial } from '../../lib/initials';
 
 interface TimeGridProps {
 	date: string;
@@ -211,7 +212,7 @@ function SlotPopover({ anchor, voters, userMap, interactive, popoverRef }: {
 										flexShrink: 0,
 									}}
 								>
-									{name[0].toUpperCase()}
+									{avatarInitial(name)}
 								</span>
 							)}
 							<span style={voterDotStyle(voter)} />
@@ -291,7 +292,7 @@ function InlineAvatars({ voters, userMap, wide }: { voters: Voter[]; userMap: Ma
 									background: 'var(--bg-tertiary)',
 								}}
 							>
-								{name[0].toUpperCase()}
+								{avatarInitial(name)}
 							</span>
 						)}
 					</div>

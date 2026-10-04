@@ -3,6 +3,7 @@ import type { User } from '@when2play/shared';
 import { useTheme, THEMES } from '../../hooks/useTheme';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { api } from '../../api/client';
+import { avatarInitial } from '../../lib/initials';
 
 interface HeaderProps {
 	user: User | null;
@@ -34,7 +35,7 @@ function Avatar({ url, name, size }: { url: string | null | undefined; name: str
 				lineHeight: 1,
 			}}
 		>
-			{(name.trim()[0] ?? '?').toUpperCase()}
+			{avatarInitial(name)}
 		</span>
 	);
 }

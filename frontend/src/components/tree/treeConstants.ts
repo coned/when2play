@@ -1,4 +1,5 @@
 import { ANONYMOUS_ACTOR_ID, type RallyTreeNode } from '@when2play/shared';
+import { avatarInitial } from '../../lib/initials';
 
 // -- View mode --
 
@@ -105,5 +106,5 @@ export function getNodeLabel(actionType: string): string {
 }
 
 export function getInitials(username: string): string {
-	return username.slice(0, 2).toUpperCase();
+	return avatarInitial(username, 2);
 }

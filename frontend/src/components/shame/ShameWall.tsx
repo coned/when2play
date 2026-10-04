@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { api } from '../../api/client';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { avatarInitial } from '../../lib/initials';
 
 interface ShameWallProps {
 	userId: string;
@@ -237,7 +238,7 @@ export function ShameWall({ userId }: ShameWallProps) {
 															flexShrink: 0,
 														}}
 													>
-														{(v.voter_name ?? '?')[0].toUpperCase()}
+														{avatarInitial(v.voter_name)}
 													</span>
 												),
 											)}
