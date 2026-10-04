@@ -19,18 +19,27 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 	const [duplicateGameId, setDuplicateGameId] = useState<string | null>(null);
 	const [duplicateType, setDuplicateType] = useState<'active' | 'archived' | null>(null);
 	const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+	/** The latest search query typed: a response for any other query arrives late and is ignored */
+	const latestQueryRef = useRef<string | null>(null);
 
 	// Debounced Steam search
 	useEffect(() => {
 		if (mode !== 'search' || searchQuery.length < 2) {
+			latestQueryRef.current = null;
 			setSearchResults([]);
+			setSearching(false);
 			return;
 		}
 
+		// Set now, not when the request goes out: a response for an older query that
+		// arrives during the debounce is already stale
+		const query = searchQuery;
+		latestQueryRef.current = query;
 		if (debounceRef.current) clearTimeout(debounceRef.current);
 		debounceRef.current = setTimeout(async () => {
 			setSearching(true);
-			const result = await api.searchSteam(searchQuery);
+			const result = await api.searchSteam(query);
+			if (latestQueryRef.current !== query) return;
 			if (result.ok) setSearchResults(result.data);
 			setSearching(false);
 		}, 300);
@@ -46,6 +55,7 @@ export function ProposeGameForm({ onSubmit }: ProposeGameFormProps) {
 		// Upgrade to higher-res header image
 		const headerUrl = `https://cdn.akamai.steamstatic.com/steam/apps/${result.app_id}/header.jpg`;
 		setImageUrl(headerUrl);
+		latestQueryRef.current = null;
 		setSearchResults([]);
 		setSearchQuery('');
 		setError('');
